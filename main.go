@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"meshtastic_mqtt_server/mqtpp"
+
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -90,7 +92,7 @@ func parseArgs() (*config, error) {
 	if cfg.qos < 0 || cfg.qos > 2 {
 		return nil, fmt.Errorf("invalid qos %d: must be 0, 1, or 2", cfg.qos)
 	}
-	key, err := expandPSK(cfg.psk)
+	key, err := mqtpp.ExpandPSK(cfg.psk)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +141,7 @@ func run(cfg *config) error {
 // handleMessage 返回 MQTT 消息回调，把原始 payload 交给 MQTTPP 处理后按类型输出。
 func handleMessage(key []byte) mqtt.MessageHandler {
 	return func(_ mqtt.Client, msg mqtt.Message) {
-		valid, _, decodedJSON := MQTTPP(msg.Topic(), msg.Payload(), key)
+		valid, _, decodedJSON := mqtpp.MQTTPP(msg.Topic(), msg.Payload(), key)
 		if !valid || len(decodedJSON) == 0 {
 			return
 		}
@@ -158,7 +160,7 @@ func handleMessage(key []byte) mqtt.MessageHandler {
 
 // printJSON 将记录编码为 JSON 后按数据包类型着色输出。
 func printJSON(record map[string]any) {
-	printJSONBytes(record, mustJSON(record))
+	printJSONBytes(record, mqtpp.MustJSON(record))
 }
 
 // printJSONBytes 使用已编码好的 JSON 文本，并根据记录 type 选择控制台颜色。

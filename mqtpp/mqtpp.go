@@ -1,4 +1,4 @@
-package main
+package mqtpp
 
 import (
 	"crypto/aes"
@@ -89,17 +89,17 @@ func MQTTPP(topic string, raw []byte, key []byte) (bool, []byte, []byte) {
 
 	env, err := parseServiceEnvelope(raw)
 	if err != nil {
-		return true, raw, mustJSON(map[string]any{"topic": topic, "error": "protobuf decode failed: " + err.Error(), "payload_len": len(raw)})
+		return true, raw, MustJSON(map[string]any{"topic": topic, "error": "protobuf decode failed: " + err.Error(), "payload_len": len(raw)})
 	}
 	record, err := describePacket(topic, env, key)
 	if err != nil {
-		return true, raw, mustJSON(map[string]any{"topic": topic, "error": err.Error(), "payload_len": len(raw)})
+		return true, raw, MustJSON(map[string]any{"topic": topic, "error": err.Error(), "payload_len": len(raw)})
 	}
-	return true, raw, mustJSON(record)
+	return true, raw, MustJSON(record)
 }
 
-// expandPSK 展开 Base64 PSK，兼容 Meshtastic 默认索引 PSK 和短 key 补零规则。
-func expandPSK(pskBase64 string) ([]byte, error) {
+// ExpandPSK 展开 Base64 PSK，兼容 Meshtastic 默认索引 PSK 和短 key 补零规则。
+func ExpandPSK(pskBase64 string) ([]byte, error) {
 	psk, err := base64.StdEncoding.DecodeString(pskBase64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid psk: %w", err)
@@ -131,8 +131,8 @@ func isCompliantMQTTPacket(_ []byte) bool {
 	return true
 }
 
-// mustJSON 将记录编码成 JSON；编码失败时返回包含错误信息的 JSON。
-func mustJSON(record map[string]any) []byte {
+// MustJSON 将记录编码成 JSON；编码失败时返回包含错误信息的 JSON。
+func MustJSON(record map[string]any) []byte {
 	text, err := json.Marshal(record)
 	if err != nil {
 		text, _ = json.Marshal(map[string]any{"error": err.Error()})
