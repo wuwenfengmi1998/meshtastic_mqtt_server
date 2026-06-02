@@ -98,6 +98,33 @@ func MQTTPP(topic string, raw []byte, key []byte) (bool, []byte, []byte) {
 	return true, raw, mustJSON(record)
 }
 
+// expandPSK 展开 Base64 PSK，兼容 Meshtastic 默认索引 PSK 和短 key 补零规则。
+func expandPSK(pskBase64 string) ([]byte, error) {
+	psk, err := base64.StdEncoding.DecodeString(pskBase64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid psk: %w", err)
+	}
+	if len(psk) == 1 {
+		pskIndex := psk[0]
+		if pskIndex == 0 {
+			return []byte{}, nil
+		}
+		key := append([]byte(nil), defaultMeshtasticPSK...)
+		key[len(key)-1] = byte((int(key[len(key)-1]) + int(pskIndex) - 1) & 0xff)
+		return key, nil
+	}
+	if len(psk) > 0 && len(psk) < 16 {
+		return append(psk, make([]byte, 16-len(psk))...), nil
+	}
+	if len(psk) > 16 && len(psk) < 32 {
+		return append(psk, make([]byte, 32-len(psk))...), nil
+	}
+	if len(psk) != 0 && len(psk) != 16 && len(psk) != 24 && len(psk) != 32 {
+		return nil, fmt.Errorf("invalid psk length %d after expansion: AES keys must be 16, 24, or 32 bytes", len(psk))
+	}
+	return psk, nil
+}
+
 // isCompliantMQTTPacket 判断 MQTT 原始数据是否合规；当前预留判断位置，暂时始终返回 true。
 func isCompliantMQTTPacket(_ []byte) bool {
 	// TODO: Add packet compliance checks here.
@@ -568,33 +595,6 @@ func xorHash(data []byte) byte {
 		result ^= b
 	}
 	return result
-}
-
-// expandPSK 展开 Base64 PSK，兼容 Meshtastic 默认索引 PSK 和短 key 补零规则。
-func expandPSK(pskBase64 string) ([]byte, error) {
-	psk, err := base64.StdEncoding.DecodeString(pskBase64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid psk: %w", err)
-	}
-	if len(psk) == 1 {
-		pskIndex := psk[0]
-		if pskIndex == 0 {
-			return []byte{}, nil
-		}
-		key := append([]byte(nil), defaultMeshtasticPSK...)
-		key[len(key)-1] = byte((int(key[len(key)-1]) + int(pskIndex) - 1) & 0xff)
-		return key, nil
-	}
-	if len(psk) > 0 && len(psk) < 16 {
-		return append(psk, make([]byte, 16-len(psk))...), nil
-	}
-	if len(psk) > 16 && len(psk) < 32 {
-		return append(psk, make([]byte, 32-len(psk))...), nil
-	}
-	if len(psk) != 0 && len(psk) != 16 && len(psk) != 24 && len(psk) != 32 {
-		return nil, fmt.Errorf("invalid psk length %d after expansion: AES keys must be 16, 24, or 32 bytes", len(psk))
-	}
-	return psk, nil
 }
 
 // channelHash 根据 channel 名称和 PSK 计算 Meshtastic 加密包中的 channel hash。
