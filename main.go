@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -25,14 +26,23 @@ const (
 	defaultPSK      = "AQ=="
 	defaultTopic    = "msh/US/#"
 
-	ansiGreenBGWhiteText = "\033[42;37m"
-	ansiBlueBGWhiteText  = "\033[44;37m"
-	ansiRedBGWhiteText   = "\033[41;37m"
-	ansiReset            = "\033[0m"
+	ansiGreenBGWhiteText  = "\033[42;37m"
+	ansiBlueBGWhiteText   = "\033[44;37m"
+	ansiPurpleBGWhiteText = "\033[45;37m"
+	ansiCyanBGBlackText   = "\033[46;30m"
+	ansiYellowBGBlackText = "\033[43;30m"
+	ansiGrayBGWhiteText   = "\033[100;37m"
+	ansiRedBGWhiteText    = "\033[41;37m"
+	ansiReset             = "\033[0m"
 
-	unknownApp   = 0
-	nodeInfoApp  = 4
-	mapReportApp = 73
+	unknownApp     = 0
+	textMessageApp = 1
+	positionApp    = 3
+	nodeInfoApp    = 4
+	routingApp     = 5
+	telemetryApp   = 67
+	tracerouteApp  = 70
+	mapReportApp   = 73
 )
 
 var defaultMeshtasticPSK = []byte{
@@ -203,6 +213,9 @@ func handleMessage(key []byte) mqtt.MessageHandler {
 		record, err := describePacket(msg.Topic(), env, key)
 		if err != nil {
 			printJSON(map[string]any{"topic": msg.Topic(), "error": err.Error(), "payload_len": len(msg.Payload())})
+			return
+		}
+		if record["type"] == "empty_packet" {
 			return
 		}
 		printJSON(record)
@@ -511,6 +524,16 @@ func describePacket(topic string, env *serviceEnvelope, key []byte) (map[string]
 			return nil, err
 		}
 		return merge(decodedBase, record), nil
+	case textMessageApp:
+		return merge(decodedBase, decodeTextMessage(packet)), nil
+	case positionApp:
+		return merge(decodedBase, map[string]any{"type": "position"}), nil
+	case telemetryApp:
+		return merge(decodedBase, map[string]any{"type": "telemetry"}), nil
+	case routingApp:
+		return merge(decodedBase, map[string]any{"type": "routing"}), nil
+	case tracerouteApp:
+		return merge(decodedBase, map[string]any{"type": "traceroute"}), nil
 	default:
 		return merge(decodedBase, map[string]any{"type": "decoded_packet"}), nil
 	}
@@ -602,6 +625,21 @@ func decodeMapReport(packet *meshPacket) (map[string]any, error) {
 	}, nil
 }
 
+func decodeTextMessage(packet *meshPacket) map[string]any {
+	text := string(packet.Decoded.Payload)
+	record := map[string]any{
+		"type":     "text_message",
+		"from":     nodeNumToID(packet.From),
+		"from_num": packet.From,
+		"text":     text,
+	}
+	if !utf8.Valid(packet.Decoded.Payload) {
+		record["text"] = nil
+		record["payload_hex"] = hex.EncodeToString(packet.Decoded.Payload)
+	}
+	return record
+}
+
 func merge(base map[string]any, extra map[string]any) map[string]any {
 	out := make(map[string]any, len(base)+len(extra))
 	for k, v := range base {
@@ -619,14 +657,24 @@ func printJSON(record map[string]any) {
 		text, _ = json.Marshal(map[string]any{"error": err.Error()})
 	}
 
-	switch {
-	case record["decrypt_success"] == true:
+	switch record["type"] {
+	case "nodeinfo":
 		fmt.Printf("%s%s%s\n", ansiGreenBGWhiteText, text, ansiReset)
-	case record["error"] != nil:
-		fmt.Printf("%s%s%s\n", ansiRedBGWhiteText, text, ansiReset)
-	case record["type"] == "decoded_packet":
+	case "map_report":
 		fmt.Printf("%s%s%s\n", ansiBlueBGWhiteText, text, ansiReset)
+	case "text_message":
+		fmt.Printf("%s%s%s\n", ansiPurpleBGWhiteText, text, ansiReset)
+	case "position":
+		fmt.Printf("%s%s%s\n", ansiCyanBGBlackText, text, ansiReset)
+	case "telemetry":
+		fmt.Printf("%s%s%s\n", ansiYellowBGBlackText, text, ansiReset)
+	case "routing", "traceroute":
+		fmt.Printf("%s%s%s\n", ansiGrayBGWhiteText, text, ansiReset)
 	default:
+		if record["error"] != nil {
+			fmt.Printf("%s%s%s\n", ansiRedBGWhiteText, text, ansiReset)
+			return
+		}
 		fmt.Println(string(text))
 	}
 }
