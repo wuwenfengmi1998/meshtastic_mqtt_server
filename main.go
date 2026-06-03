@@ -45,21 +45,53 @@ func (h *meshtasticFilterHook) Provides(b byte) bool {
 }
 
 // OnPublish 在 broker 转发消息前校验 payload；无效消息会被拒绝并丢弃。
-func (h *meshtasticFilterHook) OnPublish(_ *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
+func (h *meshtasticFilterHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
 	valid, _, record := mqtpp.MQTTPP(pk.TopicName, pk.Payload, h.key)
 	if !valid {
 		return pk, packets.ErrRejectPacket
 	}
 
-	if record["type"] == "nodeinfo" && h.store != nil {
-		if err := h.store.UpsertNodeInfo(record); err != nil {
-			printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
+	switch record["type"] {
+	case "nodeinfo", "map_report":
+		if h.store != nil {
+			if err := h.store.UpsertNodeInfoMap(record); err != nil {
+				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
+			}
+		}
+	case "text_message":
+		if h.store != nil {
+			if err := h.store.InsertTextMessage(record, mqttClientInfoFromClient(cl)); err != nil {
+				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
+			}
 		}
 	}
 	if record["type"] != "empty_packet" {
 		printJSON(record)
 	}
 	return pk, nil
+}
+
+func mqttClientInfoFromClient(cl *mqtt.Client) mqttClientInfo {
+	if cl == nil {
+		return mqttClientInfo{}
+	}
+
+	info := mqttClientInfo{
+		ClientID:   cl.ID,
+		Username:   string(cl.Properties.Username),
+		Listener:   cl.Net.Listener,
+		RemoteAddr: cl.Net.Remote,
+	}
+	if info.RemoteAddr == "" && cl.Net.Conn != nil && cl.Net.Conn.RemoteAddr() != nil {
+		info.RemoteAddr = cl.Net.Conn.RemoteAddr().String()
+	}
+	if host, port, err := net.SplitHostPort(info.RemoteAddr); err == nil {
+		info.RemoteHost = host
+		info.RemotePort = port
+	} else {
+		info.RemoteHost = info.RemoteAddr
+	}
+	return info
 }
 
 // main 是程序入口，负责解析参数并启动 MQTT broker。

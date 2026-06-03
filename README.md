@@ -99,13 +99,35 @@ meshtastic:
 
 ## 数据库持久化
 
-程序默认启用 SQLite，并在收到 `nodeinfo` 数据包时写入 `nodeinfo` 表。
+程序默认启用 SQLite，并持久化以下数据：
 
-- 当前只持久化 `type == "nodeinfo"` 的记录
+- `nodeinfo_map`：融合 `type == "nodeinfo"` 和 `type == "map_report"` 的节点信息
+- `text_message`：追加保存 `type == "text_message"` 的聊天消息
+
+`nodeinfo_map` 规则：
+
+- `nodeinfo` 表不再使用；如果旧数据库中已经存在该表，程序不会自动删除它
 - 同一节点以 `node_id`（即解析结果中的 `from`，例如 `!a8dfd867`）作为主键
-- 重复收到同一节点时不会插入重复行，只更新节点字段、`content_json` 和 `updated_at`
+- 重复收到同一节点时不会插入重复行，只更新 `updated_at`、`content_json`、`latest_type` 和本次记录中有值的字段
+- `nodeinfo` 独有字段和 `map_report` 独有字段会互相保留；例如后续 `map_report` 不会清空已有的 `public_key`
 - `first_seen_at` 保留第一次写入时间
-- `content_json` 保存完整的解析结果 JSON
+- `content_json` 保存最新一次 `nodeinfo` 或 `map_report` 的完整解析结果 JSON
+
+`text_message` 规则：
+
+- 使用自增 `id` 作为主键
+- 每条聊天消息都会新增一行，不做去重
+- 保存 `from_id`、`from_num`、`text`、`payload_hex`、topic、packet 元数据和完整 `content_json`
+- 保存 MQTT 客户端信息：`mqtt_client_id`、`mqtt_username`、`mqtt_listener`、`mqtt_remote_addr`、`mqtt_remote_host`、`mqtt_remote_port`
+
+查询最近聊天消息示例：
+
+```sql
+SELECT id, created_at, from_id, text, mqtt_remote_host
+FROM text_message
+ORDER BY id DESC
+LIMIT 20;
+```
 
 SQLite 默认路径：
 
