@@ -1,4 +1,5 @@
 import type {
+  AdminLoginLogsResponse,
   AdminLoginResponse,
   AdminManagedUserResponse,
   AdminMqttStatus,
@@ -94,4 +95,8 @@ export function createAdminUser(username: string, password: string): Promise<Adm
 
 export function updateAdminUserPassword(id: number, password: string): Promise<AdminManagedUserResponse> {
   return putJSON<AdminManagedUserResponse>(`/api/admin/users/${id}/password`, { password })
+}
+
+export function getAdminLoginLogs(limit = 100, offset = 0): Promise<AdminLoginLogsResponse> {
+  return getJSON<AdminLoginLogsResponse>(`/api/admin/log/login?limit=${limit}&offset=${offset}`)
 }

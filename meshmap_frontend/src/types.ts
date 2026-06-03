@@ -106,6 +106,24 @@ export interface AdminManagedUserResponse {
   user: AdminManagedUser
 }
 
+export interface AdminLoginLog {
+  id: number
+  username: string
+  user_id: number | null
+  success: boolean
+  reason: string
+  remote_addr: string
+  remote_host: string
+  user_agent: string
+  created_at: string
+}
+
+export interface AdminLoginLogsResponse {
+  items: AdminLoginLog[]
+  limit: number
+  offset: number
+}
+
 export interface AdminMqttClient {
   client_id: string
   username: string

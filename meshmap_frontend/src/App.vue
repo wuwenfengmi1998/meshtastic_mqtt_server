@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { getAdminMe, getHealth, getMapReports, getNodeInfo, getPositions, getTextMessages } from './api'
+import { adminLogout, getAdminMe, getHealth, getMapReports, getNodeInfo, getPositions, getTextMessages } from './api'
 import AdminDashboard from './components/AdminDashboard.vue'
 import AdminLogin from './components/AdminLogin.vue'
+import AdminLoginLogs from './components/AdminLoginLogs.vue'
+import AdminUsers from './components/AdminUsers.vue'
 import ChatPanel from './components/ChatPanel.vue'
 import MeshMap from './components/MeshMap.vue'
 import NodeListPanel from './components/NodeListPanel.vue'
 import type { AdminUser, HealthStatus, MapNode, MapReport, NodeInfo, NodeInfoById, PositionRecord, TextMessage } from './types'
 
-const isAdminPage = window.location.pathname === '/admin'
+const adminPath = window.location.pathname
+const isAdminPage = adminPath.startsWith('/admin')
 const adminUser = ref<AdminUser | null>(null)
 const adminChecking = ref(false)
 
@@ -171,6 +174,14 @@ async function checkAdminSession() {
   }
 }
 
+async function logoutAdmin() {
+  try {
+    await adminLogout()
+  } finally {
+    adminUser.value = null
+  }
+}
+
 onMounted(() => {
   if (isAdminPage) {
     checkAdminSession()
@@ -196,6 +207,11 @@ onBeforeUnmount(() => {
       </div>
       <div class="topbar-actions">
         <template v-if="isAdminPage">
+          <nav v-if="adminUser" class="admin-nav">
+            <a href="/admin" :class="{ active: adminPath === '/admin' }">服务状态</a>
+            <a href="/admin/users" :class="{ active: adminPath === '/admin/users' }">用户管理</a>
+            <a href="/admin/log/login" :class="{ active: adminPath === '/admin/log/login' }">登录日志</a>
+          </nav>
           <a class="topbar-link" href="/">返回地图</a>
         </template>
         <template v-else>
@@ -211,7 +227,18 @@ onBeforeUnmount(() => {
 
     <template v-if="isAdminPage">
       <div v-if="adminChecking" class="panel admin-loading">正在检查登录状态...</div>
-      <AdminDashboard v-else-if="adminUser" :user="adminUser" @logout="adminUser = null" />
+      <template v-else-if="adminUser">
+        <div class="panel admin-session-card">
+          <div>
+            <p class="eyebrow">Session</p>
+            <h2>当前登录：{{ adminUser.username }}</h2>
+          </div>
+          <button class="admin-button" @click="logoutAdmin">退出登录</button>
+        </div>
+        <AdminUsers v-if="adminPath === '/admin/users'" :user="adminUser" />
+        <AdminLoginLogs v-else-if="adminPath === '/admin/log/login'" />
+        <AdminDashboard v-else />
+      </template>
       <AdminLogin v-else @login="adminUser = $event" />
     </template>
 

@@ -75,6 +75,22 @@ func (userRecord) TableName() string {
 	return "users"
 }
 
+type loginLogRecord struct {
+	ID         uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	Username   string    `gorm:"column:username;index"`
+	UserID     *uint64   `gorm:"column:user_id;index"`
+	Success    bool      `gorm:"column:success;not null;index"`
+	Reason     string    `gorm:"column:reason;not null"`
+	RemoteAddr string    `gorm:"column:remote_addr"`
+	RemoteHost string    `gorm:"column:remote_host"`
+	UserAgent  string    `gorm:"column:user_agent"`
+	CreatedAt  time.Time `gorm:"column:created_at;autoCreateTime;index"`
+}
+
+func (loginLogRecord) TableName() string {
+	return "login_log"
+}
+
 type nodeInfoRecord struct {
 	NodeID      string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum     int64     `gorm:"column:node_num;not null;index"`
@@ -268,6 +284,7 @@ func (s *store) migrate() error {
 			model any
 		}{
 			{label: "users", model: &userRecord{}},
+			{label: "login_log", model: &loginLogRecord{}},
 			{label: "nodeinfo", model: &nodeInfoRecord{}},
 			{label: "map_report", model: &mapReportRecord{}},
 			{label: "text_message", model: &textMessageRecord{}},

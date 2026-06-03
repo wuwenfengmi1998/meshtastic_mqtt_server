@@ -14,7 +14,7 @@ func TestOpenStoreCreatesTables(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	for _, table := range []string{"users", "nodeinfo", "map_report", "text_message", "position", "telemetry", "routing", "traceroute"} {
+	for _, table := range []string{"users", "login_log", "nodeinfo", "map_report", "text_message", "position", "telemetry", "routing", "traceroute"} {
 		var name string
 		if err := rawTestDB(t, st).QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name); err != nil {
 			t.Fatalf("%s table missing: %v", table, err)
@@ -287,6 +287,36 @@ func TestUpdateUserPasswordMissingUser(t *testing.T) {
 
 	if _, err := st.UpdateUserPassword(999, "new-secret"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("UpdateUserPassword() error = %v, want record not found", err)
+	}
+}
+
+func TestInsertAndListLoginLogs(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	userID := uint64(1)
+	if err := st.InsertLoginLog(loginLogRecord{Username: "admin", UserID: &userID, Success: true, Reason: "success", RemoteAddr: "127.0.0.1:1234", RemoteHost: "127.0.0.1", UserAgent: "test-agent"}); err != nil {
+		t.Fatalf("InsertLoginLog(success) error = %v", err)
+	}
+	if err := st.InsertLoginLog(loginLogRecord{Username: "admin", Success: false, Reason: "invalid username or password", RemoteAddr: "127.0.0.1:1235", RemoteHost: "127.0.0.1", UserAgent: "test-agent"}); err != nil {
+		t.Fatalf("InsertLoginLog(failure) error = %v", err)
+	}
+
+	logs, err := st.ListLoginLogs(listOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListLoginLogs() error = %v", err)
+	}
+	if len(logs) != 2 {
+		t.Fatalf("login logs len = %d, want 2", len(logs))
+	}
+	if logs[0].ID <= logs[1].ID {
+		t.Fatalf("login logs not newest first: ids %d, %d", logs[0].ID, logs[1].ID)
+	}
+	if logs[0].Success || logs[0].Reason != "invalid username or password" {
+		t.Fatalf("latest log = %#v, want failure", logs[0])
+	}
+	if logs[1].UserID == nil || *logs[1].UserID != userID || !logs[1].Success {
+		t.Fatalf("success log = %#v, want user id and success", logs[1])
 	}
 }
 

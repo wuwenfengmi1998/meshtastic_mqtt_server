@@ -103,15 +103,32 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 	userDTO := func(user userRecord) gin.H {
 		return gin.H{"id": user.ID, "username": user.Username, "role": user.Role, "created_at": user.CreatedAt, "updated_at": user.UpdatedAt}
 	}
+	loginLogDTO := func(row loginLogRecord) gin.H {
+		return gin.H{"id": row.ID, "username": row.Username, "user_id": ptrUint64(row.UserID), "success": row.Success, "reason": row.Reason, "remote_addr": row.RemoteAddr, "remote_host": row.RemoteHost, "user_agent": row.UserAgent, "created_at": row.CreatedAt}
+	}
+	remoteInfo := func(c *gin.Context) (string, string) {
+		remoteAddr := c.Request.RemoteAddr
+		remoteHost, _, err := net.SplitHostPort(remoteAddr)
+		if err != nil || remoteHost == "" {
+			remoteHost = remoteAddr
+		}
+		return remoteAddr, remoteHost
+	}
+	recordLogin := func(c *gin.Context, username string, userID *uint64, success bool, reason string) {
+		remoteAddr, remoteHost := remoteInfo(c)
+		_ = store.InsertLoginLog(loginLogRecord{Username: username, UserID: userID, Success: success, Reason: reason, RemoteAddr: remoteAddr, RemoteHost: remoteHost, UserAgent: c.GetHeader("User-Agent")})
+	}
 
 	r.POST("/login", func(c *gin.Context) {
 		var req loginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
+			recordLogin(c, "", nil, false, "invalid request")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid login request"})
 			return
 		}
 		user, err := store.GetUserByUsername(req.Username)
 		if err != nil || user.Role != adminRole || !verifyPassword(user.PasswordHash, req.Password) {
+			recordLogin(c, req.Username, nil, false, "invalid username or password")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 			return
 		}
@@ -120,6 +137,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		recordLogin(c, req.Username, &user.ID, true, "success")
 		http.SetCookie(c.Writer, cookie)
 		c.JSON(http.StatusOK, gin.H{"user": adminUserResponse(*user)})
 	})
@@ -191,6 +209,14 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"user": userDTO(*user)})
+	})
+	protected.GET("/log/login", func(c *gin.Context) {
+		opts, ok := parseListOptions(c)
+		if !ok {
+			return
+		}
+		rows, err := store.ListLoginLogs(opts)
+		writeListResponse(c, rows, opts, err, loginLogDTO)
 	})
 }
 
@@ -390,6 +416,13 @@ func ptrString(value *string) any {
 }
 
 func ptrInt64(value *int64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func ptrUint64(value *uint64) any {
 	if value == nil {
 		return nil
 	}
