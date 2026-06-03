@@ -49,6 +49,10 @@ function putJSON<T>(path: string, body?: unknown): Promise<T> {
   })
 }
 
+function deleteJSON<T>(path: string): Promise<T> {
+  return requestJSON<T>(path, { method: 'DELETE' })
+}
+
 export function getHealth(): Promise<HealthStatus> {
   return getJSON<HealthStatus>('/api/health')
 }
@@ -63,6 +67,14 @@ export function getMapReports(limit = 500, offset = 0): Promise<ListResponse<Map
 
 export function getTextMessages(limit = 100, offset = 0): Promise<ListResponse<TextMessage>> {
   return getJSON<ListResponse<TextMessage>>(`/api/text-messages?limit=${limit}&offset=${offset}`)
+}
+
+export function deleteTextMessage(id: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/text-messages/${id}`)
+}
+
+export function deleteNode(nodeId: string): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/nodes/${encodeURIComponent(nodeId)}`)
 }
 
 export function getPositions(limit = 500): Promise<ListResponse<PositionRecord>> {

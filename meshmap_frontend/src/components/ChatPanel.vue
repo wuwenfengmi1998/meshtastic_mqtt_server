@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUpdate, onMounted, onUpdated, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref } from 'vue'
 import type { NodeInfoById, TextMessage } from '../types'
 
 const props = defineProps<{
@@ -8,14 +8,19 @@ const props = defineProps<{
   selectedNodeId: string | null
   loadingOlder: boolean
   hasMoreMessages: boolean
+  isAdmin: boolean
 }>()
 
 const emit = defineEmits<{
   'select-node': [nodeId: string]
   'load-older': []
+  'delete-message': [message: TextMessage]
 }>()
 
 const panelRef = ref<HTMLElement | null>(null)
+const menuMessage = ref<TextMessage | null>(null)
+const menuX = ref(0)
+const menuY = ref(0)
 const topThreshold = 8
 const bottomThreshold = 40
 
@@ -44,7 +49,35 @@ function clearRestoreState() {
   restoreMessageCount = 0
 }
 
+function closeMessageMenu() {
+  menuMessage.value = null
+}
+
+function openMessageMenu(message: TextMessage, event: MouseEvent) {
+  if (!props.isAdmin) {
+    return
+  }
+  emit('select-node', message.from_id)
+  menuMessage.value = message
+  menuX.value = event.clientX
+  menuY.value = event.clientY
+}
+
+function deleteSelectedMessage() {
+  if (menuMessage.value) {
+    emit('delete-message', menuMessage.value)
+  }
+  closeMessageMenu()
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    closeMessageMenu()
+  }
+}
+
 function handleScroll() {
+  closeMessageMenu()
   const el = panelRef.value
   if (
     !el ||
@@ -72,12 +105,19 @@ onBeforeUpdate(() => {
 })
 
 onMounted(async () => {
+  window.addEventListener('click', closeMessageMenu)
+  window.addEventListener('keydown', handleKeydown)
   await nextTick()
   const el = panelRef.value
   if (el) {
     el.scrollTop = el.scrollHeight
     didInitialScroll = true
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', closeMessageMenu)
+  window.removeEventListener('keydown', handleKeydown)
 })
 
 onUpdated(() => {
@@ -124,6 +164,7 @@ onUpdated(() => {
       :class="{ selected: selectedNodeId === message.from_id }"
       type="button"
       @click="emit('select-node', message.from_id)"
+      @contextmenu.prevent.stop="openMessageMenu(message, $event)"
     >
       <span class="chat-meta">
         <strong>{{ senderName(message) }}</strong>
@@ -132,5 +173,14 @@ onUpdated(() => {
       <span class="chat-topic">{{ message.topic }}</span>
       <span class="chat-text">{{ message.text || '[binary]' }}</span>
     </button>
+
+    <div
+      v-if="menuMessage"
+      class="context-menu"
+      :style="{ left: `${menuX}px`, top: `${menuY}px` }"
+      @click.stop
+    >
+      <button class="danger" type="button" @click="deleteSelectedMessage">删除</button>
+    </div>
   </aside>
 </template>

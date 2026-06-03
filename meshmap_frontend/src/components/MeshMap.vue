@@ -7,14 +7,19 @@ import type { MapNode } from '../types'
 const props = defineProps<{
   nodes: MapNode[]
   selectedNodeId: string | null
+  isAdmin: boolean
 }>()
 
 const emit = defineEmits<{
   'select-node': [nodeId: string]
   'clear-node': []
+  'delete-node': [nodeId: string]
 }>()
 
 const mapEl = ref<HTMLElement | null>(null)
+const menuNodeId = ref<string | null>(null)
+const menuX = ref(0)
+const menuY = ref(0)
 let map: L.Map | null = null
 let markerLayer: L.LayerGroup | null = null
 let hasFitBounds = false
@@ -37,7 +42,10 @@ onMounted(async () => {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap contributors',
   }).addTo(map)
-  map.on('click', () => emit('clear-node'))
+  map.on('click', () => {
+    closeNodeMenu()
+    emit('clear-node')
+  })
   markerLayer = L.layerGroup().addTo(map)
   renderMarkers(true)
 })

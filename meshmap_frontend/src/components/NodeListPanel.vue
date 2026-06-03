@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { NodeInfo } from '../types'
 
 const props = defineProps<{
@@ -9,20 +9,62 @@ const props = defineProps<{
   pageSize: number
   total: number
   loading: boolean
+  isAdmin: boolean
 }>()
 
 const emit = defineEmits<{
   'select-node': [nodeId: string]
   'page-change': [page: number]
+  'delete-node': [nodeId: string]
 }>()
 
 const totalPages = computed(() => Math.max(1, Math.ceil(props.total / props.pageSize)))
 const canPrev = computed(() => props.page > 1)
 const canNext = computed(() => props.page < totalPages.value)
+const menuNode = ref<NodeInfo | null>(null)
+const menuX = ref(0)
+const menuY = ref(0)
 
 function formatTime(value: string): string {
   return new Date(value).toLocaleString()
 }
+
+function closeNodeMenu() {
+  menuNode.value = null
+}
+
+function openNodeMenu(node: NodeInfo, event: MouseEvent) {
+  if (!props.isAdmin) {
+    return
+  }
+  emit('select-node', node.node_id)
+  menuNode.value = node
+  menuX.value = event.clientX
+  menuY.value = event.clientY
+}
+
+function deleteSelectedNode() {
+  if (menuNode.value) {
+    emit('delete-node', menuNode.value.node_id)
+  }
+  closeNodeMenu()
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    closeNodeMenu()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('click', closeNodeMenu)
+  window.addEventListener('keydown', handleKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', closeNodeMenu)
+  window.removeEventListener('keydown', handleKeydown)
+})
 </script>
 
 <template>
@@ -35,7 +77,7 @@ function formatTime(value: string): string {
       <span class="badge">共 {{ total }} 条</span>
     </div>
 
-    <div class="node-table-wrap">
+    <div class="node-table-wrap" @scroll="closeNodeMenu">
       <table class="node-table">
         <thead>
           <tr>
@@ -55,6 +97,7 @@ function formatTime(value: string): string {
             class="node-row"
             :class="{ selected: selectedNodeId === node.node_id }"
             @click="emit('select-node', node.node_id)"
+            @contextmenu.prevent.stop="openNodeMenu(node, $event)"
           >
             <td>{{ node.node_id }}</td>
             <td>{{ node.long_name || '-' }}</td>
@@ -67,6 +110,15 @@ function formatTime(value: string): string {
         </tbody>
       </table>
       <div v-if="nodes.length === 0" class="empty">暂无节点数据</div>
+    </div>
+
+    <div
+      v-if="menuNode"
+      class="context-menu"
+      :style="{ left: `${menuX}px`, top: `${menuY}px` }"
+      @click.stop
+    >
+      <button class="danger" type="button" @click="deleteSelectedNode">删除</button>
     </div>
 
     <div class="pagination">

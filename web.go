@@ -218,6 +218,36 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 		rows, err := store.ListLoginLogs(opts)
 		writeListResponse(c, rows, opts, err, loginLogDTO)
 	})
+	protected.DELETE("/text-messages/:id", func(c *gin.Context) {
+		id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+		if err != nil || id == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid message id"})
+			return
+		}
+		if err := store.DeleteTextMessage(id); errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "message not found"})
+			return
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+	protected.DELETE("/nodes/:id", func(c *gin.Context) {
+		nodeID := c.Param("id")
+		if nodeID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid node id"})
+			return
+		}
+		if err := store.DeleteNode(nodeID); errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+			return
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 }
 
 func registerNodeInfoRoutes(r gin.IRouter, store *store, path string) {

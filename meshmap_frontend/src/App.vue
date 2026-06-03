@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { adminLogout, getAdminMe, getHealth, getMapReports, getNodeInfo, getPositions, getTextMessages } from './api'
+import { adminLogout, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReports, getNodeInfo, getPositions, getTextMessages } from './api'
 import AdminDashboard from './components/AdminDashboard.vue'
 import AdminLogin from './components/AdminLogin.vue'
 import AdminLoginLogs from './components/AdminLoginLogs.vue'
@@ -182,11 +182,36 @@ async function logoutAdmin() {
   }
 }
 
+async function deleteMessage(message: TextMessage) {
+  try {
+    await deleteTextMessage(message.id)
+    messages.value = messages.value.filter((item) => item.id !== message.id)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+async function deleteNodeById(nodeId: string) {
+  try {
+    await deleteNode(nodeId)
+    nodeInfoSource.value = nodeInfoSource.value.filter((node) => node.node_id !== nodeId)
+    pagedNodeInfo.value = pagedNodeInfo.value.filter((node) => node.node_id !== nodeId)
+    mapReportSource.value = mapReportSource.value.filter((report) => report.node_id !== nodeId)
+    if (selectedNodeId.value === nodeId) {
+      selectedNodeId.value = null
+    }
+    await loadNodePage(nodePage.value, false)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
 onMounted(() => {
   if (isAdminPage) {
     checkAdminSession()
     return
   }
+  checkAdminSession()
   refresh()
   refreshTimer = window.setInterval(() => refresh(false), 5000)
 })
@@ -252,14 +277,18 @@ onBeforeUnmount(() => {
           :selected-node-id="selectedNodeId"
           :loading-older="chatLoadingOlder"
           :has-more-messages="chatHasMore"
+          :is-admin="!!adminUser"
           @select-node="selectedNodeId = $event"
           @load-older="loadOlderMessages"
+          @delete-message="deleteMessage"
         />
         <MeshMap
           :nodes="mapNodes"
           :selected-node-id="selectedNodeId"
+          :is-admin="!!adminUser"
           @select-node="selectedNodeId = $event"
           @clear-node="selectedNodeId = null"
+          @delete-node="deleteNodeById"
         />
       </section>
 
@@ -270,8 +299,10 @@ onBeforeUnmount(() => {
         :page-size="nodePageSize"
         :total="nodeTotal"
         :loading="nodePageLoading || loading"
+        :is-admin="!!adminUser"
         @select-node="selectedNodeId = $event"
         @page-change="loadNodePage"
+        @delete-node="deleteNodeById"
       />
     </template>
   </main>

@@ -83,6 +83,23 @@ func (s *store) GetMapReport(nodeID string) (*mapReportRecord, error) {
 	return &row, nil
 }
 
+func (s *store) DeleteNode(nodeID string) error {
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		nodeResult := tx.Where("node_id = ?", nodeID).Delete(&nodeInfoRecord{})
+		if nodeResult.Error != nil {
+			return nodeResult.Error
+		}
+		reportResult := tx.Where("node_id = ?", nodeID).Delete(&mapReportRecord{})
+		if reportResult.Error != nil {
+			return reportResult.Error
+		}
+		if nodeResult.RowsAffected+reportResult.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
+}
+
 func applyNodeFilters(q *gorm.DB, opts listOptions) *gorm.DB {
 	if opts.NodeID != "" {
 		q = q.Where("node_id = ?", opts.NodeID)
@@ -99,6 +116,17 @@ func applyNodeFilters(q *gorm.DB, opts listOptions) *gorm.DB {
 func (s *store) ListTextMessages(opts listOptions) ([]textMessageRecord, error) {
 	var rows []textMessageRecord
 	return rows, s.listAppendRows(opts, &rows).Error
+}
+
+func (s *store) DeleteTextMessage(id uint64) error {
+	result := s.db.Where("id = ?", id).Delete(&textMessageRecord{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (s *store) ListPositions(opts listOptions) ([]positionRecord, error) {

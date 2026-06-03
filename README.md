@@ -131,6 +131,7 @@ GET /api/admin/log/login
 GET /api/admin/users
 POST /api/admin/users
 PUT /api/admin/users/:id/password
+DELETE /api/admin/text-messages/:id
 GET /api/nodeinfo
 GET /api/nodeinfo/:id
 GET /api/map-reports

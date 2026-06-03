@@ -361,6 +361,32 @@ func TestInsertTextMessageAppendsRows(t *testing.T) {
 	}
 }
 
+func TestDeleteTextMessageDeletesRows(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.InsertTextMessage(textMessageTestRecord("hello"), mqttClientInfo{}); err != nil {
+		t.Fatalf("InsertTextMessage() error = %v", err)
+	}
+	var id uint64
+	if err := rawTestDB(t, st).QueryRow("SELECT id FROM text_message LIMIT 1").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteTextMessage(id); err != nil {
+		t.Fatalf("DeleteTextMessage() error = %v", err)
+	}
+	var count int
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM text_message WHERE id = ?", id).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("text_message count = %d, want 0", count)
+	}
+	if err := st.DeleteTextMessage(id); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("DeleteTextMessage(missing) error = %v, want record not found", err)
+	}
+}
+
 func TestInsertTextMessageStoresClientInfo(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
