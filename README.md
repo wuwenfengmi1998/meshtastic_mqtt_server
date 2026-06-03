@@ -24,8 +24,36 @@ go run .
 - host：`0.0.0.0`
 - port：`1883`
 - PSK：`AQ==`
+- TLS：关闭
 
-也可以指定监听地址和 PSK：
+首次启动会自动生成配置文件；之后每次启动都会检查配置项，缺失项会自动补全并写回。
+
+配置文件路径：
+
+- Unix/Linux：`/etc/mesh_mqtt_go/config.yaml`
+- Windows 测试：`./win/etc/mesh_mqtt_go/config.yaml`
+
+默认配置内容：
+
+```yaml
+mqtt:
+  host: 0.0.0.0
+  port: 1883
+  tls:
+    enabled: false
+    cert_file: ""
+    key_file: ""
+meshtastic:
+  psk: AQ==
+```
+
+配置优先级：
+
+```text
+内置默认值 < 配置文件 < 命令行参数
+```
+
+也可以用命令行临时覆盖监听地址、PSK 和 TLS 设置：
 
 ```bash
 go run . --host 127.0.0.1 --port 1883 --psk AQ==
@@ -34,10 +62,29 @@ go run . --host 127.0.0.1 --port 1883 --psk AQ==
 ## 参数
 
 ```text
---host  MQTT broker listen host
---port  MQTT broker listen port
---psk   Base64 channel PSK used to try decrypting encrypted packets
+--host      MQTT broker listen host
+--port      MQTT broker listen port
+--psk       Base64 channel PSK used to try decrypting encrypted packets
+--tls       Enable MQTT TLS listener
+--tls-cert  MQTT TLS certificate file
+--tls-key   MQTT TLS private key file
 ```
+
+## TLS 配置示例
+
+```yaml
+mqtt:
+  host: 0.0.0.0
+  port: 8883
+  tls:
+    enabled: true
+    cert_file: ./certs/server.crt
+    key_file: ./certs/server.key
+meshtastic:
+  psk: AQ==
+```
+
+启用 TLS 后，`cert_file` 和 `key_file` 必须指向可读取的证书和私钥文件。
 
 ## 转发规则
 

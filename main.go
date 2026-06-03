@@ -18,9 +18,6 @@ import (
 )
 
 const (
-	defaultHost = "0.0.0.0"
-	defaultPSK  = "AQ=="
-
 	ansiGreenBGWhiteText  = "\033[42;37m"
 	ansiBlueBGWhiteText   = "\033[44;37m"
 	ansiPurpleBGWhiteText = "\033[45;37m"
@@ -30,13 +27,6 @@ const (
 	ansiRedBGWhiteText    = "\033[41;37m"
 	ansiReset             = "\033[0m"
 )
-
-type config struct {
-	host string
-	port int
-	psk  string
-	key  []byte
-}
 
 type meshtasticFilterHook struct {
 	mqtt.HookBase
@@ -79,15 +69,25 @@ func main() {
 	}
 }
 
-// parseArgs 解析命令行参数，并展开 Meshtastic channel PSK。
+// parseArgs 加载配置文件、解析命令行覆盖项，并展开 Meshtastic channel PSK。
 func parseArgs() (*config, error) {
-	cfg := &config{}
-	flag.StringVar(&cfg.host, "host", defaultHost, "MQTT broker listen host")
-	flag.IntVar(&cfg.port, "port", 1883, "MQTT broker listen port")
-	flag.StringVar(&cfg.psk, "psk", defaultPSK, "Base64 channel PSK used to try decrypting encrypted packets")
+	cfg, err := loadConfig(defaultConfigPath())
+	if err != nil {
+		return nil, err
+	}
+
+	flag.StringVar(&cfg.MQTT.Host, "host", cfg.MQTT.Host, "MQTT broker listen host")
+	flag.IntVar(&cfg.MQTT.Port, "port", cfg.MQTT.Port, "MQTT broker listen port")
+	flag.StringVar(&cfg.Meshtastic.PSK, "psk", cfg.Meshtastic.PSK, "Base64 channel PSK used to try decrypting encrypted packets")
+	flag.BoolVar(&cfg.MQTT.TLS.Enabled, "tls", cfg.MQTT.TLS.Enabled, "Enable MQTT TLS listener")
+	flag.StringVar(&cfg.MQTT.TLS.CertFile, "tls-cert", cfg.MQTT.TLS.CertFile, "MQTT TLS certificate file")
+	flag.StringVar(&cfg.MQTT.TLS.KeyFile, "tls-key", cfg.MQTT.TLS.KeyFile, "MQTT TLS private key file")
 	flag.Parse()
 
-	key, err := mqtpp.ExpandPSK(cfg.psk)
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+	key, err := mqtpp.ExpandPSK(cfg.Meshtastic.PSK)
 	if err != nil {
 		return nil, err
 	}
@@ -105,15 +105,19 @@ func run(cfg *config) error {
 		return err
 	}
 
-	addr := net.JoinHostPort(cfg.host, strconv.Itoa(cfg.port))
-	listener := listeners.NewTCP(listeners.Config{ID: "tcp", Address: addr})
+	addr := net.JoinHostPort(cfg.MQTT.Host, strconv.Itoa(cfg.MQTT.Port))
+	tlsConfig, err := buildTLSConfig(cfg.MQTT.TLS)
+	if err != nil {
+		return err
+	}
+	listener := listeners.NewTCP(listeners.Config{ID: "tcp", Address: addr, TLSConfig: tlsConfig})
 	if err := server.AddListener(listener); err != nil {
 		return err
 	}
 	if err := server.Serve(); err != nil {
 		return err
 	}
-	printJSON(map[string]any{"event": "broker_started", "address": addr})
+	printJSON(map[string]any{"event": "broker_started", "address": addr, "tls": cfg.MQTT.TLS.Enabled})
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
