@@ -11,7 +11,7 @@ func TestOpenStoreCreatesTables(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	for _, table := range []string{"nodeinfo_map", "text_message"} {
+	for _, table := range []string{"nodeinfo_map", "text_message", "position", "telemetry", "routing", "traceroute"} {
 		var name string
 		if err := rawTestDB(t, st).QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name); err != nil {
 			t.Fatalf("%s table missing: %v", table, err)
@@ -283,6 +283,139 @@ func TestInsertTextMessageRequiresFields(t *testing.T) {
 	}
 }
 
+func TestInsertPositionAppendsRows(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	clientInfo := mqttClientInfo{ClientID: "client-1", RemoteAddr: "127.0.0.1:54321", RemoteHost: "127.0.0.1", RemotePort: "54321"}
+	if err := st.InsertPosition(positionTestRecord(), clientInfo); err != nil {
+		t.Fatalf("first InsertPosition() error = %v", err)
+	}
+	if err := st.InsertPosition(positionTestRecord(), clientInfo); err != nil {
+		t.Fatalf("second InsertPosition() error = %v", err)
+	}
+
+	var count int
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM position WHERE from_id = ?", "!12345678").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("position count = %d, want 2", count)
+	}
+
+	var latitude, longitude float64
+	var altitude int64
+	var locationSource, remoteHost string
+	if err := rawTestDB(t, st).QueryRow("SELECT latitude, longitude, altitude, location_source, mqtt_remote_host FROM position ORDER BY id LIMIT 1").Scan(&latitude, &longitude, &altitude, &locationSource, &remoteHost); err != nil {
+		t.Fatal(err)
+	}
+	if latitude != 42.5 || longitude != -83.1 || altitude != 200 || locationSource != "LOC_INTERNAL" || remoteHost != "127.0.0.1" {
+		t.Fatalf("position row = lat %v lon %v alt %v source %q remote %q", latitude, longitude, altitude, locationSource, remoteHost)
+	}
+}
+
+func TestInsertTelemetryAppendsRowsAndStoresMetricsJSON(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.InsertTelemetry(telemetryTestRecord(), mqttClientInfo{}); err != nil {
+		t.Fatalf("InsertTelemetry() error = %v", err)
+	}
+
+	var telemetryType, metricsJSON, contentJSON string
+	if err := rawTestDB(t, st).QueryRow("SELECT telemetry_type, metrics_json, content_json FROM telemetry LIMIT 1").Scan(&telemetryType, &metricsJSON, &contentJSON); err != nil {
+		t.Fatal(err)
+	}
+	if telemetryType != "device_metrics" {
+		t.Fatalf("telemetry_type = %q, want device_metrics", telemetryType)
+	}
+	if !strings.Contains(metricsJSON, "battery_level") || !strings.Contains(metricsJSON, "voltage") {
+		t.Fatalf("metrics_json = %q, want battery_level and voltage", metricsJSON)
+	}
+	if !strings.Contains(contentJSON, "telemetry") {
+		t.Fatalf("content_json = %q, want telemetry", contentJSON)
+	}
+}
+
+func TestInsertRoutingAndTracerouteAppendRows(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.InsertRouting(routingTestRecord(), mqttClientInfo{}); err != nil {
+		t.Fatalf("first InsertRouting() error = %v", err)
+	}
+	if err := st.InsertRouting(routingTestRecord(), mqttClientInfo{}); err != nil {
+		t.Fatalf("second InsertRouting() error = %v", err)
+	}
+	if err := st.InsertTraceroute(tracerouteTestRecord(), mqttClientInfo{}); err != nil {
+		t.Fatalf("first InsertTraceroute() error = %v", err)
+	}
+	if err := st.InsertTraceroute(tracerouteTestRecord(), mqttClientInfo{}); err != nil {
+		t.Fatalf("second InsertTraceroute() error = %v", err)
+	}
+
+	for _, table := range []string{"routing", "traceroute"} {
+		var count int
+		if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM "+table+" WHERE from_id = ?", "!12345678").Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 2 {
+			t.Fatalf("%s count = %d, want 2", table, count)
+		}
+
+		var packetID int64
+		var contentJSON string
+		if err := rawTestDB(t, st).QueryRow("SELECT packet_id, content_json FROM "+table+" ORDER BY id LIMIT 1").Scan(&packetID, &contentJSON); err != nil {
+			t.Fatal(err)
+		}
+		if packetID != 42 || !strings.Contains(contentJSON, table) {
+			t.Fatalf("%s row packet_id=%d content_json=%q", table, packetID, contentJSON)
+		}
+	}
+}
+
+func TestInsertPacketTablesRequireFields(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	tests := []struct {
+		name   string
+		insert func(map[string]any) error
+		record map[string]any
+	}{
+		{name: "position", insert: func(r map[string]any) error { return st.InsertPosition(r, mqttClientInfo{}) }, record: positionTestRecord()},
+		{name: "telemetry", insert: func(r map[string]any) error { return st.InsertTelemetry(r, mqttClientInfo{}) }, record: telemetryTestRecord()},
+		{name: "routing", insert: func(r map[string]any) error { return st.InsertRouting(r, mqttClientInfo{}) }, record: routingTestRecord()},
+		{name: "traceroute", insert: func(r map[string]any) error { return st.InsertTraceroute(r, mqttClientInfo{}) }, record: tracerouteTestRecord()},
+	}
+
+	for _, tt := range tests {
+		wrongType := cloneRecord(tt.record)
+		wrongType["type"] = "text_message"
+		if err := tt.insert(wrongType); err == nil || !strings.Contains(err.Error(), tt.name) {
+			t.Fatalf("%s wrong type error = %v, want %s", tt.name, err, tt.name)
+		}
+
+		missingFrom := cloneRecord(tt.record)
+		delete(missingFrom, "from")
+		if err := tt.insert(missingFrom); err == nil || !strings.Contains(err.Error(), "from") {
+			t.Fatalf("%s missing from error = %v, want from error", tt.name, err)
+		}
+
+		missingFromNum := cloneRecord(tt.record)
+		delete(missingFromNum, "from_num")
+		if err := tt.insert(missingFromNum); err == nil || !strings.Contains(err.Error(), "from_num") {
+			t.Fatalf("%s missing from_num error = %v, want from_num error", tt.name, err)
+		}
+
+		missingTopic := cloneRecord(tt.record)
+		delete(missingTopic, "topic")
+		if err := tt.insert(missingTopic); err == nil || !strings.Contains(err.Error(), "topic") {
+			t.Fatalf("%s missing topic error = %v, want topic error", tt.name, err)
+		}
+	}
+}
+
 func openTestStore(t *testing.T) *store {
 	t.Helper()
 	st, err := openStore(databaseConfig{
@@ -341,21 +474,78 @@ func mapReportRecord(longName string) map[string]any {
 }
 
 func textMessageTestRecord(text any) map[string]any {
+	record := commonPacketTestRecord("text_message", "TEXT_MESSAGE_APP")
+	record["text"] = text
+	return record
+}
+
+func positionTestRecord() map[string]any {
+	record := commonPacketTestRecord("position", "POSITION_APP")
+	record["latitude"] = 42.5
+	record["longitude"] = -83.1
+	record["altitude"] = int32(200)
+	record["time"] = uint32(123456)
+	record["location_source"] = "LOC_INTERNAL"
+	record["altitude_source"] = "ALT_INTERNAL"
+	record["timestamp"] = uint32(123456)
+	record["timestamp_millis_adjust"] = uint32(10)
+	record["altitude_hae"] = int32(210)
+	record["altitude_geoidal_separation"] = int32(20)
+	record["pdop"] = 1.1
+	record["hdop"] = 1.2
+	record["vdop"] = 1.3
+	record["gps_accuracy"] = uint32(1000)
+	record["ground_speed"] = uint32(2)
+	record["ground_track"] = 180.5
+	record["fix_quality"] = uint32(1)
+	record["fix_type"] = uint32(3)
+	record["sats_in_view"] = uint32(8)
+	record["sensor_id"] = uint32(1)
+	record["next_update"] = uint32(60)
+	record["seq_number"] = uint32(7)
+	record["precision_bits"] = uint32(16)
+	return record
+}
+
+func telemetryTestRecord() map[string]any {
+	record := commonPacketTestRecord("telemetry", "TELEMETRY_APP")
+	record["time"] = uint32(123456)
+	record["telemetry_type"] = "device_metrics"
+	record["metrics"] = map[string]any{"battery_level": 85, "voltage": 4.1}
+	return record
+}
+
+func routingTestRecord() map[string]any {
+	return commonPacketTestRecord("routing", "ROUTING_APP")
+}
+
+func tracerouteTestRecord() map[string]any {
+	return commonPacketTestRecord("traceroute", "TRACEROUTE_APP")
+}
+
+func commonPacketTestRecord(recordType, portnum string) map[string]any {
 	return map[string]any{
-		"type":            "text_message",
+		"type":            recordType,
 		"topic":           "msh/US/test",
 		"channel_id":      "LongFast",
 		"gateway_id":      "!gateway",
 		"from":            "!12345678",
 		"from_num":        uint32(0x12345678),
-		"text":            text,
 		"packet_id":       uint32(42),
 		"packet_to":       "!ffffffff",
 		"packet_to_num":   uint32(0xffffffff),
-		"portnum":         "TEXT_MESSAGE_APP",
+		"portnum":         portnum,
 		"payload_len":     5,
 		"payload_variant": "decoded",
 		"via_mqtt":        true,
 		"pki_encrypted":   false,
 	}
+}
+
+func cloneRecord(record map[string]any) map[string]any {
+	clone := make(map[string]any, len(record))
+	for key, value := range record {
+		clone[key] = value
+	}
+	return clone
 }

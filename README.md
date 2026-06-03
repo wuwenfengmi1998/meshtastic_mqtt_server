@@ -103,6 +103,10 @@ meshtastic:
 
 - `nodeinfo_map`：融合 `type == "nodeinfo"` 和 `type == "map_report"` 的节点信息
 - `text_message`：追加保存 `type == "text_message"` 的聊天消息
+- `position`：追加保存 `type == "position"` 的位置包
+- `telemetry`：追加保存 `type == "telemetry"` 的遥测包
+- `routing`：追加保存 `type == "routing"` 的路由控制包
+- `traceroute`：追加保存 `type == "traceroute"` 的路径追踪包
 
 `nodeinfo_map` 规则：
 
@@ -120,11 +124,38 @@ meshtastic:
 - 保存 `from_id`、`from_num`、`text`、`payload_hex`、topic、packet 元数据和完整 `content_json`
 - 保存 MQTT 客户端信息：`mqtt_client_id`、`mqtt_username`、`mqtt_listener`、`mqtt_remote_addr`、`mqtt_remote_host`、`mqtt_remote_port`
 
+`position` / `telemetry` / `routing` / `traceroute` 规则：
+
+- 都使用自增 `id` 作为主键
+- 每条有效记录都会新增一行，不做去重
+- 保存通用 packet 元数据、MQTT 客户端信息和完整 `content_json`
+- `position` 额外保存经纬度、海拔、时间、定位来源、精度、速度、卫星数等字段
+- `telemetry` 额外保存 `telemetry_type`，并把动态 `metrics` 对象保存为 `metrics_json`
+- `routing` 和 `traceroute` 当前保存通用元数据和完整 JSON；后续如果解析更多 payload 字段，可继续扩展列
+
 查询最近聊天消息示例：
 
 ```sql
 SELECT id, created_at, from_id, text, mqtt_remote_host
 FROM text_message
+ORDER BY id DESC
+LIMIT 20;
+```
+
+查询位置包示例：
+
+```sql
+SELECT id, created_at, from_id, latitude, longitude, altitude
+FROM position
+ORDER BY id DESC
+LIMIT 20;
+```
+
+查询遥测包示例：
+
+```sql
+SELECT id, created_at, from_id, telemetry_type, metrics_json
+FROM telemetry
 ORDER BY id DESC
 LIMIT 20;
 ```

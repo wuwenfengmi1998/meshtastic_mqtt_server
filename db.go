@@ -32,6 +32,36 @@ type mqttClientInfo struct {
 	RemotePort string
 }
 
+type AppendPacketFields struct {
+	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	FromID         string    `gorm:"column:from_id;not null;index"`
+	FromNum        int64     `gorm:"column:from_num;not null;index"`
+	Topic          string    `gorm:"column:topic;not null"`
+	ChannelID      *string   `gorm:"column:channel_id"`
+	GatewayID      *string   `gorm:"column:gateway_id"`
+	PacketID       *int64    `gorm:"column:packet_id;index"`
+	PacketTo       *string   `gorm:"column:packet_to"`
+	PacketToNum    *int64    `gorm:"column:packet_to_num"`
+	Portnum        *string   `gorm:"column:portnum"`
+	PayloadLen     *int64    `gorm:"column:payload_len"`
+	PayloadVariant *string   `gorm:"column:payload_variant"`
+	ViaMQTT        *bool     `gorm:"column:via_mqtt"`
+	PKIEncrypted   *bool     `gorm:"column:pki_encrypted"`
+	DecryptSuccess *bool     `gorm:"column:decrypt_success"`
+	DecryptStatus  *string   `gorm:"column:decrypt_status"`
+	ContentJSON    string    `gorm:"column:content_json;not null"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime;index"`
+}
+
+type MQTTClientRecordFields struct {
+	MQTTClientID   *string `gorm:"column:mqtt_client_id"`
+	MQTTUsername   *string `gorm:"column:mqtt_username"`
+	MQTTListener   *string `gorm:"column:mqtt_listener"`
+	MQTTRemoteAddr *string `gorm:"column:mqtt_remote_addr"`
+	MQTTRemoteHost *string `gorm:"column:mqtt_remote_host"`
+	MQTTRemotePort *string `gorm:"column:mqtt_remote_port"`
+}
+
 type nodeInfoMapRecord struct {
 	NodeID                 string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum                int64     `gorm:"column:node_num;not null"`
@@ -94,6 +124,68 @@ func (textMessageRecord) TableName() string {
 	return "text_message"
 }
 
+type positionRecord struct {
+	AppendPacketFields        `gorm:"embedded"`
+	MQTTClientRecordFields    `gorm:"embedded"`
+	Latitude                  *float64 `gorm:"column:latitude"`
+	Longitude                 *float64 `gorm:"column:longitude"`
+	Altitude                  *int64   `gorm:"column:altitude"`
+	PositionTime              *int64   `gorm:"column:position_time"`
+	LocationSource            *string  `gorm:"column:location_source"`
+	AltitudeSource            *string  `gorm:"column:altitude_source"`
+	Timestamp                 *int64   `gorm:"column:timestamp"`
+	TimestampMillisAdjust     *int64   `gorm:"column:timestamp_millis_adjust"`
+	AltitudeHAE               *int64   `gorm:"column:altitude_hae"`
+	AltitudeGeoidalSeparation *int64   `gorm:"column:altitude_geoidal_separation"`
+	PDOP                      *float64 `gorm:"column:pdop"`
+	HDOP                      *float64 `gorm:"column:hdop"`
+	VDOP                      *float64 `gorm:"column:vdop"`
+	GPSAccuracy               *int64   `gorm:"column:gps_accuracy"`
+	GroundSpeed               *int64   `gorm:"column:ground_speed"`
+	GroundTrack               *float64 `gorm:"column:ground_track"`
+	FixQuality                *int64   `gorm:"column:fix_quality"`
+	FixType                   *int64   `gorm:"column:fix_type"`
+	SatsInView                *int64   `gorm:"column:sats_in_view"`
+	SensorID                  *int64   `gorm:"column:sensor_id"`
+	NextUpdate                *int64   `gorm:"column:next_update"`
+	SeqNumber                 *int64   `gorm:"column:seq_number"`
+	PrecisionBits             *int64   `gorm:"column:precision_bits"`
+}
+
+func (positionRecord) TableName() string {
+	return "position"
+}
+
+type telemetryRecord struct {
+	AppendPacketFields     `gorm:"embedded"`
+	MQTTClientRecordFields `gorm:"embedded"`
+	TelemetryTime          *int64  `gorm:"column:telemetry_time"`
+	TelemetryType          *string `gorm:"column:telemetry_type;index"`
+	MetricsJSON            *string `gorm:"column:metrics_json"`
+}
+
+func (telemetryRecord) TableName() string {
+	return "telemetry"
+}
+
+type routingRecord struct {
+	AppendPacketFields     `gorm:"embedded"`
+	MQTTClientRecordFields `gorm:"embedded"`
+}
+
+func (routingRecord) TableName() string {
+	return "routing"
+}
+
+type tracerouteRecord struct {
+	AppendPacketFields     `gorm:"embedded"`
+	MQTTClientRecordFields `gorm:"embedded"`
+}
+
+func (tracerouteRecord) TableName() string {
+	return "traceroute"
+}
+
 func openStore(cfg databaseConfig) (*store, error) {
 	var dialector gorm.Dialector
 	switch cfg.Driver {
@@ -143,29 +235,47 @@ func (s *store) Close() error {
 func (s *store) migrate() error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		migrator := tx.Migrator()
-		if !migrator.HasTable(&nodeInfoMapRecord{}) {
-			if err := migrator.CreateTable(&nodeInfoMapRecord{}); err != nil {
-				return fmt.Errorf("migrate nodeinfo_map table: %w", err)
-			}
-		}
-		if !migrator.HasTable(&textMessageRecord{}) {
-			if err := migrator.CreateTable(&textMessageRecord{}); err != nil {
-				return fmt.Errorf("migrate text_message table: %w", err)
-			}
-		}
-		for _, indexName := range []string{
-			"idx_text_message_from_num_created_at",
-			"idx_text_message_created_at",
-			"idx_text_message_packet_id",
+		for _, item := range []struct {
+			label string
+			model any
+		}{
+			{label: "nodeinfo_map", model: &nodeInfoMapRecord{}},
+			{label: "text_message", model: &textMessageRecord{}},
+			{label: "position", model: &positionRecord{}},
+			{label: "telemetry", model: &telemetryRecord{}},
+			{label: "routing", model: &routingRecord{}},
+			{label: "traceroute", model: &tracerouteRecord{}},
 		} {
-			if !migrator.HasIndex(&textMessageRecord{}, indexName) {
-				if err := migrator.CreateIndex(&textMessageRecord{}, indexName); err != nil {
-					return fmt.Errorf("migrate text_message index %s: %w", indexName, err)
+			if !migrator.HasTable(item.model) {
+				if err := migrator.CreateTable(item.model); err != nil {
+					return fmt.Errorf("migrate %s table: %w", item.label, err)
 				}
+			}
+		}
+		for _, item := range []struct {
+			label   string
+			model   any
+			indexes []string
+		}{
+			{label: "text_message", model: &textMessageRecord{}, indexes: []string{"idx_text_message_from_num_created_at", "idx_text_message_created_at", "idx_text_message_packet_id"}},
+		} {
+			if err := createMissingIndexes(migrator, item.model, item.label, item.indexes); err != nil {
+				return err
 			}
 		}
 		return nil
 	})
+}
+
+func createMissingIndexes(migrator gorm.Migrator, model any, label string, indexNames []string) error {
+	for _, indexName := range indexNames {
+		if !migrator.HasIndex(model, indexName) {
+			if err := migrator.CreateIndex(model, indexName); err != nil {
+				return fmt.Errorf("migrate %s index %s: %w", label, indexName, err)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *store) UpsertNodeInfoMap(record map[string]any) error {
@@ -238,6 +348,50 @@ func (s *store) InsertTextMessage(record map[string]any, clientInfo mqttClientIn
 	return nil
 }
 
+func (s *store) InsertPosition(record map[string]any, clientInfo mqttClientInfo) error {
+	position, err := positionFromRecord(record, clientInfo)
+	if err != nil {
+		return err
+	}
+	if err := s.db.Create(position).Error; err != nil {
+		return fmt.Errorf("insert position from %s: %w", position.FromID, err)
+	}
+	return nil
+}
+
+func (s *store) InsertTelemetry(record map[string]any, clientInfo mqttClientInfo) error {
+	telemetry, err := telemetryFromRecord(record, clientInfo)
+	if err != nil {
+		return err
+	}
+	if err := s.db.Create(telemetry).Error; err != nil {
+		return fmt.Errorf("insert telemetry from %s: %w", telemetry.FromID, err)
+	}
+	return nil
+}
+
+func (s *store) InsertRouting(record map[string]any, clientInfo mqttClientInfo) error {
+	routing, err := routingFromRecord(record, clientInfo)
+	if err != nil {
+		return err
+	}
+	if err := s.db.Create(routing).Error; err != nil {
+		return fmt.Errorf("insert routing from %s: %w", routing.FromID, err)
+	}
+	return nil
+}
+
+func (s *store) InsertTraceroute(record map[string]any, clientInfo mqttClientInfo) error {
+	traceroute, err := tracerouteFromRecord(record, clientInfo)
+	if err != nil {
+		return err
+	}
+	if err := s.db.Create(traceroute).Error; err != nil {
+		return fmt.Errorf("insert traceroute from %s: %w", traceroute.FromID, err)
+	}
+	return nil
+}
+
 func nodeInfoMapFromRecord(record map[string]any) (*nodeInfoMapRecord, error) {
 	latestType, ok := record["type"].(string)
 	if !ok || (latestType != "nodeinfo" && latestType != "map_report") {
@@ -285,49 +439,153 @@ func textMessageFromRecord(record map[string]any, clientInfo mqttClientInfo) (*t
 	if !ok || recordType != "text_message" {
 		return nil, fmt.Errorf("record type %v is not text_message", record["type"])
 	}
+	common, clientFields, err := AppendPacketFieldsFromRecord(record, "text_message", clientInfo)
+	if err != nil {
+		return nil, err
+	}
+	return &textMessageRecord{
+		FromID:         common.FromID,
+		FromNum:        common.FromNum,
+		Text:           nullableString(record["text"]),
+		PayloadHex:     nullableString(record["payload_hex"]),
+		Topic:          common.Topic,
+		ChannelID:      common.ChannelID,
+		GatewayID:      common.GatewayID,
+		PacketID:       common.PacketID,
+		PacketTo:       common.PacketTo,
+		PacketToNum:    common.PacketToNum,
+		Portnum:        common.Portnum,
+		PayloadLen:     common.PayloadLen,
+		PayloadVariant: common.PayloadVariant,
+		ViaMQTT:        common.ViaMQTT,
+		PKIEncrypted:   common.PKIEncrypted,
+		DecryptSuccess: common.DecryptSuccess,
+		DecryptStatus:  common.DecryptStatus,
+		MQTTClientID:   clientFields.MQTTClientID,
+		MQTTUsername:   clientFields.MQTTUsername,
+		MQTTListener:   clientFields.MQTTListener,
+		MQTTRemoteAddr: clientFields.MQTTRemoteAddr,
+		MQTTRemoteHost: clientFields.MQTTRemoteHost,
+		MQTTRemotePort: clientFields.MQTTRemotePort,
+		ContentJSON:    common.ContentJSON,
+	}, nil
+}
+
+func positionFromRecord(record map[string]any, clientInfo mqttClientInfo) (*positionRecord, error) {
+	common, clientFields, err := AppendPacketFieldsFromRecord(record, "position", clientInfo)
+	if err != nil {
+		return nil, err
+	}
+	return &positionRecord{
+		AppendPacketFields:        common,
+		MQTTClientRecordFields:    clientFields,
+		Latitude:                  nullableFloat64(record["latitude"]),
+		Longitude:                 nullableFloat64(record["longitude"]),
+		Altitude:                  nullableInt64(record["altitude"]),
+		PositionTime:              nullableInt64(record["time"]),
+		LocationSource:            nullableStringValue(record["location_source"]),
+		AltitudeSource:            nullableStringValue(record["altitude_source"]),
+		Timestamp:                 nullableInt64(record["timestamp"]),
+		TimestampMillisAdjust:     nullableInt64(record["timestamp_millis_adjust"]),
+		AltitudeHAE:               nullableInt64(record["altitude_hae"]),
+		AltitudeGeoidalSeparation: nullableInt64(record["altitude_geoidal_separation"]),
+		PDOP:                      nullableFloat64(record["pdop"]),
+		HDOP:                      nullableFloat64(record["hdop"]),
+		VDOP:                      nullableFloat64(record["vdop"]),
+		GPSAccuracy:               nullableInt64(record["gps_accuracy"]),
+		GroundSpeed:               nullableInt64(record["ground_speed"]),
+		GroundTrack:               nullableFloat64(record["ground_track"]),
+		FixQuality:                nullableInt64(record["fix_quality"]),
+		FixType:                   nullableInt64(record["fix_type"]),
+		SatsInView:                nullableInt64(record["sats_in_view"]),
+		SensorID:                  nullableInt64(record["sensor_id"]),
+		NextUpdate:                nullableInt64(record["next_update"]),
+		SeqNumber:                 nullableInt64(record["seq_number"]),
+		PrecisionBits:             nullableInt64(record["precision_bits"]),
+	}, nil
+}
+
+func telemetryFromRecord(record map[string]any, clientInfo mqttClientInfo) (*telemetryRecord, error) {
+	common, clientFields, err := AppendPacketFieldsFromRecord(record, "telemetry", clientInfo)
+	if err != nil {
+		return nil, err
+	}
+	metricsJSON, err := nullableJSON(record["metrics"])
+	if err != nil {
+		return nil, fmt.Errorf("encode telemetry metrics_json: %w", err)
+	}
+	return &telemetryRecord{
+		AppendPacketFields:     common,
+		MQTTClientRecordFields: clientFields,
+		TelemetryTime:          nullableInt64(record["time"]),
+		TelemetryType:          nullableString(record["telemetry_type"]),
+		MetricsJSON:            metricsJSON,
+	}, nil
+}
+
+func routingFromRecord(record map[string]any, clientInfo mqttClientInfo) (*routingRecord, error) {
+	common, clientFields, err := AppendPacketFieldsFromRecord(record, "routing", clientInfo)
+	if err != nil {
+		return nil, err
+	}
+	return &routingRecord{AppendPacketFields: common, MQTTClientRecordFields: clientFields}, nil
+}
+
+func tracerouteFromRecord(record map[string]any, clientInfo mqttClientInfo) (*tracerouteRecord, error) {
+	common, clientFields, err := AppendPacketFieldsFromRecord(record, "traceroute", clientInfo)
+	if err != nil {
+		return nil, err
+	}
+	return &tracerouteRecord{AppendPacketFields: common, MQTTClientRecordFields: clientFields}, nil
+}
+
+func AppendPacketFieldsFromRecord(record map[string]any, wantType string, clientInfo mqttClientInfo) (AppendPacketFields, MQTTClientRecordFields, error) {
+	recordType, ok := record["type"].(string)
+	if !ok || recordType != wantType {
+		return AppendPacketFields{}, MQTTClientRecordFields{}, fmt.Errorf("record type %v is not %s", record["type"], wantType)
+	}
 	fromID, ok := record["from"].(string)
 	if !ok || fromID == "" {
-		return nil, fmt.Errorf("text_message missing from")
+		return AppendPacketFields{}, MQTTClientRecordFields{}, fmt.Errorf("%s missing from", wantType)
 	}
 	fromNum, err := int64FromAny(record["from_num"])
 	if err != nil {
-		return nil, fmt.Errorf("text_message from_num: %w", err)
+		return AppendPacketFields{}, MQTTClientRecordFields{}, fmt.Errorf("%s from_num: %w", wantType, err)
 	}
 	topic, ok := record["topic"].(string)
 	if !ok || topic == "" {
-		return nil, fmt.Errorf("text_message missing topic")
+		return AppendPacketFields{}, MQTTClientRecordFields{}, fmt.Errorf("%s missing topic", wantType)
 	}
 	contentJSON, err := json.Marshal(record)
 	if err != nil {
-		return nil, fmt.Errorf("encode text_message content_json: %w", err)
+		return AppendPacketFields{}, MQTTClientRecordFields{}, fmt.Errorf("encode %s content_json: %w", wantType, err)
 	}
 
-	return &textMessageRecord{
-		FromID:         fromID,
-		FromNum:        fromNum,
-		Text:           nullableString(record["text"]),
-		PayloadHex:     nullableString(record["payload_hex"]),
-		Topic:          topic,
-		ChannelID:      nullableString(record["channel_id"]),
-		GatewayID:      nullableString(record["gateway_id"]),
-		PacketID:       nullableInt64(record["packet_id"]),
-		PacketTo:       nullableString(record["packet_to"]),
-		PacketToNum:    nullableInt64(record["packet_to_num"]),
-		Portnum:        nullableString(record["portnum"]),
-		PayloadLen:     nullableInt64(record["payload_len"]),
-		PayloadVariant: nullableString(record["payload_variant"]),
-		ViaMQTT:        nullableBool(record["via_mqtt"]),
-		PKIEncrypted:   nullableBool(record["pki_encrypted"]),
-		DecryptSuccess: nullableBool(record["decrypt_success"]),
-		DecryptStatus:  nullableString(record["decrypt_status"]),
-		MQTTClientID:   nullableString(clientInfo.ClientID),
-		MQTTUsername:   nullableString(clientInfo.Username),
-		MQTTListener:   nullableString(clientInfo.Listener),
-		MQTTRemoteAddr: nullableString(clientInfo.RemoteAddr),
-		MQTTRemoteHost: nullableString(clientInfo.RemoteHost),
-		MQTTRemotePort: nullableString(clientInfo.RemotePort),
-		ContentJSON:    string(contentJSON),
-	}, nil
+	return AppendPacketFields{
+			FromID:         fromID,
+			FromNum:        fromNum,
+			Topic:          topic,
+			ChannelID:      nullableString(record["channel_id"]),
+			GatewayID:      nullableString(record["gateway_id"]),
+			PacketID:       nullableInt64(record["packet_id"]),
+			PacketTo:       nullableString(record["packet_to"]),
+			PacketToNum:    nullableInt64(record["packet_to_num"]),
+			Portnum:        nullableString(record["portnum"]),
+			PayloadLen:     nullableInt64(record["payload_len"]),
+			PayloadVariant: nullableString(record["payload_variant"]),
+			ViaMQTT:        nullableBool(record["via_mqtt"]),
+			PKIEncrypted:   nullableBool(record["pki_encrypted"]),
+			DecryptSuccess: nullableBool(record["decrypt_success"]),
+			DecryptStatus:  nullableString(record["decrypt_status"]),
+			ContentJSON:    string(contentJSON),
+		}, MQTTClientRecordFields{
+			MQTTClientID:   nullableString(clientInfo.ClientID),
+			MQTTUsername:   nullableString(clientInfo.Username),
+			MQTTListener:   nullableString(clientInfo.Listener),
+			MQTTRemoteAddr: nullableString(clientInfo.RemoteAddr),
+			MQTTRemoteHost: nullableString(clientInfo.RemoteHost),
+			MQTTRemotePort: nullableString(clientInfo.RemotePort),
+		}, nil
 }
 
 func int64FromAny(value any) (int64, error) {
@@ -365,6 +623,23 @@ func nullableString(value any) *string {
 	}
 	s, ok := value.(string)
 	if !ok || s == "" {
+		return nil
+	}
+	return &s
+}
+
+func nullableStringValue(value any) *string {
+	if value == nil {
+		return nil
+	}
+	if s, ok := value.(string); ok {
+		if s == "" {
+			return nil
+		}
+		return &s
+	}
+	s := fmt.Sprint(value)
+	if s == "" || s == "<nil>" {
 		return nil
 	}
 	return &s
@@ -420,6 +695,18 @@ func nullableFloat64(value any) *float64 {
 		return nil
 	}
 	return &out
+}
+
+func nullableJSON(value any) (*string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	s := string(data)
+	return &s, nil
 }
 
 func addStringUpdate(updates map[string]any, column string, value *string) {

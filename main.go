@@ -64,6 +64,30 @@ func (h *meshtasticFilterHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (pa
 				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
 			}
 		}
+	case "position":
+		if h.store != nil {
+			if err := h.store.InsertPosition(record, mqttClientInfoFromClient(cl)); err != nil {
+				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
+			}
+		}
+	case "telemetry":
+		if h.store != nil {
+			if err := h.store.InsertTelemetry(record, mqttClientInfoFromClient(cl)); err != nil {
+				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
+			}
+		}
+	case "routing":
+		if h.store != nil {
+			if err := h.store.InsertRouting(record, mqttClientInfoFromClient(cl)); err != nil {
+				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
+			}
+		}
+	case "traceroute":
+		if h.store != nil {
+			if err := h.store.InsertTraceroute(record, mqttClientInfoFromClient(cl)); err != nil {
+				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
+			}
+		}
 	}
 	if record["type"] != "empty_packet" {
 		printJSON(record)
