@@ -113,22 +113,21 @@ type telemetryInfo struct {
 	Metrics map[string]any
 }
 
-// MQTTPP 处理一个 MQTT 原始 payload，返回合规状态、原始数据和解码后的 JSON。
-// 第一个返回值表示数据是否合规；第二个返回值在不合规时为 nil；第三个返回值是解码结果 JSON。
-func MQTTPP(topic string, raw []byte, key []byte) (bool, []byte, []byte) {
-	if !isCompliantMQTTPacket(raw) {
-		return false, nil, nil
-	}
+// MQTTPP 处理一个 MQTT 原始 payload，返回合规状态、原始数据和解码后的记录。
+// 第一个返回值表示数据是否合规；第二个返回值在不合规时为 nil；第三个返回值是解码结果记录。
+func MQTTPP(topic string, raw []byte, key []byte) (bool, []byte, map[string]any) {
 
 	env, err := parseServiceEnvelope(raw)
 	if err != nil {
-		return true, raw, MustJSON(map[string]any{"topic": topic, "error": "protobuf decode failed: " + err.Error(), "payload_len": len(raw)})
+		//解包失败
+		return false, nil, map[string]any{"topic": topic, "error": "protobuf decode failed: " + err.Error(), "payload_len": len(raw)}
 	}
 	record, err := describePacket(topic, env, key)
 	if err != nil {
-		return true, raw, MustJSON(map[string]any{"topic": topic, "error": err.Error(), "payload_len": len(raw)})
+		//解码失败
+		return false, nil, map[string]any{"topic": topic, "error": err.Error(), "payload_len": len(raw)}
 	}
-	return true, raw, MustJSON(record)
+	return true, raw, record
 }
 
 // ExpandPSK 展开 Base64 PSK，兼容 Meshtastic 默认索引 PSK 和短 key 补零规则。

@@ -1,5 +1,17 @@
 # Meshtastic MQTT Server
 
+本程序启动一个本地 MQTT broker，并在转发客户端发布的消息前校验 Meshtastic MQTT payload。
+
+每条传入的 `PUBLISH` 都会先进入：
+
+```go
+valid, _, record := mqtpp.MQTTPP(topic, payload, key)
+```
+
+- `valid == true`：保留原始 topic、payload、QoS、retain 等字段，正常转发给订阅匹配 topic 的客户端
+- `valid == false`：丢弃该消息，不转发给订阅客户端
+
+当前不桥接到 `mqtt.meshtastic.org` 等上游 broker。
 
 ## 运行
 
@@ -7,38 +19,57 @@
 go run .
 ```
 
-默认连接：
+默认监听：
 
-- broker：`mqtt.meshtastic.org:1883`
-- username：`meshdev`
-- password：`large4cats`
-- topic：`msh/US/#`
+- host：`0.0.0.0`
+- port：`1883`
 - PSK：`AQ==`
 
-也可以指定 topic：
+也可以指定监听地址和 PSK：
 
 ```bash
-go run . --topic 'msh/US/#'
-```
-
-多个 topic 可重复传入：
-
-```bash
-go run . --topic 'msh/US/#' --topic 'msh/EU_868/#'
+go run . --host 127.0.0.1 --port 1883 --psk AQ==
 ```
 
 ## 参数
 
 ```text
---host       MQTT broker hostname
---port       MQTT broker port
---username   MQTT username
---password   MQTT password
---psk        Base64 channel PSK used to try decrypting encrypted packets
---topic      Topic to subscribe; may be repeated
---qos        MQTT subscription QoS: 0, 1, or 2
---client-id  MQTT client id
+--host  MQTT broker listen host
+--port  MQTT broker listen port
+--psk   Base64 channel PSK used to try decrypting encrypted packets
 ```
+
+## 转发规则
+
+程序监听所有传入 publish。payload 能被 `mqtpp.MQTTPP` 解析时，认为 `valid == true`，broker 会继续把原始 MQTT 消息转发给订阅者；解析失败时，认为 `valid == false`，broker 会拒绝并丢弃该 publish。
+
+`empty_packet` 仍然属于 `valid == true`，会被转发；只是控制台默认不显示它。
+
+无法解密但能解析的加密包通常会输出为 `encrypted_packet`，仍然属于 `valid == true`，因此会被转发。
+
+## 本地验证
+
+一个终端启动 broker：
+
+```bash
+go run . --host 127.0.0.1 --port 1883 --psk AQ==
+```
+
+另一个终端订阅：
+
+```bash
+mosquitto_sub -h 127.0.0.1 -p 1883 -t '#'
+```
+
+发布非法 payload：
+
+```bash
+mosquitto_pub -h 127.0.0.1 -p 1883 -t 'msh/US/test' -m 'not protobuf'
+```
+
+订阅端应该收不到该消息。
+
+要验证 valid 消息转发，请使用真实 Meshtastic MQTT payload 发布到本 broker；订阅匹配 topic 的客户端应收到原始消息，broker 控制台会打印解析后的 `record`。
 
 ## 控制台颜色说明
 
