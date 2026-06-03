@@ -12,14 +12,14 @@ export function getHealth(): Promise<HealthStatus> {
   return getJSON<HealthStatus>('/api/health')
 }
 
-export function getNodes(): Promise<ListResponse<NodeInfoMap>> {
-  return getJSON<ListResponse<NodeInfoMap>>('/api/nodes?limit=100')
+export function getNodes(limit = 500, offset = 0): Promise<ListResponse<NodeInfoMap>> {
+  return getJSON<ListResponse<NodeInfoMap>>(`/api/nodes?limit=${limit}&offset=${offset}`)
 }
 
-export function getTextMessages(): Promise<ListResponse<TextMessage>> {
-  return getJSON<ListResponse<TextMessage>>('/api/text-messages?limit=20')
+export function getTextMessages(limit = 100): Promise<ListResponse<TextMessage>> {
+  return getJSON<ListResponse<TextMessage>>(`/api/text-messages?limit=${limit}`)
 }
 
-export function getPositions(): Promise<ListResponse<PositionRecord>> {
-  return getJSON<ListResponse<PositionRecord>>('/api/positions?limit=200')
+export function getPositions(limit = 500): Promise<ListResponse<PositionRecord>> {
+  return getJSON<ListResponse<PositionRecord>>(`/api/positions?limit=${limit}`)
 }

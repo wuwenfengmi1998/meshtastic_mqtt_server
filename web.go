@@ -47,7 +47,12 @@ func registerAPIRoutes(r gin.IRouter, store *store) {
 			return
 		}
 		rows, err := store.ListNodes(opts)
-		writeListResponse(c, rows, opts, err, nodeDTO)
+		if err != nil {
+			writeListResponse(c, rows, opts, err, nodeDTO)
+			return
+		}
+		total, err := store.CountNodes(opts)
+		writeListResponseWithTotal(c, rows, opts, total, err, nodeDTO)
 	})
 	r.GET("/nodes/:id", func(c *gin.Context) {
 		row, err := store.GetNode(c.Param("id"))
@@ -191,8 +196,20 @@ func writeListResponse[T any](c *gin.Context, rows []T, opts listOptions, err er
 	c.JSON(http.StatusOK, gin.H{"items": items, "limit": opts.Limit, "offset": opts.Offset})
 }
 
+func writeListResponseWithTotal[T any](c *gin.Context, rows []T, opts listOptions, total int64, err error, convert func(T) gin.H) {
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	items := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, convert(row))
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "limit": opts.Limit, "offset": opts.Offset, "total": total})
+}
+
 func nodeDTO(row nodeInfoMapRecord) gin.H {
-	return gin.H{"node_id": row.NodeID, "node_num": row.NodeNum, "latest_type": row.LatestType, "long_name": ptrString(row.LongName), "short_name": ptrString(row.ShortName), "hw_model": ptrString(row.HWModel), "role": ptrString(row.Role), "latitude": ptrFloat64(row.Latitude), "longitude": ptrFloat64(row.Longitude), "altitude": ptrInt64(row.Altitude), "updated_at": row.UpdatedAt, "content_json": row.ContentJSON}
+	return gin.H{"node_id": row.NodeID, "node_num": row.NodeNum, "latest_type": row.LatestType, "long_name": ptrString(row.LongName), "short_name": ptrString(row.ShortName), "hw_model": ptrString(row.HWModel), "role": ptrString(row.Role), "firmware_version": ptrString(row.FirmwareVersion), "latitude": ptrFloat64(row.Latitude), "longitude": ptrFloat64(row.Longitude), "altitude": ptrInt64(row.Altitude), "position_precision": ptrInt64(row.PositionPrecision), "num_online_local_nodes": ptrInt64(row.NumOnlineLocalNodes), "updated_at": row.UpdatedAt, "content_json": row.ContentJSON}
 }
 
 func textMessageDTO(row textMessageRecord) gin.H {

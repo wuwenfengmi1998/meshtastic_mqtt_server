@@ -38,7 +38,20 @@ func normalizeListOptions(opts listOptions) listOptions {
 func (s *store) ListNodes(opts listOptions) ([]nodeInfoMapRecord, error) {
 	opts = normalizeListOptions(opts)
 	var rows []nodeInfoMapRecord
-	q := s.db.Order("updated_at DESC").Limit(opts.Limit).Offset(opts.Offset)
+	q := applyNodeFilters(s.db.Model(&nodeInfoMapRecord{}), opts).
+		Order("updated_at DESC").
+		Limit(opts.Limit).
+		Offset(opts.Offset)
+	return rows, q.Find(&rows).Error
+}
+
+func (s *store) CountNodes(opts listOptions) (int64, error) {
+	var total int64
+	q := applyNodeFilters(s.db.Model(&nodeInfoMapRecord{}), opts)
+	return total, q.Count(&total).Error
+}
+
+func applyNodeFilters(q *gorm.DB, opts listOptions) *gorm.DB {
 	if opts.NodeID != "" {
 		q = q.Where("node_id = ?", opts.NodeID)
 	}
@@ -48,7 +61,7 @@ func (s *store) ListNodes(opts listOptions) ([]nodeInfoMapRecord, error) {
 	if opts.Until != nil {
 		q = q.Where("updated_at <= ?", *opts.Until)
 	}
-	return rows, q.Find(&rows).Error
+	return q
 }
 
 func (s *store) GetNode(nodeID string) (*nodeInfoMapRecord, error) {

@@ -1,5 +1,46 @@
-# Vue 3 + TypeScript + Vite
+# MeshMap Frontend
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Vue 3 + TypeScript + Vite frontend for the Meshtastic MQTT server.
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+## Features
+
+- Left panel: recent chat messages
+- Right panel: Leaflet/OpenStreetMap node map
+- Bottom panel: selected node details, recent messages, and recent positions
+
+The app uses relative `/api` URLs. In development, Vite proxies `/api` to the Go backend.
+
+## Development
+
+Start the Go backend:
+
+```bash
+go run . --web-host 127.0.0.1 --web-port 8080
+```
+
+Start the frontend dev server:
+
+```bash
+cd meshmap_frontend
+npm install
+npm run dev
+```
+
+## Production build
+
+```bash
+cd meshmap_frontend
+npm run build
+```
+
+The build output is written to the repository root `dist/` directory, which is served by the Gin backend.
+
+## Map tiles
+
+The map uses Leaflet with OpenStreetMap tiles:
+
+```text
+https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png
+```
+
+Network access to the tile server is required unless this is changed to a local tile source later.
