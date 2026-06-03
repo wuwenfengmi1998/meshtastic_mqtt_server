@@ -127,6 +127,10 @@ func MQTTPP(topic string, raw []byte, key []byte) (bool, []byte, map[string]any)
 		//解码失败
 		return false, nil, map[string]any{"topic": topic, "error": err.Error(), "payload_len": len(raw)}
 	}
+	if record["type"] == "encrypted_packet" {
+		return false, nil, map[string]any{"topic": topic, "error": "cannot be decrypted", "payload_len": len(raw)}
+	}
+
 	return true, raw, record
 }
 
