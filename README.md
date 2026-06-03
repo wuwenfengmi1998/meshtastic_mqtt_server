@@ -1,8 +1,5 @@
 # Meshtastic MQTT Server
 
-这是一个 Meshtastic MQTT 订阅工具，用 Go 实现 [py/mqtt_nodeinfo_subscriber.py](py/mqtt_nodeinfo_subscriber.py) 的主要功能。
-
-程序会连接 Meshtastic MQTT broker，订阅指定 topic，解析 `ServiceEnvelope` / `MeshPacket`，并将重点数据包以 JSONL 形式输出到控制台。
 
 ## 运行
 
