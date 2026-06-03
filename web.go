@@ -14,17 +14,19 @@ import (
 	"gorm.io/gorm"
 )
 
-func newHTTPServer(cfg webConfig, store *store) *http.Server {
+func newHTTPServer(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider) *http.Server {
 	return &http.Server{
 		Addr:    net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
-		Handler: newRouter(cfg, store),
+		Handler: newRouter(cfg, store, sessions, mqttStatus),
 	}
 }
 
-func newRouter(cfg webConfig, store *store) *gin.Engine {
+func newRouter(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
-	registerAPIRoutes(r.Group("/api"), store)
+	api := r.Group("/api")
+	registerAPIRoutes(api, store)
+	registerAdminRoutes(api.Group("/admin"), store, sessions, mqttStatus)
 	registerStaticRoutes(r, cfg.StaticDir)
 	return r
 }
@@ -83,6 +85,112 @@ func registerAPIRoutes(r gin.IRouter, store *store) {
 		}
 		rows, err := store.ListTraceroute(opts)
 		writeListResponse(c, rows, opts, err, tracerouteDTO)
+	})
+}
+
+func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider) {
+	type loginRequest struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	type createUserRequest struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	type updatePasswordRequest struct {
+		Password string `json:"password"`
+	}
+	userDTO := func(user userRecord) gin.H {
+		return gin.H{"id": user.ID, "username": user.Username, "role": user.Role, "created_at": user.CreatedAt, "updated_at": user.UpdatedAt}
+	}
+
+	r.POST("/login", func(c *gin.Context) {
+		var req loginRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid login request"})
+			return
+		}
+		user, err := store.GetUserByUsername(req.Username)
+		if err != nil || user.Role != adminRole || !verifyPassword(user.PasswordHash, req.Password) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
+			return
+		}
+		cookie, err := sessions.newCookie(*user)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		http.SetCookie(c.Writer, cookie)
+		c.JSON(http.StatusOK, gin.H{"user": adminUserResponse(*user)})
+	})
+	r.POST("/logout", func(c *gin.Context) {
+		http.SetCookie(c.Writer, sessions.clearCookie())
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	protected := r.Group("")
+	protected.Use(requireAdmin(sessions))
+	protected.GET("/me", func(c *gin.Context) {
+		claims := c.MustGet("admin_claims").(*sessionClaims)
+		c.JSON(http.StatusOK, gin.H{"user": adminUserDTO{Username: claims.Username, Role: claims.Role}})
+	})
+	protected.GET("/mqtt/status", func(c *gin.Context) {
+		if mqttStatus == nil {
+			c.JSON(http.StatusOK, adminMqttStatus{Running: false})
+			return
+		}
+		c.JSON(http.StatusOK, mqttStatus.Status())
+	})
+	protected.GET("/users", func(c *gin.Context) {
+		users, err := store.ListUsers()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		items := make([]gin.H, 0, len(users))
+		for _, user := range users {
+			items = append(items, userDTO(user))
+		}
+		c.JSON(http.StatusOK, gin.H{"items": items})
+	})
+	protected.POST("/users", func(c *gin.Context) {
+		var req createUserRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid create user request"})
+			return
+		}
+		user, err := store.CreateAdminUser(req.Username, req.Password)
+		if errors.Is(err, errUserAlreadyExists) {
+			c.JSON(http.StatusConflict, gin.H{"error": "username already exists"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusCreated, gin.H{"user": userDTO(*user)})
+	})
+	protected.PUT("/users/:id/password", func(c *gin.Context) {
+		id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+		if err != nil || id == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+			return
+		}
+		var req updatePasswordRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid password request"})
+			return
+		}
+		user, err := store.UpdateUserPassword(id, req.Password)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"user": userDTO(*user)})
 	})
 }
 

@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { getHealth, getMapReports, getNodeInfo, getPositions, getTextMessages } from './api'
+import { getAdminMe, getHealth, getMapReports, getNodeInfo, getPositions, getTextMessages } from './api'
+import AdminDashboard from './components/AdminDashboard.vue'
+import AdminLogin from './components/AdminLogin.vue'
 import ChatPanel from './components/ChatPanel.vue'
 import MeshMap from './components/MeshMap.vue'
 import NodeListPanel from './components/NodeListPanel.vue'
-import type { HealthStatus, MapNode, MapReport, NodeInfo, NodeInfoById, PositionRecord, TextMessage } from './types'
+import type { AdminUser, HealthStatus, MapNode, MapReport, NodeInfo, NodeInfoById, PositionRecord, TextMessage } from './types'
+
+const isAdminPage = window.location.pathname === '/admin'
+const adminUser = ref<AdminUser | null>(null)
+const adminChecking = ref(false)
 
 const loading = ref(true)
 const nodePageLoading = ref(false)
@@ -153,7 +159,23 @@ async function refresh(showLoading = true) {
   }
 }
 
+async function checkAdminSession() {
+  adminChecking.value = true
+  try {
+    const response = await getAdminMe()
+    adminUser.value = response.user
+  } catch {
+    adminUser.value = null
+  } finally {
+    adminChecking.value = false
+  }
+}
+
 onMounted(() => {
+  if (isAdminPage) {
+    checkAdminSession()
+    return
+  }
   refresh()
   refreshTimer = window.setInterval(() => refresh(false), 5000)
 })
@@ -170,46 +192,60 @@ onBeforeUnmount(() => {
     <header class="topbar">
       <div>
         <p class="eyebrow">Meshtastic MQTT Server</p>
-        <h1>MeshMap</h1>
+        <h1>{{ isAdminPage ? 'Admin' : 'MeshMap' }}</h1>
       </div>
       <div class="topbar-actions">
-        <span class="status-pill" :class="{ ok: health?.status === 'ok' }">
-          {{ health?.status ?? 'unknown' }} / db {{ health?.database ?? 'unknown' }}
-        </span>
-        <span class="counter">节点 {{ nodeTotal }} · 已加载消息 {{ messages.length }} · 坐标 {{ mapNodes.length }}</span>
-        <button @click="() => refresh()" :disabled="loading">{{ loading ? '刷新中...' : '刷新' }}</button>
+        <template v-if="isAdminPage">
+          <a class="topbar-link" href="/">返回地图</a>
+        </template>
+        <template v-else>
+          <span class="status-pill" :class="{ ok: health?.status === 'ok' }">
+            {{ health?.status ?? 'unknown' }} / db {{ health?.database ?? 'unknown' }}
+          </span>
+          <span class="counter">节点 {{ nodeTotal }} · 已加载消息 {{ messages.length }} · 坐标 {{ mapNodes.length }}</span>
+          <a class="topbar-link" href="/admin">管理</a>
+          <button @click="() => refresh()" :disabled="loading">{{ loading ? '刷新中...' : '刷新' }}</button>
+        </template>
       </div>
     </header>
 
-    <p v-if="error" class="error">{{ error }}</p>
+    <template v-if="isAdminPage">
+      <div v-if="adminChecking" class="panel admin-loading">正在检查登录状态...</div>
+      <AdminDashboard v-else-if="adminUser" :user="adminUser" @logout="adminUser = null" />
+      <AdminLogin v-else @login="adminUser = $event" />
+    </template>
 
-    <section class="workspace">
-      <ChatPanel
-        :messages="messages"
-        :nodes-by-id="nodesById"
-        :selected-node-id="selectedNodeId"
-        :loading-older="chatLoadingOlder"
-        :has-more-messages="chatHasMore"
-        @select-node="selectedNodeId = $event"
-        @load-older="loadOlderMessages"
-      />
-      <MeshMap
-        :nodes="mapNodes"
-        :selected-node-id="selectedNodeId"
-        @select-node="selectedNodeId = $event"
-        @clear-node="selectedNodeId = null"
-      />
-    </section>
+    <template v-else>
+      <p v-if="error" class="error">{{ error }}</p>
 
-    <NodeListPanel
-      :nodes="pagedNodeInfo"
-      :selected-node-id="selectedNodeId"
-      :page="nodePage"
-      :page-size="nodePageSize"
-      :total="nodeTotal"
-      :loading="nodePageLoading || loading"
-      @select-node="selectedNodeId = $event"
-      @page-change="loadNodePage"
-    />
+      <section class="workspace">
+        <ChatPanel
+          :messages="messages"
+          :nodes-by-id="nodesById"
+          :selected-node-id="selectedNodeId"
+          :loading-older="chatLoadingOlder"
+          :has-more-messages="chatHasMore"
+          @select-node="selectedNodeId = $event"
+          @load-older="loadOlderMessages"
+        />
+        <MeshMap
+          :nodes="mapNodes"
+          :selected-node-id="selectedNodeId"
+          @select-node="selectedNodeId = $event"
+          @clear-node="selectedNodeId = null"
+        />
+      </section>
+
+      <NodeListPanel
+        :nodes="pagedNodeInfo"
+        :selected-node-id="selectedNodeId"
+        :page="nodePage"
+        :page-size="nodePageSize"
+        :total="nodeTotal"
+        :loading="nodePageLoading || loading"
+        @select-node="selectedNodeId = $event"
+        @page-change="loadNodePage"
+      />
+    </template>
   </main>
 </template>

@@ -2,16 +2,19 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gorm.io/gorm"
 )
 
 func TestOpenStoreCreatesTables(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	for _, table := range []string{"nodeinfo", "map_report", "text_message", "position", "telemetry", "routing", "traceroute"} {
+	for _, table := range []string{"users", "nodeinfo", "map_report", "text_message", "position", "telemetry", "routing", "traceroute"} {
 		var name string
 		if err := rawTestDB(t, st).QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name); err != nil {
 			t.Fatalf("%s table missing: %v", table, err)
@@ -184,6 +187,106 @@ func TestNodeInfoNullablePublicKey(t *testing.T) {
 	}
 	if publicKey.Valid {
 		t.Fatalf("public_key valid = true, want null")
+	}
+}
+
+func TestEnsureDefaultAdminCreatesAdminUser(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.EnsureDefaultAdmin("admin", "admin"); err != nil {
+		t.Fatalf("EnsureDefaultAdmin() error = %v", err)
+	}
+
+	user, err := st.GetUserByUsername("admin")
+	if err != nil {
+		t.Fatalf("GetUserByUsername() error = %v", err)
+	}
+	if user.Role != adminRole {
+		t.Fatalf("role = %q, want admin", user.Role)
+	}
+	if user.PasswordHash == "admin" || user.PasswordHash == "" {
+		t.Fatalf("password hash = %q, want bcrypt hash", user.PasswordHash)
+	}
+	if !verifyPassword(user.PasswordHash, "admin") {
+		t.Fatalf("admin password did not verify")
+	}
+}
+
+func TestEnsureDefaultAdminDoesNotOverwriteExistingUser(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.EnsureDefaultAdmin("admin", "first"); err != nil {
+		t.Fatalf("first EnsureDefaultAdmin() error = %v", err)
+	}
+	if err := st.EnsureDefaultAdmin("admin", "second"); err != nil {
+		t.Fatalf("second EnsureDefaultAdmin() error = %v", err)
+	}
+	user, err := st.GetUserByUsername("admin")
+	if err != nil {
+		t.Fatalf("GetUserByUsername() error = %v", err)
+	}
+	if !verifyPassword(user.PasswordHash, "first") || verifyPassword(user.PasswordHash, "second") {
+		t.Fatalf("admin password was overwritten")
+	}
+}
+
+func TestCreateAdminUserCreatesHashedAdmin(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	user, err := st.CreateAdminUser("new-admin", "secret")
+	if err != nil {
+		t.Fatalf("CreateAdminUser() error = %v", err)
+	}
+	if user.Username != "new-admin" || user.Role != adminRole {
+		t.Fatalf("user = %#v, want new-admin admin", user)
+	}
+	if user.PasswordHash == "secret" || !verifyPassword(user.PasswordHash, "secret") {
+		t.Fatalf("password hash did not verify")
+	}
+}
+
+func TestCreateAdminUserRejectsDuplicateUsername(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if _, err := st.CreateAdminUser("new-admin", "secret"); err != nil {
+		t.Fatalf("first CreateAdminUser() error = %v", err)
+	}
+	if _, err := st.CreateAdminUser("new-admin", "secret"); !errors.Is(err, errUserAlreadyExists) {
+		t.Fatalf("duplicate CreateAdminUser() error = %v, want errUserAlreadyExists", err)
+	}
+}
+
+func TestUpdateUserPasswordChangesHash(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	user, err := st.CreateAdminUser("new-admin", "old-secret")
+	if err != nil {
+		t.Fatalf("CreateAdminUser() error = %v", err)
+	}
+	oldHash := user.PasswordHash
+	updated, err := st.UpdateUserPassword(user.ID, "new-secret")
+	if err != nil {
+		t.Fatalf("UpdateUserPassword() error = %v", err)
+	}
+	if updated.PasswordHash == oldHash {
+		t.Fatalf("password hash did not change")
+	}
+	if verifyPassword(updated.PasswordHash, "old-secret") || !verifyPassword(updated.PasswordHash, "new-secret") {
+		t.Fatalf("updated password verification mismatch")
+	}
+}
+
+func TestUpdateUserPasswordMissingUser(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if _, err := st.UpdateUserPassword(999, "new-secret"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("UpdateUserPassword() error = %v, want record not found", err)
 	}
 }
 

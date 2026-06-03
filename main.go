@@ -161,7 +161,15 @@ func parseArgs() (*config, error) {
 	flag.StringVar(&cfg.Web.Host, "web-host", cfg.Web.Host, "Web server listen host")
 	flag.IntVar(&cfg.Web.Port, "web-port", cfg.Web.Port, "Web server listen port")
 	flag.StringVar(&cfg.Web.StaticDir, "web-static-dir", cfg.Web.StaticDir, "Web frontend static files directory")
+	flag.StringVar(&cfg.Web.Admin.Username, "admin-username", cfg.Web.Admin.Username, "Web admin username")
 	flag.Parse()
+
+	if value := os.Getenv("MESH_ADMIN_PASSWORD"); value != "" {
+		cfg.Web.Admin.Password = value
+	}
+	if value := os.Getenv("MESH_ADMIN_SESSION_SECRET"); value != "" {
+		cfg.Web.Admin.SessionSecret = value
+	}
 
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
@@ -181,8 +189,11 @@ func run(cfg *config) error {
 		return err
 	}
 	defer store.Close()
+	if err := store.EnsureDefaultAdmin(cfg.Web.Admin.Username, cfg.Web.Admin.Password); err != nil {
+		return err
+	}
 
-	server, _, err := startMQTTServer(cfg, store)
+	server, mqttAddr, err := startMQTTServer(cfg, store)
 	if err != nil {
 		return err
 	}
@@ -190,7 +201,12 @@ func run(cfg *config) error {
 	var httpServer *http.Server
 	errCh := make(chan error, 1)
 	if cfg.Web.Enabled {
-		httpServer = newHTTPServer(cfg.Web, store)
+		sessions, err := newSessionManager(cfg.Web.Admin)
+		if err != nil {
+			return err
+		}
+		mqttStatus := mqttRuntimeStatus{server: server, address: mqttAddr, tls: cfg.MQTT.TLS.Enabled}
+		httpServer = newHTTPServer(cfg.Web, store, sessions, mqttStatus)
 		go func() {
 			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				errCh <- err

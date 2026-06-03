@@ -51,10 +51,18 @@ type mysqlConfig struct {
 }
 
 type webConfig struct {
-	Enabled   bool   `yaml:"enabled"`
-	Host      string `yaml:"host"`
-	Port      int    `yaml:"port"`
-	StaticDir string `yaml:"static_dir"`
+	Enabled   bool           `yaml:"enabled"`
+	Host      string         `yaml:"host"`
+	Port      int            `yaml:"port"`
+	StaticDir string         `yaml:"static_dir"`
+	Admin     webAdminConfig `yaml:"admin"`
+}
+
+type webAdminConfig struct {
+	Username      string `yaml:"username"`
+	Password      string `yaml:"password"`
+	SessionSecret string `yaml:"session_secret"`
+	SessionSecure bool   `yaml:"session_secure"`
 }
 
 type rawConfig struct {
@@ -95,10 +103,18 @@ type rawMySQLConfig struct {
 }
 
 type rawWebConfig struct {
-	Enabled   *bool   `yaml:"enabled"`
-	Host      *string `yaml:"host"`
-	Port      *int    `yaml:"port"`
-	StaticDir *string `yaml:"static_dir"`
+	Enabled   *bool              `yaml:"enabled"`
+	Host      *string            `yaml:"host"`
+	Port      *int               `yaml:"port"`
+	StaticDir *string            `yaml:"static_dir"`
+	Admin     *rawWebAdminConfig `yaml:"admin"`
+}
+
+type rawWebAdminConfig struct {
+	Username      *string `yaml:"username"`
+	Password      *string `yaml:"password"`
+	SessionSecret *string `yaml:"session_secret"`
+	SessionSecure *bool   `yaml:"session_secure"`
 }
 
 // defaultConfig 返回内置默认配置。
@@ -126,6 +142,12 @@ func defaultConfig() *config {
 			Host:      "0.0.0.0",
 			Port:      8080,
 			StaticDir: "./dist",
+			Admin: webAdminConfig{
+				Username:      "admin",
+				Password:      "admin",
+				SessionSecret: "",
+				SessionSecure: false,
+			},
 		},
 	}
 }
@@ -290,6 +312,30 @@ func normalizeConfig(raw rawConfig) (*config, bool) {
 		} else {
 			cfg.Web.StaticDir = *raw.Web.StaticDir
 		}
+		if raw.Web.Admin == nil {
+			changed = true
+		} else {
+			if raw.Web.Admin.Username == nil {
+				changed = true
+			} else {
+				cfg.Web.Admin.Username = *raw.Web.Admin.Username
+			}
+			if raw.Web.Admin.Password == nil {
+				changed = true
+			} else {
+				cfg.Web.Admin.Password = *raw.Web.Admin.Password
+			}
+			if raw.Web.Admin.SessionSecret == nil {
+				changed = true
+			} else {
+				cfg.Web.Admin.SessionSecret = *raw.Web.Admin.SessionSecret
+			}
+			if raw.Web.Admin.SessionSecure == nil {
+				changed = true
+			} else {
+				cfg.Web.Admin.SessionSecure = *raw.Web.Admin.SessionSecure
+			}
+		}
 	}
 
 	return cfg, changed
@@ -317,6 +363,12 @@ func validateConfig(cfg *config) error {
 		}
 		if cfg.Web.StaticDir == "" {
 			return fmt.Errorf("web.static_dir is required when web is enabled")
+		}
+		if cfg.Web.Admin.Username == "" {
+			return fmt.Errorf("web.admin.username is required when web is enabled")
+		}
+		if cfg.Web.Admin.Password == "" {
+			return fmt.Errorf("web.admin.password is required when web is enabled")
 		}
 	}
 	return nil

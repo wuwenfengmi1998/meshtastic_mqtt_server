@@ -62,6 +62,19 @@ type MQTTClientRecordFields struct {
 	MQTTRemotePort *string `gorm:"column:mqtt_remote_port"`
 }
 
+type userRecord struct {
+	ID           uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	Username     string    `gorm:"column:username;not null;uniqueIndex"`
+	PasswordHash string    `gorm:"column:password_hash;not null"`
+	Role         string    `gorm:"column:role;not null;index"`
+	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime"`
+}
+
+func (userRecord) TableName() string {
+	return "users"
+}
+
 type nodeInfoRecord struct {
 	NodeID      string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum     int64     `gorm:"column:node_num;not null;index"`
@@ -254,6 +267,7 @@ func (s *store) migrate() error {
 			label string
 			model any
 		}{
+			{label: "users", model: &userRecord{}},
 			{label: "nodeinfo", model: &nodeInfoRecord{}},
 			{label: "map_report", model: &mapReportRecord{}},
 			{label: "text_message", model: &textMessageRecord{}},

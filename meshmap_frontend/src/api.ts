@@ -1,11 +1,51 @@
-import type { HealthStatus, ListResponse, MapReport, NodeInfo, PositionRecord, TextMessage } from './types'
+import type {
+  AdminLoginResponse,
+  AdminManagedUserResponse,
+  AdminMqttStatus,
+  AdminUsersResponse,
+  HealthStatus,
+  ListResponse,
+  MapReport,
+  NodeInfo,
+  PositionRecord,
+  TextMessage,
+} from './types'
 
-async function getJSON<T>(path: string): Promise<T> {
-  const response = await fetch(path)
+async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, { credentials: 'same-origin', ...init })
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`)
+    let message = `${response.status} ${response.statusText}`
+    try {
+      const data = (await response.json()) as { error?: string }
+      if (data.error) {
+        message = data.error
+      }
+    } catch {
+      // Keep the HTTP status message when the response is not JSON.
+    }
+    throw new Error(message)
   }
   return response.json() as Promise<T>
+}
+
+function getJSON<T>(path: string): Promise<T> {
+  return requestJSON<T>(path)
+}
+
+function postJSON<T>(path: string, body?: unknown): Promise<T> {
+  return requestJSON<T>(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body == null ? undefined : JSON.stringify(body),
+  })
+}
+
+function putJSON<T>(path: string, body?: unknown): Promise<T> {
+  return requestJSON<T>(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: body == null ? undefined : JSON.stringify(body),
+  })
 }
 
 export function getHealth(): Promise<HealthStatus> {
@@ -26,4 +66,32 @@ export function getTextMessages(limit = 100, offset = 0): Promise<ListResponse<T
 
 export function getPositions(limit = 500): Promise<ListResponse<PositionRecord>> {
   return getJSON<ListResponse<PositionRecord>>(`/api/positions?limit=${limit}`)
+}
+
+export function adminLogin(username: string, password: string): Promise<AdminLoginResponse> {
+  return postJSON<AdminLoginResponse>('/api/admin/login', { username, password })
+}
+
+export function adminLogout(): Promise<{ status: string }> {
+  return postJSON<{ status: string }>('/api/admin/logout')
+}
+
+export function getAdminMe(): Promise<AdminLoginResponse> {
+  return getJSON<AdminLoginResponse>('/api/admin/me')
+}
+
+export function getAdminMqttStatus(): Promise<AdminMqttStatus> {
+  return getJSON<AdminMqttStatus>('/api/admin/mqtt/status')
+}
+
+export function getAdminUsers(): Promise<AdminUsersResponse> {
+  return getJSON<AdminUsersResponse>('/api/admin/users')
+}
+
+export function createAdminUser(username: string, password: string): Promise<AdminManagedUserResponse> {
+  return postJSON<AdminManagedUserResponse>('/api/admin/users', { username, password })
+}
+
+export function updateAdminUserPassword(id: number, password: string): Promise<AdminManagedUserResponse> {
+  return putJSON<AdminManagedUserResponse>(`/api/admin/users/${id}/password`, { password })
 }

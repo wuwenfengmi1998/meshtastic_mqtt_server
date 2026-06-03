@@ -59,12 +59,17 @@ web:
   host: 0.0.0.0
   port: 8080
   static_dir: ./dist
+  admin:
+    username: admin
+    password: admin
+    session_secret: ""
+    session_secure: false
 ```
 
 配置优先级：
 
 ```text
-内置默认值 < 配置文件 < 命令行参数
+内置默认值 < 配置文件 < 环境变量 < 命令行参数
 ```
 
 也可以用命令行临时覆盖监听地址、PSK 和 TLS 设置：
@@ -112,10 +117,19 @@ go run .
 
 构建后的文件位于项目根目录 `dist/`，Gin 会提供静态文件服务；`/api` 路径保留给后端接口。
 
+管理页面位于 `/admin`，默认管理员账号为 `admin` / `admin`。生产环境请修改 `web.admin.password` 或设置 `MESH_ADMIN_PASSWORD`，并配置固定的 `web.admin.session_secret` 或 `MESH_ADMIN_SESSION_SECRET`；如果 `session_secret` 为空，程序会在启动时生成临时签名密钥，重启后需要重新登录。后台支持新增管理员用户和修改用户密码；密码使用 bcrypt hash 保存，API 不会返回密码 hash。修改密码不会立即使已签发 Session 失效，当前 Session 到期或退出登录后才需要使用新密码。
+
 常用 API：
 
 ```text
 GET /api/health
+POST /api/admin/login
+POST /api/admin/logout
+GET /api/admin/me
+GET /api/admin/mqtt/status
+GET /api/admin/users
+POST /api/admin/users
+PUT /api/admin/users/:id/password
 GET /api/nodeinfo
 GET /api/nodeinfo/:id
 GET /api/map-reports

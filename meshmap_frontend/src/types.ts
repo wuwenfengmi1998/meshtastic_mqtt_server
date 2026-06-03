@@ -80,3 +80,62 @@ export interface MapNode {
 }
 
 export type NodeInfoById = Record<string, NodeInfo>
+
+export interface AdminUser {
+  username: string
+  role: string
+}
+
+export interface AdminLoginResponse {
+  user: AdminUser
+}
+
+export interface AdminManagedUser {
+  id: number
+  username: string
+  role: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminUsersResponse {
+  items: AdminManagedUser[]
+}
+
+export interface AdminManagedUserResponse {
+  user: AdminManagedUser
+}
+
+export interface AdminMqttClient {
+  client_id: string
+  username: string
+  listener: string
+  remote_addr: string
+  remote_host: string
+  remote_port: string
+}
+
+export interface AdminMqttStatus {
+  running: boolean
+  address: string
+  tls: boolean
+  version: string
+  started: number
+  uptime: number
+  bytes_received: number
+  bytes_sent: number
+  clients_connected: number
+  clients_disconnected: number
+  clients_maximum: number
+  clients_total: number
+  messages_received: number
+  messages_sent: number
+  messages_dropped: number
+  retained: number
+  inflight: number
+  inflight_dropped: number
+  subscriptions: number
+  packets_received: number
+  packets_sent: number
+  clients: AdminMqttClient[]
+}
