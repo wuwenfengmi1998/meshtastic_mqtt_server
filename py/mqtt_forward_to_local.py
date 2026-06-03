@@ -23,6 +23,8 @@ DEFAULT_HOST = "mqtt.meshtastic.org"
 DEFAULT_USERNAME = "meshdev"
 DEFAULT_PASSWORD = "large4cats"
 DEFAULT_TOPICS = ("msh/US/#",)
+SOURCE_TOPIC_PREFIX = "msh/US"
+LOCAL_TOPIC_PREFIX = "msh/US"
 DEFAULT_LOCAL_HOST = "127.0.0.1"
 DEFAULT_LOCAL_PORT = 1883
 
@@ -42,12 +44,20 @@ def on_source_connect(client: mqtt.Client, userdata: argparse.Namespace, flags: 
         print_json({"event": "source_subscribed", "topic": topic, "qos": userdata.qos})
 
 
+def local_topic(source_topic: str) -> str:
+    if source_topic == SOURCE_TOPIC_PREFIX or source_topic.startswith(SOURCE_TOPIC_PREFIX + "/"):
+        return LOCAL_TOPIC_PREFIX + source_topic[len(SOURCE_TOPIC_PREFIX) :]
+    return source_topic
+
+
 def on_source_message(client: mqtt.Client, userdata: argparse.Namespace, msg: mqtt.MQTTMessage) -> None:
-    result = userdata.local_client.publish(msg.topic, payload=msg.payload, qos=msg.qos, retain=msg.retain)
+    topic = local_topic(msg.topic)
+    result = userdata.local_client.publish(topic, payload=msg.payload, qos=msg.qos, retain=msg.retain)
     print_json(
         {
             "event": "forwarded",
-            "topic": msg.topic,
+            "source_topic": msg.topic,
+            "topic": topic,
             "payload_len": len(msg.payload),
             "qos": msg.qos,
             "retain": msg.retain,
