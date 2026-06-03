@@ -116,7 +116,7 @@ onBeforeUnmount(() => {
           {{ health?.status ?? 'unknown' }} / db {{ health?.database ?? 'unknown' }}
         </span>
         <span class="counter">节点 {{ nodeTotal }} · 消息 {{ messages.length }} · 坐标 {{ mapNodes.length }}</span>
-        <button @click="refresh" :disabled="loading">{{ loading ? '刷新中...' : '刷新' }}</button>
+        <button @click="() => refresh()" :disabled="loading">{{ loading ? '刷新中...' : '刷新' }}</button>
       </div>
     </header>
 
