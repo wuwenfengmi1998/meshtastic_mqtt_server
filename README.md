@@ -25,6 +25,7 @@ go run .
 - port：`1883`
 - PSK：`AQ==`
 - TLS：关闭
+- Web：`0.0.0.0:8080`，静态目录 `./dist`
 - 数据库：SQLite
 - SQLite 文件：Unix/Linux 为 `/srv/mesh_mqtt_go/mesh_mqtt_go.db`，Windows 测试为 `./win/etc/mesh_mqtt_go/mesh_mqtt_go.db`
 
@@ -53,6 +54,11 @@ database:
     path: /srv/mesh_mqtt_go/mesh_mqtt_go.db
   mysql:
     dsn: ""
+web:
+  enabled: true
+  host: 0.0.0.0
+  port: 8080
+  static_dir: ./dist
 ```
 
 配置优先级：
@@ -78,7 +84,45 @@ go run . --host 127.0.0.1 --port 1883 --psk AQ==
 --tls-key      MQTT TLS private key file
 --db-driver    Database driver: sqlite or mysql
 --sqlite-path  SQLite database file path
---mysql-dsn    MySQL database DSN
+--mysql-dsn        MySQL database DSN
+--web              Enable Gin web server
+--web-host         Web server listen host
+--web-port         Web server listen port
+--web-static-dir   Web frontend static files directory
+```
+
+## Web 前端
+
+开发模式：
+
+```bash
+go run . --web-host 127.0.0.1 --web-port 8080
+cd meshmap_frontend
+npm run dev
+```
+
+生产构建：
+
+```bash
+cd meshmap_frontend
+npm run build
+cd ..
+go run .
+```
+
+构建后的文件位于项目根目录 `dist/`，Gin 会提供静态文件服务；`/api` 路径保留给后端接口。
+
+常用 API：
+
+```text
+GET /api/health
+GET /api/nodes
+GET /api/nodes/:id
+GET /api/text-messages
+GET /api/positions
+GET /api/telemetry
+GET /api/routing
+GET /api/traceroute
 ```
 
 ## TLS 配置示例

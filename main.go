@@ -1,13 +1,17 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	"meshtastic_mqtt_server/mqtpp"
 
@@ -147,6 +151,10 @@ func parseArgs() (*config, error) {
 	flag.StringVar(&cfg.Database.Driver, "db-driver", cfg.Database.Driver, "Database driver: sqlite or mysql")
 	flag.StringVar(&cfg.Database.SQLite.Path, "sqlite-path", cfg.Database.SQLite.Path, "SQLite database file path")
 	flag.StringVar(&cfg.Database.MySQL.DSN, "mysql-dsn", cfg.Database.MySQL.DSN, "MySQL database DSN")
+	flag.BoolVar(&cfg.Web.Enabled, "web", cfg.Web.Enabled, "Enable Gin web server")
+	flag.StringVar(&cfg.Web.Host, "web-host", cfg.Web.Host, "Web server listen host")
+	flag.IntVar(&cfg.Web.Port, "web-port", cfg.Web.Port, "Web server listen port")
+	flag.StringVar(&cfg.Web.StaticDir, "web-static-dir", cfg.Web.StaticDir, "Web frontend static files directory")
 	flag.Parse()
 
 	if err := validateConfig(cfg); err != nil {
@@ -160,7 +168,7 @@ func parseArgs() (*config, error) {
 	return cfg, nil
 }
 
-// run 创建 MQTT broker，监听传入 publish，并阻塞等待退出信号。
+// run 创建 MQTT broker 和 Web 服务，并阻塞等待退出信号。
 func run(cfg *config) error {
 	store, err := openStore(cfg.Database)
 	if err != nil {
@@ -168,32 +176,68 @@ func run(cfg *config) error {
 	}
 	defer store.Close()
 
-	server := mqtt.New(nil)
-	if err := server.AddHook(new(auth.AllowHook), nil); err != nil {
+	server, _, err := startMQTTServer(cfg, store)
+	if err != nil {
 		return err
 	}
+
+	var httpServer *http.Server
+	errCh := make(chan error, 1)
+	if cfg.Web.Enabled {
+		httpServer = newHTTPServer(cfg.Web, store)
+		go func() {
+			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- err
+			}
+		}()
+		printJSON(map[string]any{"event": "web_started", "address": httpServer.Addr, "static_dir": cfg.Web.StaticDir})
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	var runErr error
+	select {
+	case <-sigCh:
+	case runErr = <-errCh:
+	}
+
+	if httpServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(ctx); err != nil && runErr == nil {
+			runErr = err
+		}
+	}
+	if err := server.Close(); err != nil && runErr == nil {
+		runErr = err
+	}
+	return runErr
+}
+
+func startMQTTServer(cfg *config, store *store) (*mqtt.Server, string, error) {
+	server := mqtt.New(nil)
+	if err := server.AddHook(new(auth.AllowHook), nil); err != nil {
+		return nil, "", err
+	}
 	if err := server.AddHook(&meshtasticFilterHook{key: cfg.key, store: store}, nil); err != nil {
-		return err
+		return nil, "", err
 	}
 
 	addr := net.JoinHostPort(cfg.MQTT.Host, strconv.Itoa(cfg.MQTT.Port))
 	tlsConfig, err := buildTLSConfig(cfg.MQTT.TLS)
 	if err != nil {
-		return err
+		return nil, "", err
 	}
 	listener := listeners.NewTCP(listeners.Config{ID: "tcp", Address: addr, TLSConfig: tlsConfig})
 	if err := server.AddListener(listener); err != nil {
-		return err
+		return nil, "", err
 	}
 	if err := server.Serve(); err != nil {
-		return err
+		return nil, "", err
 	}
 	printJSON(map[string]any{"event": "broker_started", "address": addr, "tls": cfg.MQTT.TLS.Enabled})
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	<-sigCh
-	return server.Close()
+	return server, addr, nil
 }
 
 // printJSON 将记录编码为 JSON 后按数据包类型着色输出。

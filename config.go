@@ -16,6 +16,7 @@ type config struct {
 	MQTT       mqttConfig       `yaml:"mqtt"`
 	Meshtastic meshtasticConfig `yaml:"meshtastic"`
 	Database   databaseConfig   `yaml:"database"`
+	Web        webConfig        `yaml:"web"`
 	key        []byte
 }
 
@@ -49,10 +50,18 @@ type mysqlConfig struct {
 	DSN string `yaml:"dsn"`
 }
 
+type webConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Host      string `yaml:"host"`
+	Port      int    `yaml:"port"`
+	StaticDir string `yaml:"static_dir"`
+}
+
 type rawConfig struct {
 	MQTT       *rawMQTTConfig       `yaml:"mqtt"`
 	Meshtastic *rawMeshtasticConfig `yaml:"meshtastic"`
 	Database   *rawDatabaseConfig   `yaml:"database"`
+	Web        *rawWebConfig        `yaml:"web"`
 }
 
 type rawMQTTConfig struct {
@@ -85,6 +94,13 @@ type rawMySQLConfig struct {
 	DSN *string `yaml:"dsn"`
 }
 
+type rawWebConfig struct {
+	Enabled   *bool   `yaml:"enabled"`
+	Host      *string `yaml:"host"`
+	Port      *int    `yaml:"port"`
+	StaticDir *string `yaml:"static_dir"`
+}
+
 // defaultConfig 返回内置默认配置。
 func defaultConfig() *config {
 	return &config{
@@ -104,6 +120,12 @@ func defaultConfig() *config {
 			Driver: "sqlite",
 			SQLite: sqliteConfig{Path: defaultSQLitePath()},
 			MySQL:  mysqlConfig{DSN: ""},
+		},
+		Web: webConfig{
+			Enabled:   true,
+			Host:      "0.0.0.0",
+			Port:      8080,
+			StaticDir: "./dist",
 		},
 	}
 }
@@ -245,6 +267,31 @@ func normalizeConfig(raw rawConfig) (*config, bool) {
 		}
 	}
 
+	if raw.Web == nil {
+		changed = true
+	} else {
+		if raw.Web.Enabled == nil {
+			changed = true
+		} else {
+			cfg.Web.Enabled = *raw.Web.Enabled
+		}
+		if raw.Web.Host == nil {
+			changed = true
+		} else {
+			cfg.Web.Host = *raw.Web.Host
+		}
+		if raw.Web.Port == nil {
+			changed = true
+		} else {
+			cfg.Web.Port = *raw.Web.Port
+		}
+		if raw.Web.StaticDir == nil {
+			changed = true
+		} else {
+			cfg.Web.StaticDir = *raw.Web.StaticDir
+		}
+	}
+
 	return cfg, changed
 }
 
@@ -263,6 +310,14 @@ func validateConfig(cfg *config) error {
 		}
 	default:
 		return fmt.Errorf("invalid database.driver %q: must be sqlite or mysql", cfg.Database.Driver)
+	}
+	if cfg.Web.Enabled {
+		if cfg.Web.Port <= 0 || cfg.Web.Port > 65535 {
+			return fmt.Errorf("invalid web port %d: must be 1-65535", cfg.Web.Port)
+		}
+		if cfg.Web.StaticDir == "" {
+			return fmt.Errorf("web.static_dir is required when web is enabled")
+		}
 	}
 	return nil
 }

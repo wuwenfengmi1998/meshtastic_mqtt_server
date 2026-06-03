@@ -32,6 +32,15 @@ func TestLoadConfigCreatesDefaultFile(t *testing.T) {
 	if cfg.Database.SQLite.Path == "" {
 		t.Fatalf("sqlite path is empty")
 	}
+	if !cfg.Web.Enabled {
+		t.Fatalf("web enabled = false, want true")
+	}
+	if cfg.Web.Port != 8080 {
+		t.Fatalf("web port = %d, want 8080", cfg.Web.Port)
+	}
+	if cfg.Web.StaticDir != "./dist" {
+		t.Fatalf("web static dir = %q, want ./dist", cfg.Web.StaticDir)
+	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("default config was not written: %v", err)
 	}
@@ -68,7 +77,7 @@ func TestLoadConfigFillsMissingFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{"host:", "tls:", "enabled:", "cert_file:", "key_file:", "meshtastic:", "psk:", "database:", "driver:", "sqlite:", "mysql:", "dsn:"} {
+	for _, want := range []string{"host:", "tls:", "enabled:", "cert_file:", "key_file:", "meshtastic:", "psk:", "database:", "driver:", "sqlite:", "mysql:", "dsn:", "web:", "port:", "static_dir:"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("completed config missing %q in:\n%s", want, text)
 		}
@@ -94,6 +103,28 @@ func TestLoadConfigPreservesExplicitFalse(t *testing.T) {
 	}
 	if cfg.MQTT.TLS.CertFile != "cert.pem" || cfg.MQTT.TLS.KeyFile != "key.pem" {
 		t.Fatalf("tls paths = %q/%q, want cert.pem/key.pem", cfg.MQTT.TLS.CertFile, cfg.MQTT.TLS.KeyFile)
+	}
+}
+
+func TestLoadConfigPreservesExplicitWebFalse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mesh_mqtt_go", configFileName)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "web:\n  enabled: false\n  host: 127.0.0.1\n  port: 8081\n  static_dir: ./public\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatalf("loadConfig() error = %v", err)
+	}
+	if cfg.Web.Enabled {
+		t.Fatalf("web enabled = true, want explicit false")
+	}
+	if cfg.Web.Host != "127.0.0.1" || cfg.Web.Port != 8081 || cfg.Web.StaticDir != "./public" {
+		t.Fatalf("web config = %#v", cfg.Web)
 	}
 }
 
@@ -151,6 +182,28 @@ func TestValidateConfigDatabase(t *testing.T) {
 	cfg.Database.MySQL.DSN = ""
 	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "database.mysql.dsn") {
 		t.Fatalf("missing mysql dsn error = %v, want database.mysql.dsn error", err)
+	}
+}
+
+func TestValidateConfigWeb(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Web.Port = 0
+	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "web port") {
+		t.Fatalf("invalid web port error = %v, want web port error", err)
+	}
+
+	cfg = defaultConfig()
+	cfg.Web.StaticDir = ""
+	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "web.static_dir") {
+		t.Fatalf("missing web static dir error = %v, want web.static_dir error", err)
+	}
+
+	cfg = defaultConfig()
+	cfg.Web.Enabled = false
+	cfg.Web.Port = 0
+	cfg.Web.StaticDir = ""
+	if err := validateConfig(cfg); err != nil {
+		t.Fatalf("disabled web validate error = %v, want nil", err)
 	}
 }
 

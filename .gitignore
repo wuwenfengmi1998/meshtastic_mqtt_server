@@ -37,3 +37,7 @@ win/srv/
 *.db-journal
 *.db-wal
 *.db-shm
+
+dist
+meshmap_frontend/node_modules/
+meshmap_frontend/dist/
