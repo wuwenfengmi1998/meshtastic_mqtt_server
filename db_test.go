@@ -13,7 +13,7 @@ func TestOpenStoreCreatesTables(t *testing.T) {
 
 	for _, table := range []string{"nodeinfo_map", "text_message"} {
 		var name string
-		if err := st.db.QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name); err != nil {
+		if err := rawTestDB(t, st).QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name); err != nil {
 			t.Fatalf("%s table missing: %v", table, err)
 		}
 		if name != table {
@@ -22,7 +22,7 @@ func TestOpenStoreCreatesTables(t *testing.T) {
 	}
 
 	var oldCount int
-	if err := st.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'nodeinfo'").Scan(&oldCount); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'nodeinfo'").Scan(&oldCount); err != nil {
 		t.Fatal(err)
 	}
 	if oldCount != 0 {
@@ -46,7 +46,7 @@ func TestUpsertNodeInfoMapInsertsAndUpdatesSameNode(t *testing.T) {
 	}
 
 	var count int
-	if err := st.db.QueryRow("SELECT COUNT(*) FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&count); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
@@ -54,7 +54,7 @@ func TestUpsertNodeInfoMapInsertsAndUpdatesSameNode(t *testing.T) {
 	}
 
 	var latestType, longName, content string
-	if err := st.db.QueryRow("SELECT latest_type, long_name, content_json FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&latestType, &longName, &content); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT latest_type, long_name, content_json FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&latestType, &longName, &content); err != nil {
 		t.Fatal(err)
 	}
 	if latestType != "nodeinfo" {
@@ -80,7 +80,7 @@ func TestUpsertNodeInfoMapMergesNodeInfoThenMapReport(t *testing.T) {
 	}
 
 	var count int
-	if err := st.db.QueryRow("SELECT COUNT(*) FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&count); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
@@ -90,7 +90,7 @@ func TestUpsertNodeInfoMapMergesNodeInfoThenMapReport(t *testing.T) {
 	var latestType, userID, publicKey, longName, firmware, content string
 	var latitude float64
 	var opted sql.NullBool
-	if err := st.db.QueryRow("SELECT latest_type, user_id, public_key, long_name, firmware_version, latitude, has_opted_report_location, content_json FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&latestType, &userID, &publicKey, &longName, &firmware, &latitude, &opted, &content); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT latest_type, user_id, public_key, long_name, firmware_version, latitude, has_opted_report_location, content_json FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&latestType, &userID, &publicKey, &longName, &firmware, &latitude, &opted, &content); err != nil {
 		t.Fatal(err)
 	}
 	if latestType != "map_report" {
@@ -129,7 +129,7 @@ func TestUpsertNodeInfoMapMergesMapReportThenNodeInfo(t *testing.T) {
 
 	var latestType, userID, longName, firmware string
 	var latitude float64
-	if err := st.db.QueryRow("SELECT latest_type, user_id, long_name, firmware_version, latitude FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&latestType, &userID, &longName, &firmware, &latitude); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT latest_type, user_id, long_name, firmware_version, latitude FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&latestType, &userID, &longName, &firmware, &latitude); err != nil {
 		t.Fatal(err)
 	}
 	if latestType != "nodeinfo" {
@@ -175,7 +175,7 @@ func TestNodeInfoMapNullablePublicKey(t *testing.T) {
 	}
 
 	var publicKey sql.NullString
-	if err := st.db.QueryRow("SELECT public_key FROM nodeinfo_map WHERE node_id = ?", "!00000001").Scan(&publicKey); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT public_key FROM nodeinfo_map WHERE node_id = ?", "!00000001").Scan(&publicKey); err != nil {
 		t.Fatal(err)
 	}
 	if publicKey.Valid {
@@ -196,14 +196,14 @@ func TestInsertTextMessageAppendsRows(t *testing.T) {
 	}
 
 	var count int
-	if err := st.db.QueryRow("SELECT COUNT(*) FROM text_message WHERE from_id = ?", "!12345678").Scan(&count); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM text_message WHERE from_id = ?", "!12345678").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 2 {
 		t.Fatalf("text_message count = %d, want 2", count)
 	}
 
-	rows, err := st.db.Query("SELECT id FROM text_message ORDER BY id")
+	rows, err := rawTestDB(t, st).Query("SELECT id FROM text_message ORDER BY id")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +234,7 @@ func TestInsertTextMessageStoresClientInfo(t *testing.T) {
 	}
 
 	var clientID, username, listener, remoteAddr, remoteHost, remotePort string
-	if err := st.db.QueryRow("SELECT mqtt_client_id, mqtt_username, mqtt_listener, mqtt_remote_addr, mqtt_remote_host, mqtt_remote_port FROM text_message LIMIT 1").Scan(&clientID, &username, &listener, &remoteAddr, &remoteHost, &remotePort); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT mqtt_client_id, mqtt_username, mqtt_listener, mqtt_remote_addr, mqtt_remote_host, mqtt_remote_port FROM text_message LIMIT 1").Scan(&clientID, &username, &listener, &remoteAddr, &remoteHost, &remotePort); err != nil {
 		t.Fatal(err)
 	}
 	if clientID != "client-1" || username != "user-1" || listener != "tcp" || remoteAddr != "127.0.0.1:54321" || remoteHost != "127.0.0.1" || remotePort != "54321" {
@@ -254,7 +254,7 @@ func TestInsertTextMessageStoresPayloadHex(t *testing.T) {
 
 	var text sql.NullString
 	var payloadHex string
-	if err := st.db.QueryRow("SELECT text, payload_hex FROM text_message LIMIT 1").Scan(&text, &payloadHex); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT text, payload_hex FROM text_message LIMIT 1").Scan(&text, &payloadHex); err != nil {
 		t.Fatal(err)
 	}
 	if text.Valid {
@@ -293,6 +293,15 @@ func openTestStore(t *testing.T) *store {
 		t.Fatalf("openStore() error = %v", err)
 	}
 	return st
+}
+
+func rawTestDB(t *testing.T, st *store) *sql.DB {
+	t.Helper()
+	db, err := st.db.DB()
+	if err != nil {
+		t.Fatalf("st.db.DB() error = %v", err)
+	}
+	return db
 }
 
 func nodeInfoRecord(longName string) map[string]any {

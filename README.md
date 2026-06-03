@@ -99,7 +99,7 @@ meshtastic:
 
 ## 数据库持久化
 
-程序默认启用 SQLite，并持久化以下数据：
+程序默认启用 SQLite，数据库表迁移和操作由 GORM 执行，并持久化以下数据：
 
 - `nodeinfo_map`：融合 `type == "nodeinfo"` 和 `type == "map_report"` 的节点信息
 - `text_message`：追加保存 `type == "text_message"` 的聊天消息
