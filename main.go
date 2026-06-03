@@ -242,7 +242,7 @@ func startMQTTServer(cfg *config, store *store) (*mqtt.Server, string, error) {
 
 // printJSON 将记录编码为 JSON 后按数据包类型着色输出。
 func printJSON(record map[string]any) {
-	printJSONBytes(record, mqtpp.MustJSON(record))
+	//printJSONBytes(record, mqtpp.MustJSON(record))
 }
 
 // printJSONBytes 使用已编码好的 JSON 文本，并根据记录 type 选择控制台颜色。
