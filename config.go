@@ -15,6 +15,7 @@ const configFileName = "config.yaml"
 type config struct {
 	MQTT       mqttConfig       `yaml:"mqtt"`
 	Meshtastic meshtasticConfig `yaml:"meshtastic"`
+	Database   databaseConfig   `yaml:"database"`
 	key        []byte
 }
 
@@ -34,9 +35,24 @@ type meshtasticConfig struct {
 	PSK string `yaml:"psk"`
 }
 
+type databaseConfig struct {
+	Driver string       `yaml:"driver"`
+	SQLite sqliteConfig `yaml:"sqlite"`
+	MySQL  mysqlConfig  `yaml:"mysql"`
+}
+
+type sqliteConfig struct {
+	Path string `yaml:"path"`
+}
+
+type mysqlConfig struct {
+	DSN string `yaml:"dsn"`
+}
+
 type rawConfig struct {
 	MQTT       *rawMQTTConfig       `yaml:"mqtt"`
 	Meshtastic *rawMeshtasticConfig `yaml:"meshtastic"`
+	Database   *rawDatabaseConfig   `yaml:"database"`
 }
 
 type rawMQTTConfig struct {
@@ -55,6 +71,20 @@ type rawMeshtasticConfig struct {
 	PSK *string `yaml:"psk"`
 }
 
+type rawDatabaseConfig struct {
+	Driver *string          `yaml:"driver"`
+	SQLite *rawSQLiteConfig `yaml:"sqlite"`
+	MySQL  *rawMySQLConfig  `yaml:"mysql"`
+}
+
+type rawSQLiteConfig struct {
+	Path *string `yaml:"path"`
+}
+
+type rawMySQLConfig struct {
+	DSN *string `yaml:"dsn"`
+}
+
 // defaultConfig 返回内置默认配置。
 func defaultConfig() *config {
 	return &config{
@@ -70,6 +100,11 @@ func defaultConfig() *config {
 		Meshtastic: meshtasticConfig{
 			PSK: "AQ==",
 		},
+		Database: databaseConfig{
+			Driver: "sqlite",
+			SQLite: sqliteConfig{Path: defaultSQLitePath()},
+			MySQL:  mysqlConfig{DSN: ""},
+		},
 	}
 }
 
@@ -84,6 +119,17 @@ func defaultConfigDir() string {
 // defaultConfigPath 返回默认配置文件路径。
 func defaultConfigPath() string {
 	return filepath.Join(defaultConfigDir(), configFileName)
+}
+
+func defaultSQLitePath() string {
+	return defaultSQLitePathForGOOS(runtime.GOOS)
+}
+
+func defaultSQLitePathForGOOS(goos string) string {
+	if goos == "windows" {
+		return filepath.Join(".", "win", "etc", "mesh_mqtt_go", "mesh_mqtt_go.db")
+	}
+	return filepath.Join(string(filepath.Separator), "srv", "mesh_mqtt_go", "mesh_mqtt_go.db")
 }
 
 // loadConfig 加载配置文件；文件不存在时生成，字段缺失时自动补全并写回。
@@ -175,12 +221,48 @@ func normalizeConfig(raw rawConfig) (*config, bool) {
 		cfg.Meshtastic.PSK = *raw.Meshtastic.PSK
 	}
 
+	if raw.Database == nil {
+		changed = true
+	} else {
+		if raw.Database.Driver == nil {
+			changed = true
+		} else {
+			cfg.Database.Driver = *raw.Database.Driver
+		}
+		if raw.Database.SQLite == nil {
+			changed = true
+		} else if raw.Database.SQLite.Path == nil {
+			changed = true
+		} else {
+			cfg.Database.SQLite.Path = *raw.Database.SQLite.Path
+		}
+		if raw.Database.MySQL == nil {
+			changed = true
+		} else if raw.Database.MySQL.DSN == nil {
+			changed = true
+		} else {
+			cfg.Database.MySQL.DSN = *raw.Database.MySQL.DSN
+		}
+	}
+
 	return cfg, changed
 }
 
 func validateConfig(cfg *config) error {
 	if cfg.MQTT.Port <= 0 || cfg.MQTT.Port > 65535 {
 		return fmt.Errorf("invalid mqtt port %d: must be 1-65535", cfg.MQTT.Port)
+	}
+	switch cfg.Database.Driver {
+	case "sqlite":
+		if cfg.Database.SQLite.Path == "" {
+			return fmt.Errorf("database.sqlite.path is required when database.driver is sqlite")
+		}
+	case "mysql":
+		if cfg.Database.MySQL.DSN == "" {
+			return fmt.Errorf("database.mysql.dsn is required when database.driver is mysql")
+		}
+	default:
+		return fmt.Errorf("invalid database.driver %q: must be sqlite or mysql", cfg.Database.Driver)
 	}
 	return nil
 }

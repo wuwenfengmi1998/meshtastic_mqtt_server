@@ -26,6 +26,12 @@ func TestLoadConfigCreatesDefaultFile(t *testing.T) {
 	if cfg.Meshtastic.PSK != "AQ==" {
 		t.Fatalf("psk = %q, want AQ==", cfg.Meshtastic.PSK)
 	}
+	if cfg.Database.Driver != "sqlite" {
+		t.Fatalf("database driver = %q, want sqlite", cfg.Database.Driver)
+	}
+	if cfg.Database.SQLite.Path == "" {
+		t.Fatalf("sqlite path is empty")
+	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("default config was not written: %v", err)
 	}
@@ -53,13 +59,16 @@ func TestLoadConfigFillsMissingFields(t *testing.T) {
 	if cfg.Meshtastic.PSK != "AQ==" {
 		t.Fatalf("psk = %q, want AQ==", cfg.Meshtastic.PSK)
 	}
+	if cfg.Database.Driver != "sqlite" {
+		t.Fatalf("database driver = %q, want sqlite", cfg.Database.Driver)
+	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{"host:", "tls:", "enabled:", "cert_file:", "key_file:", "meshtastic:", "psk:"} {
+	for _, want := range []string{"host:", "tls:", "enabled:", "cert_file:", "key_file:", "meshtastic:", "psk:", "database:", "driver:", "sqlite:", "mysql:", "dsn:"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("completed config missing %q in:\n%s", want, text)
 		}
@@ -71,7 +80,7 @@ func TestLoadConfigPreservesExplicitFalse(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
 	}
-	content := "mqtt:\n  host: 127.0.0.1\n  port: 1885\n  tls:\n    enabled: false\n    cert_file: cert.pem\n    key_file: key.pem\nmeshtastic:\n  psk: AQ==\n"
+	content := "mqtt:\n  host: 127.0.0.1\n  port: 1885\n  tls:\n    enabled: false\n    cert_file: cert.pem\n    key_file: key.pem\nmeshtastic:\n  psk: AQ==\ndatabase:\n  driver: sqlite\n  sqlite:\n    path: test.db\n  mysql:\n    dsn: \"\"\n"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -108,6 +117,40 @@ func TestLoadConfigMalformedYAMLDoesNotOverwrite(t *testing.T) {
 	}
 	if string(data) != content {
 		t.Fatalf("malformed config was overwritten: %q", string(data))
+	}
+}
+
+func TestDefaultSQLitePathForGOOS(t *testing.T) {
+	windowsPath := defaultSQLitePathForGOOS("windows")
+	if !strings.Contains(windowsPath, filepath.Join("win", "etc", "mesh_mqtt_go", "mesh_mqtt_go.db")) {
+		t.Fatalf("windows sqlite path = %q", windowsPath)
+	}
+
+	linuxPath := defaultSQLitePathForGOOS("linux")
+	want := filepath.Join(string(filepath.Separator), "srv", "mesh_mqtt_go", "mesh_mqtt_go.db")
+	if linuxPath != want {
+		t.Fatalf("linux sqlite path = %q, want %q", linuxPath, want)
+	}
+}
+
+func TestValidateConfigDatabase(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Database.Driver = "postgres"
+	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "database.driver") {
+		t.Fatalf("invalid driver error = %v, want database.driver error", err)
+	}
+
+	cfg = defaultConfig()
+	cfg.Database.SQLite.Path = ""
+	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "database.sqlite.path") {
+		t.Fatalf("missing sqlite path error = %v, want database.sqlite.path error", err)
+	}
+
+	cfg = defaultConfig()
+	cfg.Database.Driver = "mysql"
+	cfg.Database.MySQL.DSN = ""
+	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "database.mysql.dsn") {
+		t.Fatalf("missing mysql dsn error = %v, want database.mysql.dsn error", err)
 	}
 }
 

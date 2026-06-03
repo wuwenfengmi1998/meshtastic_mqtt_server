@@ -30,7 +30,8 @@ const (
 
 type meshtasticFilterHook struct {
 	mqtt.HookBase
-	key []byte
+	key   []byte
+	store *store
 }
 
 // ID 返回用于识别 Meshtastic payload 过滤器的 hook 名称。
@@ -50,6 +51,11 @@ func (h *meshtasticFilterHook) OnPublish(_ *mqtt.Client, pk packets.Packet) (pac
 		return pk, packets.ErrRejectPacket
 	}
 
+	if record["type"] == "nodeinfo" && h.store != nil {
+		if err := h.store.UpsertNodeInfo(record); err != nil {
+			printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
+		}
+	}
 	if record["type"] != "empty_packet" {
 		printJSON(record)
 	}
@@ -82,6 +88,9 @@ func parseArgs() (*config, error) {
 	flag.BoolVar(&cfg.MQTT.TLS.Enabled, "tls", cfg.MQTT.TLS.Enabled, "Enable MQTT TLS listener")
 	flag.StringVar(&cfg.MQTT.TLS.CertFile, "tls-cert", cfg.MQTT.TLS.CertFile, "MQTT TLS certificate file")
 	flag.StringVar(&cfg.MQTT.TLS.KeyFile, "tls-key", cfg.MQTT.TLS.KeyFile, "MQTT TLS private key file")
+	flag.StringVar(&cfg.Database.Driver, "db-driver", cfg.Database.Driver, "Database driver: sqlite or mysql")
+	flag.StringVar(&cfg.Database.SQLite.Path, "sqlite-path", cfg.Database.SQLite.Path, "SQLite database file path")
+	flag.StringVar(&cfg.Database.MySQL.DSN, "mysql-dsn", cfg.Database.MySQL.DSN, "MySQL database DSN")
 	flag.Parse()
 
 	if err := validateConfig(cfg); err != nil {
@@ -97,11 +106,17 @@ func parseArgs() (*config, error) {
 
 // run 创建 MQTT broker，监听传入 publish，并阻塞等待退出信号。
 func run(cfg *config) error {
+	store, err := openStore(cfg.Database)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
 	server := mqtt.New(nil)
 	if err := server.AddHook(new(auth.AllowHook), nil); err != nil {
 		return err
 	}
-	if err := server.AddHook(&meshtasticFilterHook{key: cfg.key}, nil); err != nil {
+	if err := server.AddHook(&meshtasticFilterHook{key: cfg.key, store: store}, nil); err != nil {
 		return err
 	}
 

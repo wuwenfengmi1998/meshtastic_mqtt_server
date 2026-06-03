@@ -25,6 +25,8 @@ go run .
 - port：`1883`
 - PSK：`AQ==`
 - TLS：关闭
+- 数据库：SQLite
+- SQLite 文件：Unix/Linux 为 `/srv/mesh_mqtt_go/mesh_mqtt_go.db`，Windows 测试为 `./win/etc/mesh_mqtt_go/mesh_mqtt_go.db`
 
 首次启动会自动生成配置文件；之后每次启动都会检查配置项，缺失项会自动补全并写回。
 
@@ -45,6 +47,12 @@ mqtt:
     key_file: ""
 meshtastic:
   psk: AQ==
+database:
+  driver: sqlite
+  sqlite:
+    path: /srv/mesh_mqtt_go/mesh_mqtt_go.db
+  mysql:
+    dsn: ""
 ```
 
 配置优先级：
@@ -66,8 +74,11 @@ go run . --host 127.0.0.1 --port 1883 --psk AQ==
 --port      MQTT broker listen port
 --psk       Base64 channel PSK used to try decrypting encrypted packets
 --tls       Enable MQTT TLS listener
---tls-cert  MQTT TLS certificate file
---tls-key   MQTT TLS private key file
+--tls-cert     MQTT TLS certificate file
+--tls-key      MQTT TLS private key file
+--db-driver    Database driver: sqlite or mysql
+--sqlite-path  SQLite database file path
+--mysql-dsn    MySQL database DSN
 ```
 
 ## TLS 配置示例
@@ -85,6 +96,34 @@ meshtastic:
 ```
 
 启用 TLS 后，`cert_file` 和 `key_file` 必须指向可读取的证书和私钥文件。
+
+## 数据库持久化
+
+程序默认启用 SQLite，并在收到 `nodeinfo` 数据包时写入 `nodeinfo` 表。
+
+- 当前只持久化 `type == "nodeinfo"` 的记录
+- 同一节点以 `node_id`（即解析结果中的 `from`，例如 `!a8dfd867`）作为主键
+- 重复收到同一节点时不会插入重复行，只更新节点字段、`content_json` 和 `updated_at`
+- `first_seen_at` 保留第一次写入时间
+- `content_json` 保存完整的解析结果 JSON
+
+SQLite 默认路径：
+
+- Unix/Linux：`/srv/mesh_mqtt_go/mesh_mqtt_go.db`
+- Windows 测试：`./win/etc/mesh_mqtt_go/mesh_mqtt_go.db`
+
+MySQL 配置示例：
+
+```yaml
+database:
+  driver: mysql
+  sqlite:
+    path: /srv/mesh_mqtt_go/mesh_mqtt_go.db
+  mysql:
+    dsn: mesh_user:mesh_pass@tcp(127.0.0.1:3306)/mesh_mqtt_go?parseTime=true&charset=utf8mb4,utf8
+```
+
+使用 MySQL 时，需要提前创建好 database/schema。
 
 ## 转发规则
 
