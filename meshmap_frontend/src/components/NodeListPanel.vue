@@ -20,10 +20,6 @@ const totalPages = computed(() => Math.max(1, Math.ceil(props.total / props.page
 const canPrev = computed(() => props.page > 1)
 const canNext = computed(() => props.page < totalPages.value)
 
-function nodeName(node: NodeInfo): string {
-  return node.long_name || node.short_name || node.node_id
-}
-
 function formatTime(value: string): string {
   return new Date(value).toLocaleString()
 }
@@ -43,11 +39,12 @@ function formatTime(value: string): string {
       <table class="node-table">
         <thead>
           <tr>
-            <th>节点</th>
             <th>Node ID</th>
-            <th>User ID</th>
-            <th>角色</th>
+            <th>Long Name</th>
+            <th>Short Name</th>
             <th>硬件</th>
+            <th>角色</th>
+            <th>Public Key</th>
             <th>更新时间</th>
           </tr>
         </thead>
@@ -59,11 +56,12 @@ function formatTime(value: string): string {
             :class="{ selected: selectedNodeId === node.node_id }"
             @click="emit('select-node', node.node_id)"
           >
-            <td>{{ nodeName(node) }}</td>
             <td>{{ node.node_id }}</td>
-            <td>{{ node.user_id || '-' }}</td>
-            <td>{{ node.role || '-' }}</td>
+            <td>{{ node.long_name || '-' }}</td>
+            <td>{{ node.short_name || '-' }}</td>
             <td>{{ node.hw_model || '-' }}</td>
+            <td>{{ node.role || '-' }}</td>
+            <td>{{ node.public_key || '-' }}</td>
             <td>{{ formatTime(node.updated_at) }}</td>
           </tr>
         </tbody>

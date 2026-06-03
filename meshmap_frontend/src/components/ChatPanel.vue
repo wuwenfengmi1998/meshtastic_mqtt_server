@@ -129,6 +129,7 @@ onUpdated(() => {
         <strong>{{ senderName(message) }}</strong>
         <small>{{ formatTime(message.created_at) }}</small>
       </span>
+      <span class="chat-topic">{{ message.topic }}</span>
       <span class="chat-text">{{ message.text || '[binary]' }}</span>
     </button>
   </aside>
