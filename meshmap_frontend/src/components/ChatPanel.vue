@@ -45,7 +45,6 @@ function formatTime(value: string): string {
         <small>{{ formatTime(message.created_at) }}</small>
       </span>
       <span class="chat-text">{{ message.text || '[binary]' }}</span>
-      <span class="chat-host">{{ message.mqtt_remote_host || message.topic }}</span>
     </button>
   </aside>
 </template>

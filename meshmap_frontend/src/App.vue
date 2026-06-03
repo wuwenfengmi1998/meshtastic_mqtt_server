@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getHealth, getNodes, getPositions, getTextMessages } from './api'
 import ChatPanel from './components/ChatPanel.vue'
 import MeshMap from './components/MeshMap.vue'
@@ -18,6 +18,7 @@ const nodePageSize = 25
 const nodeTotal = ref(0)
 const messages = ref<TextMessage[]>([])
 const positions = ref<PositionRecord[]>([])
+let refreshTimer: number | undefined
 
 const nodesById = computed<NodeInfoById>(() => {
   const map = new Map<string, NodeInfoMap>()
@@ -46,8 +47,10 @@ const mapNodes = computed<MapNode[]>(() => {
     }))
 })
 
-async function loadNodePage(page: number) {
-  nodePageLoading.value = true
+async function loadNodePage(page: number, showLoading = true) {
+  if (showLoading) {
+    nodePageLoading.value = true
+  }
   try {
     const safePage = Math.max(1, page)
     const response = await getNodes(nodePageSize, (safePage - 1) * nodePageSize)
@@ -57,12 +60,16 @@ async function loadNodePage(page: number) {
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
-    nodePageLoading.value = false
+    if (showLoading) {
+      nodePageLoading.value = false
+    }
   }
 }
 
-async function refresh() {
-  loading.value = true
+async function refresh(showLoading = true) {
+  if (showLoading) {
+    loading.value = true
+  }
   error.value = ''
   try {
     const [healthData, mapNodeData, messageData, positionData] = await Promise.all([
@@ -75,15 +82,26 @@ async function refresh() {
     mapNodeSource.value = mapNodeData.items
     messages.value = messageData.items
     positions.value = positionData.items
-    await loadNodePage(nodePage.value)
+    await loadNodePage(nodePage.value, showLoading)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
-    loading.value = false
+    if (showLoading) {
+      loading.value = false
+    }
   }
 }
 
-onMounted(refresh)
+onMounted(() => {
+  refresh()
+  refreshTimer = window.setInterval(() => refresh(false), 5000)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer !== undefined) {
+    window.clearInterval(refreshTimer)
+  }
+})
 </script>
 
 <template>
