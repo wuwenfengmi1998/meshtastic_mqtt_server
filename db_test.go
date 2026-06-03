@@ -11,7 +11,7 @@ func TestOpenStoreCreatesTables(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	for _, table := range []string{"nodeinfo_map", "text_message", "position", "telemetry", "routing", "traceroute"} {
+	for _, table := range []string{"nodeinfo", "map_report", "text_message", "position", "telemetry", "routing", "traceroute"} {
 		var name string
 		if err := rawTestDB(t, st).QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name); err != nil {
 			t.Fatalf("%s table missing: %v", table, err)
@@ -22,160 +22,164 @@ func TestOpenStoreCreatesTables(t *testing.T) {
 	}
 
 	var oldCount int
-	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'nodeinfo'").Scan(&oldCount); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'nodeinfo_map'").Scan(&oldCount); err != nil {
 		t.Fatal(err)
 	}
 	if oldCount != 0 {
-		t.Fatalf("old nodeinfo table count = %d, want 0", oldCount)
+		t.Fatalf("nodeinfo_map table count = %d, want 0", oldCount)
 	}
 }
 
-func TestUpsertNodeInfoMapInsertsAndUpdatesSameNode(t *testing.T) {
+func TestUpsertNodeInfoInsertsAndUpdatesSameNode(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	first := nodeInfoRecord("first name")
-	if err := st.UpsertNodeInfoMap(first); err != nil {
-		t.Fatalf("first UpsertNodeInfoMap() error = %v", err)
+	first := nodeInfoTestRecord("first name")
+	if err := st.UpsertNodeInfo(first); err != nil {
+		t.Fatalf("first UpsertNodeInfo() error = %v", err)
 	}
 
-	second := nodeInfoRecord("second name")
+	second := nodeInfoTestRecord("second name")
 	second["short_name"] = "snd"
-	if err := st.UpsertNodeInfoMap(second); err != nil {
-		t.Fatalf("second UpsertNodeInfoMap() error = %v", err)
+	if err := st.UpsertNodeInfo(second); err != nil {
+		t.Fatalf("second UpsertNodeInfo() error = %v", err)
 	}
 
 	var count int
-	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&count); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM nodeinfo WHERE node_id = ?", "!12345678").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
-		t.Fatalf("node row count = %d, want 1", count)
+		t.Fatalf("nodeinfo row count = %d, want 1", count)
 	}
 
-	var latestType, longName, content string
-	if err := rawTestDB(t, st).QueryRow("SELECT latest_type, long_name, content_json FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&latestType, &longName, &content); err != nil {
+	var longName, shortName, content string
+	if err := rawTestDB(t, st).QueryRow("SELECT long_name, short_name, content_json FROM nodeinfo WHERE node_id = ?", "!12345678").Scan(&longName, &shortName, &content); err != nil {
 		t.Fatal(err)
 	}
-	if latestType != "nodeinfo" {
-		t.Fatalf("latest_type = %q, want nodeinfo", latestType)
-	}
-	if longName != "second name" {
-		t.Fatalf("long_name = %q, want second name", longName)
+	if longName != "second name" || shortName != "snd" {
+		t.Fatalf("nodeinfo names = %q/%q, want second name/snd", longName, shortName)
 	}
 	if !strings.Contains(content, "second name") {
 		t.Fatalf("content_json = %q, want updated content", content)
 	}
 }
 
-func TestUpsertNodeInfoMapMergesNodeInfoThenMapReport(t *testing.T) {
+func TestUpsertMapReportInsertsAndUpdatesSameNode(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	if err := st.UpsertNodeInfoMap(nodeInfoRecord("node name")); err != nil {
-		t.Fatalf("nodeinfo UpsertNodeInfoMap() error = %v", err)
+	first := mapReportTestRecord("first map")
+	if err := st.UpsertMapReport(first); err != nil {
+		t.Fatalf("first UpsertMapReport() error = %v", err)
 	}
-	if err := st.UpsertNodeInfoMap(mapReportRecord("map name")); err != nil {
-		t.Fatalf("map_report UpsertNodeInfoMap() error = %v", err)
+
+	second := mapReportTestRecord("second map")
+	second["latitude"] = 43.5
+	if err := st.UpsertMapReport(second); err != nil {
+		t.Fatalf("second UpsertMapReport() error = %v", err)
 	}
 
 	var count int
-	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&count); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM map_report WHERE node_id = ?", "!12345678").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
-		t.Fatalf("node row count = %d, want 1", count)
+		t.Fatalf("map_report row count = %d, want 1", count)
 	}
 
-	var latestType, userID, publicKey, longName, firmware, content string
+	var longName string
 	var latitude float64
 	var opted sql.NullBool
-	if err := rawTestDB(t, st).QueryRow("SELECT latest_type, user_id, public_key, long_name, firmware_version, latitude, has_opted_report_location, content_json FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&latestType, &userID, &publicKey, &longName, &firmware, &latitude, &opted, &content); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT long_name, latitude, has_opted_report_location FROM map_report WHERE node_id = ?", "!12345678").Scan(&longName, &latitude, &opted); err != nil {
 		t.Fatal(err)
 	}
-	if latestType != "map_report" {
-		t.Fatalf("latest_type = %q, want map_report", latestType)
-	}
-	if userID != "!12345678" || publicKey != "abcd" {
-		t.Fatalf("nodeinfo fields not preserved: user_id=%q public_key=%q", userID, publicKey)
-	}
-	if longName != "map name" {
-		t.Fatalf("long_name = %q, want map name", longName)
-	}
-	if firmware != "1.2.3" {
-		t.Fatalf("firmware = %q, want 1.2.3", firmware)
-	}
-	if latitude != 42.5 {
-		t.Fatalf("latitude = %v, want 42.5", latitude)
+	if longName != "second map" || latitude != 43.5 {
+		t.Fatalf("map_report row = %q/%v, want second map/43.5", longName, latitude)
 	}
 	if !opted.Valid || opted.Bool {
 		t.Fatalf("has_opted_report_location = %+v, want valid false", opted)
 	}
-	if !strings.Contains(content, "map_report") {
-		t.Fatalf("content_json = %q, want latest map_report content", content)
-	}
 }
 
-func TestUpsertNodeInfoMapMergesMapReportThenNodeInfo(t *testing.T) {
+func TestNodeInfoAndMapReportAreStoredSeparately(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	if err := st.UpsertNodeInfoMap(mapReportRecord("map name")); err != nil {
-		t.Fatalf("map_report UpsertNodeInfoMap() error = %v", err)
+	if err := st.UpsertNodeInfo(nodeInfoTestRecord("node name")); err != nil {
+		t.Fatalf("UpsertNodeInfo() error = %v", err)
 	}
-	if err := st.UpsertNodeInfoMap(nodeInfoRecord("node name")); err != nil {
-		t.Fatalf("nodeinfo UpsertNodeInfoMap() error = %v", err)
+	if err := st.UpsertMapReport(mapReportTestRecord("map name")); err != nil {
+		t.Fatalf("UpsertMapReport() error = %v", err)
 	}
 
-	var latestType, userID, longName, firmware string
-	var latitude float64
-	if err := rawTestDB(t, st).QueryRow("SELECT latest_type, user_id, long_name, firmware_version, latitude FROM nodeinfo_map WHERE node_id = ?", "!12345678").Scan(&latestType, &userID, &longName, &firmware, &latitude); err != nil {
+	var nodeLongName, userID, publicKey string
+	if err := rawTestDB(t, st).QueryRow("SELECT long_name, user_id, public_key FROM nodeinfo WHERE node_id = ?", "!12345678").Scan(&nodeLongName, &userID, &publicKey); err != nil {
 		t.Fatal(err)
 	}
-	if latestType != "nodeinfo" {
-		t.Fatalf("latest_type = %q, want nodeinfo", latestType)
+	if nodeLongName != "node name" || userID != "!12345678" || publicKey != "abcd" {
+		t.Fatalf("nodeinfo row = %q/%q/%q, want node fields", nodeLongName, userID, publicKey)
 	}
-	if userID != "!12345678" {
-		t.Fatalf("user_id = %q, want !12345678", userID)
+
+	var mapLongName, firmware string
+	var latitude float64
+	if err := rawTestDB(t, st).QueryRow("SELECT long_name, firmware_version, latitude FROM map_report WHERE node_id = ?", "!12345678").Scan(&mapLongName, &firmware, &latitude); err != nil {
+		t.Fatal(err)
 	}
-	if longName != "node name" {
-		t.Fatalf("long_name = %q, want node name", longName)
-	}
-	if firmware != "1.2.3" || latitude != 42.5 {
-		t.Fatalf("map fields not preserved: firmware=%q latitude=%v", firmware, latitude)
+	if mapLongName != "map name" || firmware != "1.2.3" || latitude != 42.5 {
+		t.Fatalf("map_report row = %q/%q/%v, want map fields", mapLongName, firmware, latitude)
 	}
 }
 
-func TestUpsertNodeInfoMapRequiresNodeFields(t *testing.T) {
+func TestUpsertNodeInfoRequiresNodeFields(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	if err := st.UpsertNodeInfoMap(map[string]any{"type": "nodeinfo", "from_num": 1}); err == nil || !strings.Contains(err.Error(), "from") {
+	if err := st.UpsertNodeInfo(map[string]any{"type": "nodeinfo", "from_num": 1}); err == nil || !strings.Contains(err.Error(), "from") {
 		t.Fatalf("missing from error = %v, want from error", err)
 	}
-	if err := st.UpsertNodeInfoMap(map[string]any{"type": "nodeinfo", "from": "!00000001"}); err == nil || !strings.Contains(err.Error(), "from_num") {
+	if err := st.UpsertNodeInfo(map[string]any{"type": "nodeinfo", "from": "!00000001"}); err == nil || !strings.Contains(err.Error(), "from_num") {
 		t.Fatalf("missing from_num error = %v, want from_num error", err)
 	}
 }
 
-func TestNodeInfoMapFromRecordRejectsWrongType(t *testing.T) {
-	_, err := nodeInfoMapFromRecord(map[string]any{"type": "text_message"})
-	if err == nil {
-		t.Fatalf("nodeInfoMapFromRecord() error = nil, want error")
+func TestUpsertMapReportRequiresNodeFields(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.UpsertMapReport(map[string]any{"type": "map_report", "from_num": 1}); err == nil || !strings.Contains(err.Error(), "from") {
+		t.Fatalf("missing from error = %v, want from error", err)
+	}
+	if err := st.UpsertMapReport(map[string]any{"type": "map_report", "from": "!00000001"}); err == nil || !strings.Contains(err.Error(), "from_num") {
+		t.Fatalf("missing from_num error = %v, want from_num error", err)
 	}
 }
 
-func TestNodeInfoMapNullablePublicKey(t *testing.T) {
+func TestNodeInfoFromRecordRejectsWrongType(t *testing.T) {
+	_, err := nodeInfoFromRecord(map[string]any{"type": "map_report"})
+	if err == nil {
+		t.Fatalf("nodeInfoFromRecord() error = nil, want error")
+	}
+}
+
+func TestMapReportFromRecordRejectsWrongType(t *testing.T) {
+	_, err := mapReportFromRecord(map[string]any{"type": "nodeinfo"})
+	if err == nil {
+		t.Fatalf("mapReportFromRecord() error = nil, want error")
+	}
+}
+
+func TestNodeInfoNullablePublicKey(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
 	record := map[string]any{"type": "nodeinfo", "from": "!00000001", "from_num": 1, "public_key": nil}
-	if err := st.UpsertNodeInfoMap(record); err != nil {
-		t.Fatalf("UpsertNodeInfoMap() error = %v", err)
+	if err := st.UpsertNodeInfo(record); err != nil {
+		t.Fatalf("UpsertNodeInfo() error = %v", err)
 	}
 
 	var publicKey sql.NullString
-	if err := rawTestDB(t, st).QueryRow("SELECT public_key FROM nodeinfo_map WHERE node_id = ?", "!00000001").Scan(&publicKey); err != nil {
+	if err := rawTestDB(t, st).QueryRow("SELECT public_key FROM nodeinfo WHERE node_id = ?", "!00000001").Scan(&publicKey); err != nil {
 		t.Fatal(err)
 	}
 	if publicKey.Valid {
@@ -437,7 +441,7 @@ func rawTestDB(t *testing.T, st *store) *sql.DB {
 	return db
 }
 
-func nodeInfoRecord(longName string) map[string]any {
+func nodeInfoTestRecord(longName string) map[string]any {
 	return map[string]any{
 		"type":        "nodeinfo",
 		"from":        "!12345678",
@@ -452,7 +456,7 @@ func nodeInfoRecord(longName string) map[string]any {
 	}
 }
 
-func mapReportRecord(longName string) map[string]any {
+func mapReportTestRecord(longName string) map[string]any {
 	return map[string]any{
 		"type":                      "map_report",
 		"from":                      "!12345678",

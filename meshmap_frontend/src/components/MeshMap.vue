@@ -91,21 +91,24 @@ function renderMarkers(forceFit: boolean) {
 }
 
 function buildNodePopupHTML(node: MapNode): string {
-  const info = node.node
+  const info = node.nodeinfo
+  const report = node.map_report
   return `
     <div class="node-popup">
       <strong>${escapeHTML(node.node_id)}</strong>
       <dl>
-        <div><dt>长名称</dt><dd>${escapeHTML(info?.long_name || '-')}</dd></div>
-        <div><dt>短名称</dt><dd>${escapeHTML(info?.short_name || '-')}</dd></div>
-        <div><dt>硬件型号</dt><dd>${escapeHTML(info?.hw_model || '-')}</dd></div>
-        <div><dt>角色</dt><dd>${escapeHTML(info?.role || '-')}</dd></div>
-        <div><dt>固件版本</dt><dd>${escapeHTML(info?.firmware_version || '-')}</dd></div>
+        <div><dt>长名称</dt><dd>${escapeHTML(report?.long_name || info?.long_name || '-')}</dd></div>
+        <div><dt>短名称</dt><dd>${escapeHTML(report?.short_name || info?.short_name || '-')}</dd></div>
+        <div><dt>硬件型号</dt><dd>${escapeHTML(report?.hw_model || info?.hw_model || '-')}</dd></div>
+        <div><dt>角色</dt><dd>${escapeHTML(report?.role || info?.role || '-')}</dd></div>
+        <div><dt>固件版本</dt><dd>${escapeHTML(report?.firmware_version || '-')}</dd></div>
+        <div><dt>区域</dt><dd>${escapeHTML(report?.region || '-')}</dd></div>
+        <div><dt>调制预设</dt><dd>${escapeHTML(report?.modem_preset || '-')}</dd></div>
         <div><dt>海拔</dt><dd>${node.altitude ?? '-'}</dd></div>
         <div><dt>经度</dt><dd>${node.longitude.toFixed(5)}</dd></div>
         <div><dt>纬度</dt><dd>${node.latitude.toFixed(5)}</dd></div>
-        <div><dt>位置精度</dt><dd>${info?.position_precision ?? '-'}</dd></div>
-        <div><dt>在线节点</dt><dd>${info?.num_online_local_nodes ?? '-'}</dd></div>
+        <div><dt>位置精度</dt><dd>${report?.position_precision ?? '-'}</dd></div>
+        <div><dt>在线节点</dt><dd>${report?.num_online_local_nodes ?? '-'}</dd></div>
       </dl>
     </div>
   `

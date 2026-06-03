@@ -116,8 +116,12 @@ go run .
 
 ```text
 GET /api/health
-GET /api/nodes
-GET /api/nodes/:id
+GET /api/nodeinfo
+GET /api/nodeinfo/:id
+GET /api/map-reports
+GET /api/map-reports/:id
+GET /api/nodes        # /api/nodeinfo 的兼容别名
+GET /api/nodes/:id    # /api/nodeinfo/:id 的兼容别名
 GET /api/text-messages
 GET /api/positions
 GET /api/telemetry
@@ -145,21 +149,23 @@ meshtastic:
 
 程序默认启用 SQLite，数据库表迁移和操作由 GORM 执行，并持久化以下数据：
 
-- `nodeinfo_map`：融合 `type == "nodeinfo"` 和 `type == "map_report"` 的节点信息
+- `nodeinfo`：保存 `type == "nodeinfo"` 的节点身份和设备信息
+- `map_report`：保存 `type == "map_report"` 的地图报告信息，前端地图从该表读取
 - `text_message`：追加保存 `type == "text_message"` 的聊天消息
 - `position`：追加保存 `type == "position"` 的位置包
 - `telemetry`：追加保存 `type == "telemetry"` 的遥测包
 - `routing`：追加保存 `type == "routing"` 的路由控制包
 - `traceroute`：追加保存 `type == "traceroute"` 的路径追踪包
 
-`nodeinfo_map` 规则：
+`nodeinfo` / `map_report` 规则：
 
-- `nodeinfo` 表不再使用；如果旧数据库中已经存在该表，程序不会自动删除它
-- 同一节点以 `node_id`（即解析结果中的 `from`，例如 `!a8dfd867`）作为主键
-- 重复收到同一节点时不会插入重复行，只更新 `updated_at`、`content_json`、`latest_type` 和本次记录中有值的字段
-- `nodeinfo` 独有字段和 `map_report` 独有字段会互相保留；例如后续 `map_report` 不会清空已有的 `public_key`
+- 两张表都以 `node_id`（即解析结果中的 `from`，例如 `!a8dfd867`）作为主键
+- `nodeinfo` 只保存节点身份和设备字段，例如 `user_id`、名称、硬件型号、角色、授权状态和公钥
+- `map_report` 只保存地图报告字段，例如名称、硬件型号、角色、固件版本、区域、调制预设、经纬度、海拔、位置精度和在线节点数
+- 重复收到同一节点时不会插入重复行，只更新 `updated_at`、`content_json` 和本次记录中有值的字段
 - `first_seen_at` 保留第一次写入时间
-- `content_json` 保存最新一次 `nodeinfo` 或 `map_report` 的完整解析结果 JSON
+- `content_json` 分别保存最新一次 `nodeinfo` 或 `map_report` 的完整解析结果 JSON
+- 旧版本创建的 `nodeinfo_map` 融合表不会被自动删除，新版本不再写入该表；新表会从新收到的数据开始填充
 
 `text_message` 规则：
 

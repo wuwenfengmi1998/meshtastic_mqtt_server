@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { NodeInfoMap } from '../types'
+import type { NodeInfo } from '../types'
 
 const props = defineProps<{
-  nodes: NodeInfoMap[]
+  nodes: NodeInfo[]
   selectedNodeId: string | null
   page: number
   pageSize: number
@@ -20,7 +20,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(props.total / props.page
 const canPrev = computed(() => props.page > 1)
 const canNext = computed(() => props.page < totalPages.value)
 
-function nodeName(node: NodeInfoMap): string {
+function nodeName(node: NodeInfo): string {
   return node.long_name || node.short_name || node.node_id
 }
 
@@ -33,7 +33,7 @@ function formatTime(value: string): string {
   <section class="node-list-panel panel">
     <div class="panel-header">
       <div>
-        <p class="eyebrow">NodeInfo Map</p>
+        <p class="eyebrow">NodeInfo</p>
         <h2>节点列表</h2>
       </div>
       <span class="badge">共 {{ total }} 条</span>
@@ -45,10 +45,9 @@ function formatTime(value: string): string {
           <tr>
             <th>节点</th>
             <th>Node ID</th>
-            <th>类型</th>
+            <th>User ID</th>
             <th>角色</th>
             <th>硬件</th>
-            <th>坐标</th>
             <th>更新时间</th>
           </tr>
         </thead>
@@ -62,10 +61,9 @@ function formatTime(value: string): string {
           >
             <td>{{ nodeName(node) }}</td>
             <td>{{ node.node_id }}</td>
-            <td>{{ node.latest_type }}</td>
+            <td>{{ node.user_id || '-' }}</td>
             <td>{{ node.role || '-' }}</td>
             <td>{{ node.hw_model || '-' }}</td>
-            <td>{{ node.latitude ?? '-' }}, {{ node.longitude ?? '-' }}</td>
             <td>{{ formatTime(node.updated_at) }}</td>
           </tr>
         </tbody>

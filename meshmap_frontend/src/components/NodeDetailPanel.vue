@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { MapNode, NodeInfoMap, PositionRecord, TextMessage } from '../types'
+import type { MapNode, NodeInfo, PositionRecord, TextMessage } from '../types'
 
 const props = defineProps<{
-  node: NodeInfoMap | null
+  node: NodeInfo | null
   mapNode: MapNode | null
   messages: TextMessage[]
   positions: PositionRecord[]
@@ -35,11 +35,12 @@ function formatTime(value: string | null | undefined): string {
       <div class="detail-main">
         <dl>
           <div><dt>Node ID</dt><dd>{{ node?.node_id || mapNode?.node_id }}</dd></div>
-          <div><dt>Role</dt><dd>{{ node?.role || '-' }}</dd></div>
-          <div><dt>Hardware</dt><dd>{{ node?.hw_model || '-' }}</dd></div>
-          <div><dt>Latitude</dt><dd>{{ mapNode?.latitude ?? node?.latitude ?? '-' }}</dd></div>
-          <div><dt>Longitude</dt><dd>{{ mapNode?.longitude ?? node?.longitude ?? '-' }}</dd></div>
-          <div><dt>Altitude</dt><dd>{{ mapNode?.altitude ?? node?.altitude ?? '-' }}</dd></div>
+          <div><dt>User ID</dt><dd>{{ node?.user_id || '-' }}</dd></div>
+          <div><dt>Role</dt><dd>{{ node?.role || mapNode?.map_report?.role || '-' }}</dd></div>
+          <div><dt>Hardware</dt><dd>{{ node?.hw_model || mapNode?.map_report?.hw_model || '-' }}</dd></div>
+          <div><dt>Latitude</dt><dd>{{ mapNode?.latitude ?? '-' }}</dd></div>
+          <div><dt>Longitude</dt><dd>{{ mapNode?.longitude ?? '-' }}</dd></div>
+          <div><dt>Altitude</dt><dd>{{ mapNode?.altitude ?? '-' }}</dd></div>
           <div><dt>Updated</dt><dd>{{ formatTime(node?.updated_at || mapNode?.updated_at) }}</dd></div>
         </dl>
       </div>

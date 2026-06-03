@@ -163,6 +163,16 @@ h3 {
   background: #fff;
 }
 
+.chat-loading,
+.chat-end {
+  padding: 10px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
+  background: #f8fafc;
+}
+
 .chat-item {
   display: grid;
   gap: 6px;

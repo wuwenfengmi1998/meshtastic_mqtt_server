@@ -35,20 +35,52 @@ func normalizeListOptions(opts listOptions) listOptions {
 	return opts
 }
 
-func (s *store) ListNodes(opts listOptions) ([]nodeInfoMapRecord, error) {
+func (s *store) ListNodeInfo(opts listOptions) ([]nodeInfoRecord, error) {
 	opts = normalizeListOptions(opts)
-	var rows []nodeInfoMapRecord
-	q := applyNodeFilters(s.db.Model(&nodeInfoMapRecord{}), opts).
+	var rows []nodeInfoRecord
+	q := applyNodeFilters(s.db.Model(&nodeInfoRecord{}), opts).
 		Order("updated_at DESC").
 		Limit(opts.Limit).
 		Offset(opts.Offset)
 	return rows, q.Find(&rows).Error
 }
 
-func (s *store) CountNodes(opts listOptions) (int64, error) {
+func (s *store) CountNodeInfo(opts listOptions) (int64, error) {
 	var total int64
-	q := applyNodeFilters(s.db.Model(&nodeInfoMapRecord{}), opts)
+	q := applyNodeFilters(s.db.Model(&nodeInfoRecord{}), opts)
 	return total, q.Count(&total).Error
+}
+
+func (s *store) GetNodeInfo(nodeID string) (*nodeInfoRecord, error) {
+	var row nodeInfoRecord
+	if err := s.db.Where("node_id = ?", nodeID).Take(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func (s *store) ListMapReports(opts listOptions) ([]mapReportRecord, error) {
+	opts = normalizeListOptions(opts)
+	var rows []mapReportRecord
+	q := applyNodeFilters(s.db.Model(&mapReportRecord{}), opts).
+		Order("updated_at DESC").
+		Limit(opts.Limit).
+		Offset(opts.Offset)
+	return rows, q.Find(&rows).Error
+}
+
+func (s *store) CountMapReports(opts listOptions) (int64, error) {
+	var total int64
+	q := applyNodeFilters(s.db.Model(&mapReportRecord{}), opts)
+	return total, q.Count(&total).Error
+}
+
+func (s *store) GetMapReport(nodeID string) (*mapReportRecord, error) {
+	var row mapReportRecord
+	if err := s.db.Where("node_id = ?", nodeID).Take(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
 }
 
 func applyNodeFilters(q *gorm.DB, opts listOptions) *gorm.DB {
@@ -62,14 +94,6 @@ func applyNodeFilters(q *gorm.DB, opts listOptions) *gorm.DB {
 		q = q.Where("updated_at <= ?", *opts.Until)
 	}
 	return q
-}
-
-func (s *store) GetNode(nodeID string) (*nodeInfoMapRecord, error) {
-	var row nodeInfoMapRecord
-	if err := s.db.Where("node_id = ?", nodeID).Take(&row).Error; err != nil {
-		return nil, err
-	}
-	return &row, nil
 }
 
 func (s *store) ListTextMessages(opts listOptions) ([]textMessageRecord, error) {

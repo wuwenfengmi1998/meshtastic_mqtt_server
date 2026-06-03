@@ -1,51 +1,109 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { getHealth, getNodes, getPositions, getTextMessages } from './api'
+import { getHealth, getMapReports, getNodeInfo, getPositions, getTextMessages } from './api'
 import ChatPanel from './components/ChatPanel.vue'
 import MeshMap from './components/MeshMap.vue'
 import NodeListPanel from './components/NodeListPanel.vue'
-import type { HealthStatus, MapNode, NodeInfoById, NodeInfoMap, PositionRecord, TextMessage } from './types'
+import type { HealthStatus, MapNode, MapReport, NodeInfo, NodeInfoById, PositionRecord, TextMessage } from './types'
 
 const loading = ref(true)
 const nodePageLoading = ref(false)
 const error = ref('')
 const selectedNodeId = ref<string | null>(null)
 const health = ref<HealthStatus | null>(null)
-const mapNodeSource = ref<NodeInfoMap[]>([])
-const pagedNodes = ref<NodeInfoMap[]>([])
+const nodeInfoSource = ref<NodeInfo[]>([])
+const mapReportSource = ref<MapReport[]>([])
+const pagedNodeInfo = ref<NodeInfo[]>([])
 const nodePage = ref(1)
 const nodePageSize = 25
 const nodeTotal = ref(0)
 const messages = ref<TextMessage[]>([])
+const chatPageSize = 20
+const chatLoadingOlder = ref(false)
+const chatHasMore = ref(true)
+const chatInitialized = ref(false)
 const positions = ref<PositionRecord[]>([])
 let refreshTimer: number | undefined
 
 const nodesById = computed<NodeInfoById>(() => {
-  const map = new Map<string, NodeInfoMap>()
-  for (const node of mapNodeSource.value) {
+  const map = new Map<string, NodeInfo>()
+  for (const node of nodeInfoSource.value) {
     map.set(node.node_id, node)
   }
-  for (const node of pagedNodes.value) {
+  for (const node of pagedNodeInfo.value) {
     map.set(node.node_id, node)
   }
   return Object.fromEntries(map)
 })
 
 const mapNodes = computed<MapNode[]>(() => {
-  return mapNodeSource.value
-    .filter((node) => node.latitude != null && node.longitude != null)
-    .map((node) => ({
-      node_id: node.node_id,
-      label: node.short_name || node.node_id,
-      latitude: node.latitude as number,
-      longitude: node.longitude as number,
-      altitude: node.altitude,
-      source: 'node',
-      updated_at: node.updated_at,
-      node,
-      latest_position: null,
-    }))
+  return mapReportSource.value
+    .filter((report) => report.latitude != null && report.longitude != null)
+    .map((report) => {
+      const nodeinfo = nodesById.value[report.node_id] ?? null
+      return {
+        node_id: report.node_id,
+        label: report.short_name || report.long_name || nodeinfo?.short_name || nodeinfo?.long_name || report.node_id,
+        latitude: report.latitude as number,
+        longitude: report.longitude as number,
+        altitude: report.altitude,
+        source: 'map_report',
+        updated_at: report.updated_at,
+        nodeinfo,
+        map_report: report,
+        latest_position: null,
+      }
+    })
 })
+
+function toChronological(items: TextMessage[]): TextMessage[] {
+  return [...items].reverse()
+}
+
+function compareMessages(a: TextMessage, b: TextMessage): number {
+  const timeDiff = Date.parse(a.created_at) - Date.parse(b.created_at)
+  return timeDiff !== 0 ? timeDiff : a.id - b.id
+}
+
+function mergeMessages(existing: TextMessage[], incoming: TextMessage[]): TextMessage[] {
+  const byId = new Map<number, TextMessage>()
+  for (const message of existing) {
+    byId.set(message.id, message)
+  }
+  for (const message of incoming) {
+    byId.set(message.id, message)
+  }
+  return Array.from(byId.values()).sort(compareMessages)
+}
+
+async function loadInitialChatMessages() {
+  const response = await getTextMessages(chatPageSize, 0)
+  messages.value = toChronological(response.items)
+  chatHasMore.value = response.items.length === chatPageSize
+  chatInitialized.value = true
+}
+
+async function loadOlderMessages() {
+  if (chatLoadingOlder.value || !chatHasMore.value) {
+    return
+  }
+
+  chatLoadingOlder.value = true
+  try {
+    const response = await getTextMessages(chatPageSize, messages.value.length)
+    messages.value = mergeMessages(messages.value, toChronological(response.items))
+    chatHasMore.value = response.items.length === chatPageSize
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    chatLoadingOlder.value = false
+  }
+}
+
+async function pollLatestMessages() {
+  const response = await getTextMessages(chatPageSize, 0)
+  messages.value = mergeMessages(messages.value, toChronological(response.items))
+}
 
 async function loadNodePage(page: number, showLoading = true) {
   if (showLoading) {
@@ -53,8 +111,8 @@ async function loadNodePage(page: number, showLoading = true) {
   }
   try {
     const safePage = Math.max(1, page)
-    const response = await getNodes(nodePageSize, (safePage - 1) * nodePageSize)
-    pagedNodes.value = response.items
+    const response = await getNodeInfo(nodePageSize, (safePage - 1) * nodePageSize)
+    pagedNodeInfo.value = response.items
     nodeTotal.value = response.total ?? response.offset + response.items.length
     nodePage.value = safePage
   } catch (err) {
@@ -72,17 +130,20 @@ async function refresh(showLoading = true) {
   }
   error.value = ''
   try {
-    const [healthData, mapNodeData, messageData, positionData] = await Promise.all([
+    const [healthData, nodeInfoData, mapReportData, positionData] = await Promise.all([
       getHealth(),
-      getNodes(500, 0),
-      getTextMessages(100),
+      getNodeInfo(500, 0),
+      getMapReports(500, 0),
       getPositions(500),
     ])
     health.value = healthData
-    mapNodeSource.value = mapNodeData.items
-    messages.value = messageData.items
+    nodeInfoSource.value = nodeInfoData.items
+    mapReportSource.value = mapReportData.items
     positions.value = positionData.items
-    await loadNodePage(nodePage.value, showLoading)
+    await Promise.all([
+      loadNodePage(nodePage.value, showLoading),
+      chatInitialized.value ? pollLatestMessages() : loadInitialChatMessages(),
+    ])
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -115,7 +176,7 @@ onBeforeUnmount(() => {
         <span class="status-pill" :class="{ ok: health?.status === 'ok' }">
           {{ health?.status ?? 'unknown' }} / db {{ health?.database ?? 'unknown' }}
         </span>
-        <span class="counter">节点 {{ nodeTotal }} · 消息 {{ messages.length }} · 坐标 {{ mapNodes.length }}</span>
+        <span class="counter">节点 {{ nodeTotal }} · 已加载消息 {{ messages.length }} · 坐标 {{ mapNodes.length }}</span>
         <button @click="() => refresh()" :disabled="loading">{{ loading ? '刷新中...' : '刷新' }}</button>
       </div>
     </header>
@@ -127,7 +188,10 @@ onBeforeUnmount(() => {
         :messages="messages"
         :nodes-by-id="nodesById"
         :selected-node-id="selectedNodeId"
+        :loading-older="chatLoadingOlder"
+        :has-more-messages="chatHasMore"
         @select-node="selectedNodeId = $event"
+        @load-older="loadOlderMessages"
       />
       <MeshMap
         :nodes="mapNodes"
@@ -138,7 +202,7 @@ onBeforeUnmount(() => {
     </section>
 
     <NodeListPanel
-      :nodes="pagedNodes"
+      :nodes="pagedNodeInfo"
       :selected-node-id="selectedNodeId"
       :page="nodePage"
       :page-size="nodePageSize"

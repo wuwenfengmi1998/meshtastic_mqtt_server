@@ -56,9 +56,15 @@ func (h *meshtasticFilterHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (pa
 	}
 
 	switch record["type"] {
-	case "nodeinfo", "map_report":
+	case "nodeinfo":
 		if h.store != nil {
-			if err := h.store.UpsertNodeInfoMap(record); err != nil {
+			if err := h.store.UpsertNodeInfo(record); err != nil {
+				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
+			}
+		}
+	case "map_report":
+		if h.store != nil {
+			if err := h.store.UpsertMapReport(record); err != nil {
 				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
 			}
 		}

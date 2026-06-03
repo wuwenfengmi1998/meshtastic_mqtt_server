@@ -41,31 +41,9 @@ func registerAPIRoutes(r gin.IRouter, store *store) {
 		c.JSON(http.StatusOK, status)
 	})
 
-	r.GET("/nodes", func(c *gin.Context) {
-		opts, ok := parseListOptions(c)
-		if !ok {
-			return
-		}
-		rows, err := store.ListNodes(opts)
-		if err != nil {
-			writeListResponse(c, rows, opts, err, nodeDTO)
-			return
-		}
-		total, err := store.CountNodes(opts)
-		writeListResponseWithTotal(c, rows, opts, total, err, nodeDTO)
-	})
-	r.GET("/nodes/:id", func(c *gin.Context) {
-		row, err := store.GetNode(c.Param("id"))
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
-			return
-		}
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, nodeDTO(*row))
-	})
+	registerNodeInfoRoutes(r, store, "/nodeinfo")
+	registerNodeInfoRoutes(r, store, "/nodes")
+	registerMapReportRoutes(r, store)
 	r.GET("/text-messages", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
 		if !ok {
@@ -105,6 +83,62 @@ func registerAPIRoutes(r gin.IRouter, store *store) {
 		}
 		rows, err := store.ListTraceroute(opts)
 		writeListResponse(c, rows, opts, err, tracerouteDTO)
+	})
+}
+
+func registerNodeInfoRoutes(r gin.IRouter, store *store, path string) {
+	r.GET(path, func(c *gin.Context) {
+		opts, ok := parseListOptions(c)
+		if !ok {
+			return
+		}
+		rows, err := store.ListNodeInfo(opts)
+		if err != nil {
+			writeListResponse(c, rows, opts, err, nodeInfoDTO)
+			return
+		}
+		total, err := store.CountNodeInfo(opts)
+		writeListResponseWithTotal(c, rows, opts, total, err, nodeInfoDTO)
+	})
+	r.GET(path+"/:id", func(c *gin.Context) {
+		row, err := store.GetNodeInfo(c.Param("id"))
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "nodeinfo not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, nodeInfoDTO(*row))
+	})
+}
+
+func registerMapReportRoutes(r gin.IRouter, store *store) {
+	r.GET("/map-reports", func(c *gin.Context) {
+		opts, ok := parseListOptions(c)
+		if !ok {
+			return
+		}
+		rows, err := store.ListMapReports(opts)
+		if err != nil {
+			writeListResponse(c, rows, opts, err, mapReportDTO)
+			return
+		}
+		total, err := store.CountMapReports(opts)
+		writeListResponseWithTotal(c, rows, opts, total, err, mapReportDTO)
+	})
+	r.GET("/map-reports/:id", func(c *gin.Context) {
+		row, err := store.GetMapReport(c.Param("id"))
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "map report not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, mapReportDTO(*row))
 	})
 }
 
@@ -208,8 +242,12 @@ func writeListResponseWithTotal[T any](c *gin.Context, rows []T, opts listOption
 	c.JSON(http.StatusOK, gin.H{"items": items, "limit": opts.Limit, "offset": opts.Offset, "total": total})
 }
 
-func nodeDTO(row nodeInfoMapRecord) gin.H {
-	return gin.H{"node_id": row.NodeID, "node_num": row.NodeNum, "latest_type": row.LatestType, "long_name": ptrString(row.LongName), "short_name": ptrString(row.ShortName), "hw_model": ptrString(row.HWModel), "role": ptrString(row.Role), "firmware_version": ptrString(row.FirmwareVersion), "latitude": ptrFloat64(row.Latitude), "longitude": ptrFloat64(row.Longitude), "altitude": ptrInt64(row.Altitude), "position_precision": ptrInt64(row.PositionPrecision), "num_online_local_nodes": ptrInt64(row.NumOnlineLocalNodes), "updated_at": row.UpdatedAt, "content_json": row.ContentJSON}
+func nodeInfoDTO(row nodeInfoRecord) gin.H {
+	return gin.H{"node_id": row.NodeID, "node_num": row.NodeNum, "user_id": ptrString(row.UserID), "long_name": ptrString(row.LongName), "short_name": ptrString(row.ShortName), "hw_model": ptrString(row.HWModel), "role": ptrString(row.Role), "is_licensed": ptrBool(row.IsLicensed), "public_key": ptrString(row.PublicKey), "updated_at": row.UpdatedAt, "content_json": row.ContentJSON}
+}
+
+func mapReportDTO(row mapReportRecord) gin.H {
+	return gin.H{"node_id": row.NodeID, "node_num": row.NodeNum, "long_name": ptrString(row.LongName), "short_name": ptrString(row.ShortName), "hw_model": ptrString(row.HWModel), "role": ptrString(row.Role), "firmware_version": ptrString(row.FirmwareVersion), "region": ptrString(row.Region), "modem_preset": ptrString(row.ModemPreset), "latitude": ptrFloat64(row.Latitude), "longitude": ptrFloat64(row.Longitude), "altitude": ptrInt64(row.Altitude), "position_precision": ptrInt64(row.PositionPrecision), "num_online_local_nodes": ptrInt64(row.NumOnlineLocalNodes), "has_opted_report_location": ptrBool(row.HasOptedReportLocation), "updated_at": row.UpdatedAt, "content_json": row.ContentJSON}
 }
 
 func textMessageDTO(row textMessageRecord) gin.H {
@@ -251,6 +289,13 @@ func ptrInt64(value *int64) any {
 }
 
 func ptrFloat64(value *float64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func ptrBool(value *bool) any {
 	if value == nil {
 		return nil
 	}
