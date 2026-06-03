@@ -12,6 +12,7 @@ type mqttRuntimeStatus struct {
 	server  *mqtt.Server
 	address string
 	tls     bool
+	stats   *meshtasticMessageStats
 }
 
 type adminMqttStatus struct {
@@ -67,8 +68,8 @@ func (m mqttRuntimeStatus) Status() adminMqttStatus {
 		ClientsMaximum:      info.ClientsMaximum,
 		ClientsTotal:        info.ClientsTotal,
 		MessagesReceived:    info.MessagesReceived,
-		MessagesSent:        info.MessagesSent,
-		MessagesDropped:     info.MessagesDropped,
+		MessagesSent:        m.stats.Forwarded(),
+		MessagesDropped:     m.stats.Dropped(),
 		Retained:            info.Retained,
 		Inflight:            info.Inflight,
 		InflightDropped:     info.InflightDropped,

@@ -36,6 +36,7 @@ type meshtasticFilterHook struct {
 	mqtt.HookBase
 	key   []byte
 	store *store
+	stats *meshtasticMessageStats
 }
 
 // ID 返回用于识别 Meshtastic payload 过滤器的 hook 名称。
@@ -52,8 +53,10 @@ func (h *meshtasticFilterHook) Provides(b byte) bool {
 func (h *meshtasticFilterHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
 	valid, _, record := mqtpp.MQTTPP(pk.TopicName, pk.Payload, h.key)
 	if !valid {
+		h.stats.IncDropped()
 		return pk, packets.ErrRejectPacket
 	}
+	h.stats.IncForwarded()
 
 	switch record["type"] {
 	case "nodeinfo":
@@ -193,7 +196,8 @@ func run(cfg *config) error {
 		return err
 	}
 
-	server, mqttAddr, err := startMQTTServer(cfg, store)
+	messageStats := &meshtasticMessageStats{}
+	server, mqttAddr, err := startMQTTServer(cfg, store, messageStats)
 	if err != nil {
 		return err
 	}
@@ -205,7 +209,7 @@ func run(cfg *config) error {
 		if err != nil {
 			return err
 		}
-		mqttStatus := mqttRuntimeStatus{server: server, address: mqttAddr, tls: cfg.MQTT.TLS.Enabled}
+		mqttStatus := mqttRuntimeStatus{server: server, address: mqttAddr, tls: cfg.MQTT.TLS.Enabled, stats: messageStats}
 		httpServer = newHTTPServer(cfg.Web, store, sessions, mqttStatus)
 		go func() {
 			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -237,12 +241,12 @@ func run(cfg *config) error {
 	return runErr
 }
 
-func startMQTTServer(cfg *config, store *store) (*mqtt.Server, string, error) {
+func startMQTTServer(cfg *config, store *store, stats *meshtasticMessageStats) (*mqtt.Server, string, error) {
 	server := mqtt.New(nil)
 	if err := server.AddHook(new(auth.AllowHook), nil); err != nil {
 		return nil, "", err
 	}
-	if err := server.AddHook(&meshtasticFilterHook{key: cfg.key, store: store}, nil); err != nil {
+	if err := server.AddHook(&meshtasticFilterHook{key: cfg.key, store: store, stats: stats}, nil); err != nil {
 		return nil, "", err
 	}
 
