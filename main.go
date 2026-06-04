@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -214,7 +215,7 @@ func parseArgs() (*config, error) {
 	flag.BoolVar(&cfg.Web.Enabled, "web", cfg.Web.Enabled, "Enable Gin web server")
 	flag.StringVar(&cfg.Web.Host, "web-host", cfg.Web.Host, "Web server listen host")
 	flag.IntVar(&cfg.Web.Port, "web-port", cfg.Web.Port, "Web server listen port")
-	flag.StringVar(&cfg.Web.SocketPath, "web-socket-path", cfg.Web.SocketPath, "Web server Unix socket path; empty uses host and port")
+	flag.StringVar(&cfg.Web.SocketPath, "web-socket-path", cfg.Web.SocketPath, "Web server Unix socket path; empty uses host and port; unsupported on Windows")
 	flag.StringVar(&cfg.Web.StaticDir, "web-static-dir", cfg.Web.StaticDir, "Web frontend static files directory")
 	flag.StringVar(&cfg.Web.Admin.Username, "admin-username", cfg.Web.Admin.Username, "Web admin username")
 	flag.Parse()
@@ -225,6 +226,7 @@ func parseArgs() (*config, error) {
 	if value := os.Getenv("MESH_ADMIN_SESSION_SECRET"); value != "" {
 		cfg.Web.Admin.SessionSecret = value
 	}
+	clearWebSocketPathOnUnsupportedGOOS(cfg, runtime.GOOS)
 
 	if err := validateConfig(cfg); err != nil {
 		return nil, err

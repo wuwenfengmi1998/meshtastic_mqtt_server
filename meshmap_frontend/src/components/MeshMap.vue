@@ -32,6 +32,8 @@ let markerLayer: L.LayerGroup | null = null
 let hasFitBounds = false
 
 const minMapZoom = 3
+const defaultMapCenter: L.LatLngExpression = [35.8617, 104.1954]
+const defaultMapZoom = 4
 const worldBounds = L.latLngBounds(
   [-85.05112878, -180],
   [85.05112878, 180],
@@ -50,7 +52,7 @@ onMounted(async () => {
     maxBounds: worldBounds,
     maxBoundsViscosity: 1.0,
     worldCopyJump: false,
-  }).setView([0, 0], minMapZoom)
+  }).setView(defaultMapCenter, defaultMapZoom)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     minZoom: minMapZoom,
     maxZoom: 19,

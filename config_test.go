@@ -154,6 +154,37 @@ func TestLoadConfigMalformedYAMLDoesNotOverwrite(t *testing.T) {
 	}
 }
 
+func TestDefaultWebSocketPathForGOOS(t *testing.T) {
+	if windowsPath := defaultWebSocketPathForGOOS("windows"); windowsPath != "" {
+		t.Fatalf("windows web socket path = %q, want empty", windowsPath)
+	}
+
+	linuxPath := defaultWebSocketPathForGOOS("linux")
+	want := filepath.Join(string(filepath.Separator), "opt", "mesh_mqtt_go", "web.sock")
+	if linuxPath != want {
+		t.Fatalf("linux web socket path = %q, want %q", linuxPath, want)
+	}
+}
+
+func TestClearWebSocketPathOnUnsupportedGOOS(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Web.SocketPath = filepath.Join(".", "win", "opt", "mesh_mqtt_go", "web.sock")
+	if !clearWebSocketPathOnUnsupportedGOOS(cfg, "windows") {
+		t.Fatalf("clearWebSocketPathOnUnsupportedGOOS() = false, want true")
+	}
+	if cfg.Web.SocketPath != "" {
+		t.Fatalf("windows web socket path = %q, want empty", cfg.Web.SocketPath)
+	}
+
+	cfg.Web.SocketPath = "/opt/mesh_mqtt_go/web.sock"
+	if clearWebSocketPathOnUnsupportedGOOS(cfg, "linux") {
+		t.Fatalf("linux clearWebSocketPathOnUnsupportedGOOS() = true, want false")
+	}
+	if cfg.Web.SocketPath == "" {
+		t.Fatalf("linux web socket path was cleared")
+	}
+}
+
 func TestDefaultSQLitePathForGOOS(t *testing.T) {
 	windowsPath := defaultSQLitePathForGOOS("windows")
 	if !strings.Contains(windowsPath, filepath.Join("win", "etc", "mesh_mqtt_go", "mesh_mqtt_go.db")) {

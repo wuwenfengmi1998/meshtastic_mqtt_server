@@ -178,9 +178,17 @@ func defaultWebSocketPath() string {
 
 func defaultWebSocketPathForGOOS(goos string) string {
 	if goos == "windows" {
-		return filepath.Join(".", "win", "opt", "mesh_mqtt_go", "web.sock")
+		return ""
 	}
 	return filepath.Join(string(filepath.Separator), "opt", "mesh_mqtt_go", "web.sock")
+}
+
+func clearWebSocketPathOnUnsupportedGOOS(cfg *config, goos string) bool {
+	if goos != "windows" || cfg.Web.SocketPath == "" {
+		return false
+	}
+	cfg.Web.SocketPath = ""
+	return true
 }
 
 func defaultSQLitePathForGOOS(goos string) string {
@@ -221,6 +229,9 @@ func loadConfig(path string) (*config, error) {
 	}
 
 	cfg, changed := normalizeConfig(raw)
+	if clearWebSocketPathOnUnsupportedGOOS(cfg, runtime.GOOS) {
+		changed = true
+	}
 	if err := validateConfig(cfg); err != nil {
 		return nil, err
 	}
