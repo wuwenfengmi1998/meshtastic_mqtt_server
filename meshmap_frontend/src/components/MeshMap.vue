@@ -53,7 +53,7 @@ onMounted(async () => {
     maxBoundsViscosity: 1.0,
     worldCopyJump: false,
   }).setView(defaultMapCenter, defaultMapZoom)
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  L.tileLayer('https://tile.openstreetmap.jp/{z}/{x}/{y}.png', {
     minZoom: minMapZoom,
     maxZoom: 19,
     noWrap: true,
