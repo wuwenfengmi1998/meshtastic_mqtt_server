@@ -15,6 +15,7 @@ const emit = defineEmits<{
   'select-node': [nodeId: string]
   'load-older': []
   'delete-message': [message: TextMessage]
+  'delete-and-block-node': [payload: { nodeId: string; nodeNum: number | null; message: TextMessage }]
 }>()
 
 const panelRef = ref<HTMLElement | null>(null)
@@ -67,6 +68,13 @@ function openMessageMenu(message: TextMessage, event: MouseEvent) {
 function deleteSelectedMessage() {
   if (menuMessage.value) {
     emit('delete-message', menuMessage.value)
+  }
+  closeMessageMenu()
+}
+
+function deleteAndBlockSelectedNode() {
+  if (menuMessage.value) {
+    emit('delete-and-block-node', { nodeId: menuMessage.value.from_id, nodeNum: menuMessage.value.from_num ?? null, message: menuMessage.value })
   }
   closeMessageMenu()
 }
@@ -183,6 +191,7 @@ onUpdated(() => {
     >
       <a :href="nodeDetailHref(menuMessage.from_id)">节点详细</a>
       <button v-if="isAdmin" class="danger" type="button" @click="deleteSelectedMessage">删除</button>
+      <button v-if="isAdmin" class="danger" type="button" @click="deleteAndBlockSelectedNode">删除并屏蔽节点</button>
     </div>
   </aside>
 </template>

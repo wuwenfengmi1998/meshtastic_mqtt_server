@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { adminLogout, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReportViewport, getNodeInfo, getPositions, getTextMessages } from './api'
+import { adminLogout, createNodeBlockingRule, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReportViewport, getNodeInfo, getPositions, getTextMessages } from './api'
 import AdminBlockingManagement from './components/AdminBlockingManagement.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
 import AdminDiscardDetails from './components/AdminDiscardDetails.vue'
@@ -46,6 +46,7 @@ const currentMapBounds = ref<MapBoundsQuery | null>(null)
 const currentMapZoom = ref(2)
 const mapReportsLoading = ref(false)
 const mapReportTotal = ref(0)
+type NodeActionPayload = { nodeId: string; nodeNum: number | null; message?: TextMessage }
 let refreshTimer: number | undefined
 let mapBoundsTimer: number | undefined
 let mapReportRequestSeq = 0
@@ -251,16 +252,71 @@ async function deleteMessage(message: TextMessage) {
   }
 }
 
+async function removeNodeFromLocalState(nodeId: string) {
+  nodeInfoSource.value = nodeInfoSource.value.filter((node) => node.node_id !== nodeId)
+  pagedNodeInfo.value = pagedNodeInfo.value.filter((node) => node.node_id !== nodeId)
+  mapViewportItems.value = mapViewportItems.value.filter((item) => item.type === 'cluster' || item.node_id !== nodeId)
+  if (selectedNodeId.value === nodeId) {
+    selectedNodeId.value = null
+  }
+  await loadNodePage(nodePage.value, false)
+}
+
+function isAlreadyBlockedError(err: unknown): boolean {
+  return err instanceof Error && err.message === 'blocking rule already exists'
+}
+
+function isNodeNotFoundError(err: unknown): boolean {
+  return err instanceof Error && err.message === 'node not found'
+}
+
+function isMessageNotFoundError(err: unknown): boolean {
+  return err instanceof Error && err.message === 'message not found'
+}
+
 async function deleteNodeById(nodeId: string) {
   try {
     await deleteNode(nodeId)
-    nodeInfoSource.value = nodeInfoSource.value.filter((node) => node.node_id !== nodeId)
-    pagedNodeInfo.value = pagedNodeInfo.value.filter((node) => node.node_id !== nodeId)
-    mapViewportItems.value = mapViewportItems.value.filter((item) => item.type === 'cluster' || item.node_id !== nodeId)
-    if (selectedNodeId.value === nodeId) {
-      selectedNodeId.value = null
+    await removeNodeFromLocalState(nodeId)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+async function deleteAndBlockNode(payload: NodeActionPayload) {
+  try {
+    if (payload.message) {
+      try {
+        await deleteTextMessage(payload.message.id)
+      } catch (err) {
+        if (!isMessageNotFoundError(err)) {
+          throw err
+        }
+      }
+      messages.value = messages.value.filter((item) => item.id !== payload.message?.id)
     }
-    await loadNodePage(nodePage.value, false)
+
+    try {
+      await createNodeBlockingRule({
+        node_id: payload.nodeId,
+        node_num: payload.nodeNum,
+        reason: '管理员右键删除并屏蔽节点',
+        enabled: true,
+      })
+    } catch (err) {
+      if (!isAlreadyBlockedError(err)) {
+        throw err
+      }
+    }
+
+    try {
+      await deleteNode(payload.nodeId)
+    } catch (err) {
+      if (!isNodeNotFoundError(err)) {
+        throw err
+      }
+    }
+    await removeNodeFromLocalState(payload.nodeId)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
@@ -368,6 +424,7 @@ onBeforeUnmount(() => {
           @select-node="selectedNodeId = $event"
           @load-older="loadOlderMessages"
           @delete-message="deleteMessage"
+          @delete-and-block-node="deleteAndBlockNode"
         />
         <MeshMap
           :items="mapItems"
@@ -379,6 +436,7 @@ onBeforeUnmount(() => {
           @select-node="selectedNodeId = $event"
           @clear-node="selectedNodeId = null"
           @delete-node="deleteNodeById"
+          @delete-and-block-node="deleteAndBlockNode"
         />
       </section>
 
@@ -393,6 +451,7 @@ onBeforeUnmount(() => {
         @select-node="selectedNodeId = $event"
         @page-change="loadNodePage"
         @delete-node="deleteNodeById"
+        @delete-and-block-node="deleteAndBlockNode"
       />
     </template>
   </main>

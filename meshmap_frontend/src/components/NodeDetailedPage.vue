@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { deleteTextMessage, getMapReportById, getNodeInfoById, getPositions, getTelemetry, getTextMessages } from '../api'
+import { createNodeBlockingRule, deleteNode, deleteTextMessage, getMapReportById, getNodeInfoById, getPositions, getTelemetry, getTextMessages } from '../api'
 import type { MapReport, NodeInfo, PositionRecord, TelemetryRecord, TextMessage } from '../types'
 import NodeTrajectoryMap from './NodeTrajectoryMap.vue'
 
@@ -178,6 +178,65 @@ async function deleteSelectedMessage() {
   }
 }
 
+function isAlreadyBlockedError(err: unknown): boolean {
+  return err instanceof Error && err.message === 'blocking rule already exists'
+}
+
+function isNodeNotFoundError(err: unknown): boolean {
+  return err instanceof Error && err.message === 'node not found'
+}
+
+function isMessageNotFoundError(err: unknown): boolean {
+  return err instanceof Error && err.message === 'message not found'
+}
+
+async function deleteAndBlockSelectedMessageNode() {
+  if (!menuMessage.value) {
+    return
+  }
+  const message = menuMessage.value
+  const nodeId = message.from_id || props.nodeId
+  const nodeNum = message.from_num ?? mergedNode.value.node_num ?? null
+  closeMessageMenu()
+  try {
+    try {
+      await deleteTextMessage(message.id)
+    } catch (err) {
+      if (!isMessageNotFoundError(err)) {
+        throw err
+      }
+    }
+    messages.value = messages.value.filter((item) => item.id !== message.id)
+
+    try {
+      await createNodeBlockingRule({
+        node_id: nodeId,
+        node_num: nodeNum,
+        reason: '管理员右键删除并屏蔽节点',
+        enabled: true,
+      })
+    } catch (err) {
+      if (!isAlreadyBlockedError(err)) {
+        throw err
+      }
+    }
+
+    try {
+      await deleteNode(nodeId)
+    } catch (err) {
+      if (!isNodeNotFoundError(err)) {
+        throw err
+      }
+    }
+    if (nodeId === props.nodeId) {
+      nodeInfo.value = null
+      mapReport.value = null
+    }
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     closeMessageMenu()
@@ -303,6 +362,7 @@ onBeforeUnmount(() => {
           @click.stop
         >
           <button class="danger" type="button" @click="deleteSelectedMessage">删除</button>
+          <button class="danger" type="button" @click="deleteAndBlockSelectedMessageNode">删除并屏蔽节点</button>
         </div>
       </div>
 

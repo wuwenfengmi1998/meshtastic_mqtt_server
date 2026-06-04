@@ -16,6 +16,7 @@ const emit = defineEmits<{
   'select-node': [nodeId: string]
   'page-change': [page: number]
   'delete-node': [nodeId: string]
+  'delete-and-block-node': [payload: { nodeId: string; nodeNum: number | null }]
 }>()
 
 const totalPages = computed(() => Math.max(1, Math.ceil(props.total / props.pageSize)))
@@ -47,6 +48,13 @@ function openNodeMenu(node: NodeInfo, event: MouseEvent) {
 function deleteSelectedNode() {
   if (menuNode.value) {
     emit('delete-node', menuNode.value.node_id)
+  }
+  closeNodeMenu()
+}
+
+function deleteAndBlockSelectedNode() {
+  if (menuNode.value) {
+    emit('delete-and-block-node', { nodeId: menuNode.value.node_id, nodeNum: menuNode.value.node_num ?? null })
   }
   closeNodeMenu()
 }
@@ -121,6 +129,7 @@ onBeforeUnmount(() => {
     >
       <a :href="nodeDetailHref(menuNode.node_id)">节点详细</a>
       <button v-if="isAdmin" class="danger" type="button" @click="deleteSelectedNode">删除</button>
+      <button v-if="isAdmin" class="danger" type="button" @click="deleteAndBlockSelectedNode">删除并屏蔽节点</button>
     </div>
 
     <div class="pagination">

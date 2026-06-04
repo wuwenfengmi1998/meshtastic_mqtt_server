@@ -19,11 +19,12 @@ const emit = defineEmits<{
   'select-node': [nodeId: string]
   'clear-node': []
   'delete-node': [nodeId: string]
+  'delete-and-block-node': [payload: { nodeId: string; nodeNum: number | null }]
   'bounds-change': [payload: MapBoundsChangePayload]
 }>()
 
 const mapEl = ref<HTMLElement | null>(null)
-const menuNodeId = ref<string | null>(null)
+const menuNode = ref<MapNode | null>(null)
 const menuX = ref(0)
 const menuY = ref(0)
 let map: L.Map | null = null
@@ -82,7 +83,7 @@ watch(
 )
 
 function closeNodeMenu() {
-  menuNodeId.value = null
+  menuNode.value = null
 }
 
 function nodeDetailHref(nodeId: string): string {
@@ -92,14 +93,24 @@ function nodeDetailHref(nodeId: string): string {
 function openNodeMenu(node: MapNode, event: L.LeafletMouseEvent) {
   L.DomEvent.stopPropagation(event)
   emit('select-node', node.node_id)
-  menuNodeId.value = node.node_id
+  menuNode.value = node
   menuX.value = event.originalEvent.clientX
   menuY.value = event.originalEvent.clientY
 }
 
 function deleteSelectedNode() {
-  if (menuNodeId.value) {
-    emit('delete-node', menuNodeId.value)
+  if (menuNode.value) {
+    emit('delete-node', menuNode.value.node_id)
+  }
+  closeNodeMenu()
+}
+
+function deleteAndBlockSelectedNode() {
+  if (menuNode.value) {
+    emit('delete-and-block-node', {
+      nodeId: menuNode.value.node_id,
+      nodeNum: menuNode.value.map_report?.node_num ?? menuNode.value.nodeinfo?.node_num ?? null,
+    })
   }
   closeNodeMenu()
 }
@@ -310,13 +321,14 @@ function escapeHTML(value: string): string {
     <div v-if="loading" class="map-empty">正在加载当前区域坐标...</div>
     <div v-else-if="items.length === 0" class="map-empty">暂无可显示坐标的节点</div>
     <div
-      v-if="menuNodeId"
+      v-if="menuNode"
       class="context-menu"
       :style="{ left: `${menuX}px`, top: `${menuY}px` }"
       @click.stop
     >
-      <a :href="nodeDetailHref(menuNodeId)">节点详细</a>
+      <a :href="nodeDetailHref(menuNode.node_id)">节点详细</a>
       <button v-if="isAdmin" class="danger" type="button" @click="deleteSelectedNode">删除</button>
+      <button v-if="isAdmin" class="danger" type="button" @click="deleteAndBlockSelectedNode">删除并屏蔽节点</button>
     </div>
   </section>
 </template>
