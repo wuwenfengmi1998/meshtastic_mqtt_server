@@ -111,6 +111,48 @@ func (discardDetailsRecord) TableName() string {
 	return "discard_details"
 }
 
+type nodeBlockingRecord struct {
+	ID        uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	NodeID    string    `gorm:"column:node_id;not null;uniqueIndex"`
+	NodeNum   *int64    `gorm:"column:node_num;index"`
+	Reason    string    `gorm:"column:reason"`
+	Enabled   bool      `gorm:"column:enabled;not null;index"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (nodeBlockingRecord) TableName() string {
+	return "node_blocking"
+}
+
+type ipBlockingRecord struct {
+	ID        uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	IPValue   string    `gorm:"column:ip_value;not null;uniqueIndex"`
+	Reason    string    `gorm:"column:reason"`
+	Enabled   bool      `gorm:"column:enabled;not null;index"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (ipBlockingRecord) TableName() string {
+	return "ip_blocking"
+}
+
+type forbiddenWordBlockingRecord struct {
+	ID            uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	Word          string    `gorm:"column:word;not null;uniqueIndex"`
+	MatchType     string    `gorm:"column:match_type;not null;index"`
+	CaseSensitive bool      `gorm:"column:case_sensitive;not null"`
+	Reason        string    `gorm:"column:reason"`
+	Enabled       bool      `gorm:"column:enabled;not null;index"`
+	CreatedAt     time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt     time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (forbiddenWordBlockingRecord) TableName() string {
+	return "forbidden_word_blocking"
+}
+
 type nodeInfoRecord struct {
 	NodeID      string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum     int64     `gorm:"column:node_num;not null;index"`
@@ -306,6 +348,9 @@ func (s *store) migrate() error {
 			{label: "users", model: &userRecord{}},
 			{label: "login_log", model: &loginLogRecord{}},
 			{label: "discard_details", model: &discardDetailsRecord{}},
+			{label: "node_blocking", model: &nodeBlockingRecord{}},
+			{label: "ip_blocking", model: &ipBlockingRecord{}},
+			{label: "forbidden_word_blocking", model: &forbiddenWordBlockingRecord{}},
 			{label: "nodeinfo", model: &nodeInfoRecord{}},
 			{label: "map_report", model: &mapReportRecord{}},
 			{label: "text_message", model: &textMessageRecord{}},

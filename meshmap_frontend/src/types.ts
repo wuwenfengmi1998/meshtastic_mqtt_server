@@ -183,3 +183,58 @@ export interface AdminMqttStatus {
   packets_sent: number
   clients: AdminMqttClient[]
 }
+
+export interface NodeBlockingRule {
+  id: number
+  node_id: string
+  node_num: number | null
+  reason: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface NodeBlockingRulePayload {
+  node_id: string
+  node_num: number | null
+  reason: string
+  enabled: boolean
+}
+
+export interface IPBlockingRule {
+  id: number
+  ip_value: string
+  reason: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface IPBlockingRulePayload {
+  ip_value: string
+  reason: string
+  enabled: boolean
+}
+
+export interface ForbiddenWordBlockingRule {
+  id: number
+  word: string
+  match_type: string
+  case_sensitive: boolean
+  reason: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ForbiddenWordBlockingRulePayload {
+  word: string
+  match_type: string
+  case_sensitive: boolean
+  reason: string
+  enabled: boolean
+}
+
+export interface BlockingRuleResponse<T> {
+  item: T
+}

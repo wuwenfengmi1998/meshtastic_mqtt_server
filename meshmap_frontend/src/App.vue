@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { adminLogout, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReports, getNodeInfo, getPositions, getTextMessages } from './api'
+import AdminBlockingManagement from './components/AdminBlockingManagement.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
 import AdminDiscardDetails from './components/AdminDiscardDetails.vue'
 import AdminLogin from './components/AdminLogin.vue'
@@ -248,6 +249,7 @@ onBeforeUnmount(() => {
           <nav v-if="adminUser" class="admin-nav">
             <a href="/admin" :class="{ active: adminPath === '/admin' }">服务状态</a>
             <a href="/admin/users" :class="{ active: adminPath === '/admin/users' }">用户管理</a>
+            <a href="/admin/blocking_management" :class="{ active: adminPath === '/admin/blocking_management' }">屏蔽管理</a>
             <a href="/admin/log/login" :class="{ active: adminPath === '/admin/log/login' }">登录日志</a>
             <a href="/admin/discard_details" :class="{ active: adminPath === '/admin/discard_details' }">丢弃数据</a>
           </nav>
@@ -282,6 +284,7 @@ onBeforeUnmount(() => {
           <button class="admin-button" @click="logoutAdmin">退出登录</button>
         </div>
         <AdminUsers v-if="adminPath === '/admin/users'" :user="adminUser" />
+        <AdminBlockingManagement v-else-if="adminPath === '/admin/blocking_management'" />
         <AdminLoginLogs v-else-if="adminPath === '/admin/log/login'" />
         <AdminDiscardDetails v-else-if="adminPath === '/admin/discard_details'" />
         <AdminDashboard v-else />

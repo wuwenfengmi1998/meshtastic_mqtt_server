@@ -156,6 +156,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 
 	protected := r.Group("")
 	protected.Use(requireAdmin(sessions))
+	registerAdminBlockingRoutes(protected, store)
 	protected.GET("/me", func(c *gin.Context) {
 		claims := c.MustGet("admin_claims").(*sessionClaims)
 		c.JSON(http.StatusOK, gin.H{"user": adminUserDTO{Username: claims.Username, Role: claims.Role}})

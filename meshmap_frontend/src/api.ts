@@ -4,10 +4,17 @@ import type {
   AdminManagedUserResponse,
   AdminMqttStatus,
   AdminUsersResponse,
+  BlockingRuleResponse,
   DiscardDetails,
+  ForbiddenWordBlockingRule,
+  ForbiddenWordBlockingRulePayload,
   HealthStatus,
+  IPBlockingRule,
+  IPBlockingRulePayload,
   ListResponse,
   MapReport,
+  NodeBlockingRule,
+  NodeBlockingRulePayload,
   NodeInfo,
   PositionRecord,
   TelemetryRecord,
@@ -137,4 +144,52 @@ export function updateAdminUserPassword(id: number, password: string): Promise<A
 
 export function getAdminLoginLogs(limit = 100, offset = 0): Promise<AdminLoginLogsResponse> {
   return getJSON<AdminLoginLogsResponse>(`/api/admin/log/login?limit=${limit}&offset=${offset}`)
+}
+
+export function getNodeBlockingRules(limit = 100, offset = 0): Promise<ListResponse<NodeBlockingRule>> {
+  return getJSON<ListResponse<NodeBlockingRule>>(listPath('/api/admin/blocking/nodes', limit, offset))
+}
+
+export function createNodeBlockingRule(payload: NodeBlockingRulePayload): Promise<BlockingRuleResponse<NodeBlockingRule>> {
+  return postJSON<BlockingRuleResponse<NodeBlockingRule>>('/api/admin/blocking/nodes', payload)
+}
+
+export function updateNodeBlockingRule(id: number, payload: NodeBlockingRulePayload): Promise<BlockingRuleResponse<NodeBlockingRule>> {
+  return putJSON<BlockingRuleResponse<NodeBlockingRule>>(`/api/admin/blocking/nodes/${id}`, payload)
+}
+
+export function deleteNodeBlockingRule(id: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/blocking/nodes/${id}`)
+}
+
+export function getIPBlockingRules(limit = 100, offset = 0): Promise<ListResponse<IPBlockingRule>> {
+  return getJSON<ListResponse<IPBlockingRule>>(listPath('/api/admin/blocking/ips', limit, offset))
+}
+
+export function createIPBlockingRule(payload: IPBlockingRulePayload): Promise<BlockingRuleResponse<IPBlockingRule>> {
+  return postJSON<BlockingRuleResponse<IPBlockingRule>>('/api/admin/blocking/ips', payload)
+}
+
+export function updateIPBlockingRule(id: number, payload: IPBlockingRulePayload): Promise<BlockingRuleResponse<IPBlockingRule>> {
+  return putJSON<BlockingRuleResponse<IPBlockingRule>>(`/api/admin/blocking/ips/${id}`, payload)
+}
+
+export function deleteIPBlockingRule(id: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/blocking/ips/${id}`)
+}
+
+export function getForbiddenWordBlockingRules(limit = 100, offset = 0): Promise<ListResponse<ForbiddenWordBlockingRule>> {
+  return getJSON<ListResponse<ForbiddenWordBlockingRule>>(listPath('/api/admin/blocking/words', limit, offset))
+}
+
+export function createForbiddenWordBlockingRule(payload: ForbiddenWordBlockingRulePayload): Promise<BlockingRuleResponse<ForbiddenWordBlockingRule>> {
+  return postJSON<BlockingRuleResponse<ForbiddenWordBlockingRule>>('/api/admin/blocking/words', payload)
+}
+
+export function updateForbiddenWordBlockingRule(id: number, payload: ForbiddenWordBlockingRulePayload): Promise<BlockingRuleResponse<ForbiddenWordBlockingRule>> {
+  return putJSON<BlockingRuleResponse<ForbiddenWordBlockingRule>>(`/api/admin/blocking/words/${id}`, payload)
+}
+
+export function deleteForbiddenWordBlockingRule(id: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/blocking/words/${id}`)
 }
