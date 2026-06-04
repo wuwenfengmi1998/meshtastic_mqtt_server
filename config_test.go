@@ -38,6 +38,9 @@ func TestLoadConfigCreatesDefaultFile(t *testing.T) {
 	if cfg.Web.Port != 8080 {
 		t.Fatalf("web port = %d, want 8080", cfg.Web.Port)
 	}
+	if cfg.Web.SocketPath != defaultWebSocketPath() {
+		t.Fatalf("web socket path = %q, want %q", cfg.Web.SocketPath, defaultWebSocketPath())
+	}
 	if cfg.Web.StaticDir != "./dist" {
 		t.Fatalf("web static dir = %q, want ./dist", cfg.Web.StaticDir)
 	}
@@ -77,7 +80,7 @@ func TestLoadConfigFillsMissingFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{"host:", "tls:", "enabled:", "cert_file:", "key_file:", "meshtastic:", "psk:", "database:", "driver:", "sqlite:", "mysql:", "dsn:", "web:", "port:", "static_dir:"} {
+	for _, want := range []string{"host:", "tls:", "enabled:", "cert_file:", "key_file:", "meshtastic:", "psk:", "database:", "driver:", "sqlite:", "mysql:", "dsn:", "web:", "port:", "socket_path:", "static_dir:"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("completed config missing %q in:\n%s", want, text)
 		}
@@ -187,9 +190,23 @@ func TestValidateConfigDatabase(t *testing.T) {
 
 func TestValidateConfigWeb(t *testing.T) {
 	cfg := defaultConfig()
+	cfg.Web.SocketPath = ""
 	cfg.Web.Port = 0
 	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "web port") {
 		t.Fatalf("invalid web port error = %v, want web port error", err)
+	}
+
+	cfg = defaultConfig()
+	cfg.Web.Port = 0
+	if err := validateConfig(cfg); err != nil {
+		t.Fatalf("web socket with invalid port error = %v, want nil", err)
+	}
+
+	cfg = defaultConfig()
+	cfg.Web.SocketPath = ""
+	cfg.Web.Port = 0
+	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "web port") {
+		t.Fatalf("invalid web port without socket error = %v, want web port error", err)
 	}
 
 	cfg = defaultConfig()

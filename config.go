@@ -51,11 +51,12 @@ type mysqlConfig struct {
 }
 
 type webConfig struct {
-	Enabled   bool           `yaml:"enabled"`
-	Host      string         `yaml:"host"`
-	Port      int            `yaml:"port"`
-	StaticDir string         `yaml:"static_dir"`
-	Admin     webAdminConfig `yaml:"admin"`
+	Enabled    bool           `yaml:"enabled"`
+	Host       string         `yaml:"host"`
+	Port       int            `yaml:"port"`
+	SocketPath string         `yaml:"socket_path"`
+	StaticDir  string         `yaml:"static_dir"`
+	Admin      webAdminConfig `yaml:"admin"`
 }
 
 type webAdminConfig struct {
@@ -103,11 +104,12 @@ type rawMySQLConfig struct {
 }
 
 type rawWebConfig struct {
-	Enabled   *bool              `yaml:"enabled"`
-	Host      *string            `yaml:"host"`
-	Port      *int               `yaml:"port"`
-	StaticDir *string            `yaml:"static_dir"`
-	Admin     *rawWebAdminConfig `yaml:"admin"`
+	Enabled    *bool              `yaml:"enabled"`
+	Host       *string            `yaml:"host"`
+	Port       *int               `yaml:"port"`
+	SocketPath *string            `yaml:"socket_path"`
+	StaticDir  *string            `yaml:"static_dir"`
+	Admin      *rawWebAdminConfig `yaml:"admin"`
 }
 
 type rawWebAdminConfig struct {
@@ -138,10 +140,11 @@ func defaultConfig() *config {
 			MySQL:  mysqlConfig{DSN: ""},
 		},
 		Web: webConfig{
-			Enabled:   true,
-			Host:      "0.0.0.0",
-			Port:      8080,
-			StaticDir: "./dist",
+			Enabled:    true,
+			Host:       "0.0.0.0",
+			Port:       8080,
+			SocketPath: defaultWebSocketPath(),
+			StaticDir:  "./dist",
 			Admin: webAdminConfig{
 				Username:      "admin",
 				Password:      "admin",
@@ -167,6 +170,17 @@ func defaultConfigPath() string {
 
 func defaultSQLitePath() string {
 	return defaultSQLitePathForGOOS(runtime.GOOS)
+}
+
+func defaultWebSocketPath() string {
+	return defaultWebSocketPathForGOOS(runtime.GOOS)
+}
+
+func defaultWebSocketPathForGOOS(goos string) string {
+	if goos == "windows" {
+		return filepath.Join(".", "win", "opt", "mesh_mqtt_go", "web.sock")
+	}
+	return filepath.Join(string(filepath.Separator), "opt", "mesh_mqtt_go", "web.sock")
 }
 
 func defaultSQLitePathForGOOS(goos string) string {
@@ -307,6 +321,11 @@ func normalizeConfig(raw rawConfig) (*config, bool) {
 		} else {
 			cfg.Web.Port = *raw.Web.Port
 		}
+		if raw.Web.SocketPath == nil {
+			changed = true
+		} else {
+			cfg.Web.SocketPath = *raw.Web.SocketPath
+		}
 		if raw.Web.StaticDir == nil {
 			changed = true
 		} else {
@@ -358,7 +377,7 @@ func validateConfig(cfg *config) error {
 		return fmt.Errorf("invalid database.driver %q: must be sqlite or mysql", cfg.Database.Driver)
 	}
 	if cfg.Web.Enabled {
-		if cfg.Web.Port <= 0 || cfg.Web.Port > 65535 {
+		if cfg.Web.SocketPath == "" && (cfg.Web.Port <= 0 || cfg.Web.Port > 65535) {
 			return fmt.Errorf("invalid web port %d: must be 1-65535", cfg.Web.Port)
 		}
 		if cfg.Web.StaticDir == "" {

@@ -21,6 +21,32 @@ func newHTTPServer(cfg webConfig, store *store, sessions *sessionManager, mqttSt
 	}
 }
 
+func serveHTTPUnixSocket(server *http.Server, socketPath string) error {
+	if err := os.MkdirAll(filepath.Dir(socketPath), 0755); err != nil {
+		return err
+	}
+	if info, err := os.Stat(socketPath); err == nil {
+		if info.Mode()&os.ModeSocket == 0 {
+			return errors.New("web socket path exists and is not a socket")
+		}
+		if err := os.Remove(socketPath); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(socketPath)
+	if err := os.Chmod(socketPath, 0660); err != nil {
+		listener.Close()
+		return err
+	}
+	return server.Serve(listener)
+}
+
 func newRouter(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
