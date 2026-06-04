@@ -4,6 +4,7 @@ import type {
   AdminManagedUserResponse,
   AdminMqttStatus,
   AdminUsersResponse,
+  DiscardDetails,
   HealthStatus,
   ListResponse,
   MapReport,
@@ -96,6 +97,10 @@ export function deleteNode(nodeId: string): Promise<{ status: string }> {
 
 export function getPositions(limit = 500, offset = 0, nodeId = ''): Promise<ListResponse<PositionRecord>> {
   return getJSON<ListResponse<PositionRecord>>(listPath('/api/positions', limit, offset, nodeId))
+}
+
+export function getDiscardDetails(limit = 100, offset = 0): Promise<ListResponse<DiscardDetails>> {
+  return getJSON<ListResponse<DiscardDetails>>(listPath('/api/discard-details', limit, offset))
 }
 
 export function getTelemetry(limit = 500, offset = 0, nodeId = ''): Promise<ListResponse<TelemetryRecord>> {

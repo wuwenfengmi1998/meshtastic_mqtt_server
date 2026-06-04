@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -14,7 +15,7 @@ func TestOpenStoreCreatesTables(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	for _, table := range []string{"users", "login_log", "nodeinfo", "map_report", "text_message", "position", "telemetry", "routing", "traceroute"} {
+	for _, table := range []string{"users", "login_log", "discard_details", "nodeinfo", "map_report", "text_message", "position", "telemetry", "routing", "traceroute"} {
 		var name string
 		if err := rawTestDB(t, st).QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name); err != nil {
 			t.Fatalf("%s table missing: %v", table, err)
@@ -346,6 +347,55 @@ func TestInsertAndListLoginLogs(t *testing.T) {
 	}
 	if logs[1].UserID == nil || *logs[1].UserID != userID || !logs[1].Success {
 		t.Fatalf("success log = %#v, want user id and success", logs[1])
+	}
+}
+
+func TestInsertDiscardDetailsStoresRawBase64AndClientInfo(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	raw := []byte{0xff, 0x00, 0x01}
+	clientInfo := mqttClientInfo{ClientID: "client-1", Username: "user-1", Listener: "tcp", RemoteAddr: "127.0.0.1:54321", RemoteHost: "127.0.0.1", RemotePort: "54321"}
+	record := map[string]any{"topic": "msh/US/test", "error": "protobuf decode failed", "payload_len": len(raw)}
+	if err := st.InsertDiscardDetails(record, raw, clientInfo); err != nil {
+		t.Fatalf("InsertDiscardDetails() error = %v", err)
+	}
+
+	var topic, errorText, rawBase64, clientID, username, listener, remoteAddr, remoteHost, remotePort, contentJSON string
+	var payloadLen int64
+	if err := rawTestDB(t, st).QueryRow("SELECT topic, error, payload_len, raw_base64, mqtt_client_id, mqtt_username, mqtt_listener, mqtt_remote_addr, mqtt_remote_host, mqtt_remote_port, content_json FROM discard_details LIMIT 1").Scan(&topic, &errorText, &payloadLen, &rawBase64, &clientID, &username, &listener, &remoteAddr, &remoteHost, &remotePort, &contentJSON); err != nil {
+		t.Fatal(err)
+	}
+	if topic != "msh/US/test" || errorText != "protobuf decode failed" || payloadLen != int64(len(raw)) || rawBase64 != base64.StdEncoding.EncodeToString(raw) {
+		t.Fatalf("discard details row = topic %q error %q len %d raw %q", topic, errorText, payloadLen, rawBase64)
+	}
+	if clientID != "client-1" || username != "user-1" || listener != "tcp" || remoteAddr != "127.0.0.1:54321" || remoteHost != "127.0.0.1" || remotePort != "54321" {
+		t.Fatalf("client info = %q %q %q %q %q %q", clientID, username, listener, remoteAddr, remoteHost, remotePort)
+	}
+	if !strings.Contains(contentJSON, "protobuf decode failed") {
+		t.Fatalf("content_json = %q, want error", contentJSON)
+	}
+}
+
+func TestListDiscardDetailsOrdersNewestFirst(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.InsertDiscardDetails(map[string]any{"topic": "first", "error": "first"}, []byte{1}, mqttClientInfo{}); err != nil {
+		t.Fatalf("first InsertDiscardDetails() error = %v", err)
+	}
+	if err := st.InsertDiscardDetails(map[string]any{"topic": "second", "error": "second"}, []byte{2}, mqttClientInfo{}); err != nil {
+		t.Fatalf("second InsertDiscardDetails() error = %v", err)
+	}
+	rows, err := st.ListDiscardDetails(listOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListDiscardDetails() error = %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("discard details len = %d, want 2", len(rows))
+	}
+	if rows[0].ID <= rows[1].ID || rows[0].Topic != "second" {
+		t.Fatalf("discard details order = %#v", rows)
 	}
 }
 

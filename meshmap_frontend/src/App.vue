@@ -2,10 +2,12 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { adminLogout, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReports, getNodeInfo, getPositions, getTextMessages } from './api'
 import AdminDashboard from './components/AdminDashboard.vue'
+import AdminDiscardDetails from './components/AdminDiscardDetails.vue'
 import AdminLogin from './components/AdminLogin.vue'
 import AdminLoginLogs from './components/AdminLoginLogs.vue'
 import AdminUsers from './components/AdminUsers.vue'
 import ChatPanel from './components/ChatPanel.vue'
+import HelpPage from './components/HelpPage.vue'
 import MeshMap from './components/MeshMap.vue'
 import NodeDetailedPage from './components/NodeDetailedPage.vue'
 import NodeListPanel from './components/NodeListPanel.vue'
@@ -17,6 +19,7 @@ const isAdminPage = adminPath.startsWith('/admin')
 const detailMatch = currentPath.match(/^\/detailed\/(.+)$/)
 const detailedNodeId = detailMatch ? decodeURIComponent(detailMatch[1]) : ''
 const isDetailedPage = !!detailedNodeId
+const isHelpPage = currentPath === '/help'
 const adminUser = ref<AdminUser | null>(null)
 const adminChecking = ref(false)
 
@@ -217,7 +220,7 @@ onMounted(() => {
     return
   }
   checkAdminSession()
-  if (isDetailedPage) {
+  if (isDetailedPage || isHelpPage) {
     return
   }
   refresh()
@@ -237,6 +240,7 @@ onBeforeUnmount(() => {
       <div>
         <p class="eyebrow">Meshtastic MQTT Server</p>
         <h1 v-if="isDetailedPage">节点详情</h1>
+        <h1 v-else-if="isHelpPage">使用帮助</h1>
         <h1 v-else>{{ isAdminPage ? 'Admin' : 'MeshMap' }}</h1>
       </div>
       <div class="topbar-actions">
@@ -245,6 +249,7 @@ onBeforeUnmount(() => {
             <a href="/admin" :class="{ active: adminPath === '/admin' }">服务状态</a>
             <a href="/admin/users" :class="{ active: adminPath === '/admin/users' }">用户管理</a>
             <a href="/admin/log/login" :class="{ active: adminPath === '/admin/log/login' }">登录日志</a>
+            <a href="/admin/discard_details" :class="{ active: adminPath === '/admin/discard_details' }">丢弃数据</a>
           </nav>
           <a class="topbar-link" href="/">返回地图</a>
         </template>
@@ -253,10 +258,12 @@ onBeforeUnmount(() => {
           <a class="topbar-link" href="/">返回地图</a>
           <a class="topbar-link" href="/admin">管理</a>
         </template>
+        <template v-else-if="isHelpPage">
+          <a class="topbar-link" href="/">返回地图</a>
+          <a class="topbar-link" href="/admin">管理</a>
+        </template>
         <template v-else>
-          <span class="status-pill" :class="{ ok: health?.status === 'ok' }">
-            {{ health?.status ?? 'unknown' }} / db {{ health?.database ?? 'unknown' }}
-          </span>
+          <a class="topbar-link" href="/help">使用帮助</a>
           <span class="counter">节点 {{ nodeTotal }} · 已加载消息 {{ messages.length }} · 坐标 {{ mapNodes.length }}</span>
           <a class="topbar-link" href="/admin">管理</a>
           <button @click="() => refresh()" :disabled="loading">{{ loading ? '刷新中...' : '刷新' }}</button>
@@ -276,6 +283,7 @@ onBeforeUnmount(() => {
         </div>
         <AdminUsers v-if="adminPath === '/admin/users'" :user="adminUser" />
         <AdminLoginLogs v-else-if="adminPath === '/admin/log/login'" />
+        <AdminDiscardDetails v-else-if="adminPath === '/admin/discard_details'" />
         <AdminDashboard v-else />
       </template>
       <AdminLogin v-else @login="adminUser = $event" />
@@ -283,6 +291,10 @@ onBeforeUnmount(() => {
 
     <template v-else-if="isDetailedPage">
       <NodeDetailedPage :node-id="detailedNodeId" :is-admin="!!adminUser" />
+    </template>
+
+    <template v-else-if="isHelpPage">
+      <HelpPage />
     </template>
 
     <template v-else>

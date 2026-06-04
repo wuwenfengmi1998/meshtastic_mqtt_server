@@ -116,6 +116,22 @@ export interface AdminManagedUserResponse {
   user: AdminManagedUser
 }
 
+export interface DiscardDetails {
+  id: number
+  topic: string
+  error: string
+  payload_len: number
+  raw_base64: string
+  mqtt_client_id: string | null
+  mqtt_username: string | null
+  mqtt_listener: string | null
+  mqtt_remote_addr: string | null
+  mqtt_remote_host: string | null
+  mqtt_remote_port: string | null
+  created_at: string
+  content_json: string
+}
+
 export interface AdminLoginLog {
   id: number
   username: string

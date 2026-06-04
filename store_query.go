@@ -118,6 +118,33 @@ func (s *store) ListTextMessages(opts listOptions) ([]textMessageRecord, error) 
 	return rows, s.listAppendRows(opts, &rows).Error
 }
 
+func (s *store) ListDiscardDetails(opts listOptions) ([]discardDetailsRecord, error) {
+	opts = normalizeListOptions(opts)
+	var rows []discardDetailsRecord
+	q := applyDiscardDetailsFilters(s.db.Model(&discardDetailsRecord{}), opts).
+		Order("created_at DESC").
+		Order("id DESC").
+		Limit(opts.Limit).
+		Offset(opts.Offset)
+	return rows, q.Find(&rows).Error
+}
+
+func (s *store) CountDiscardDetails(opts listOptions) (int64, error) {
+	var total int64
+	q := applyDiscardDetailsFilters(s.db.Model(&discardDetailsRecord{}), opts)
+	return total, q.Count(&total).Error
+}
+
+func applyDiscardDetailsFilters(q *gorm.DB, opts listOptions) *gorm.DB {
+	if opts.Since != nil {
+		q = q.Where("created_at >= ?", *opts.Since)
+	}
+	if opts.Until != nil {
+		q = q.Where("created_at <= ?", *opts.Until)
+	}
+	return q
+}
+
 func (s *store) DeleteTextMessage(id uint64) error {
 	result := s.db.Where("id = ?", id).Delete(&textMessageRecord{})
 	if result.Error != nil {

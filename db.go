@@ -91,6 +91,26 @@ func (loginLogRecord) TableName() string {
 	return "login_log"
 }
 
+type discardDetailsRecord struct {
+	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	Topic          string    `gorm:"column:topic"`
+	Error          string    `gorm:"column:error"`
+	PayloadLen     int64     `gorm:"column:payload_len"`
+	RawBase64      string    `gorm:"column:raw_base64;not null"`
+	ContentJSON    string    `gorm:"column:content_json;not null"`
+	MQTTClientID   *string   `gorm:"column:mqtt_client_id"`
+	MQTTUsername   *string   `gorm:"column:mqtt_username"`
+	MQTTListener   *string   `gorm:"column:mqtt_listener"`
+	MQTTRemoteAddr *string   `gorm:"column:mqtt_remote_addr"`
+	MQTTRemoteHost *string   `gorm:"column:mqtt_remote_host"`
+	MQTTRemotePort *string   `gorm:"column:mqtt_remote_port"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime;index"`
+}
+
+func (discardDetailsRecord) TableName() string {
+	return "discard_details"
+}
+
 type nodeInfoRecord struct {
 	NodeID      string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum     int64     `gorm:"column:node_num;not null;index"`
@@ -285,6 +305,7 @@ func (s *store) migrate() error {
 		}{
 			{label: "users", model: &userRecord{}},
 			{label: "login_log", model: &loginLogRecord{}},
+			{label: "discard_details", model: &discardDetailsRecord{}},
 			{label: "nodeinfo", model: &nodeInfoRecord{}},
 			{label: "map_report", model: &mapReportRecord{}},
 			{label: "text_message", model: &textMessageRecord{}},

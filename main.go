@@ -54,6 +54,11 @@ func (h *meshtasticFilterHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (pa
 	valid, _, record := mqtpp.MQTTPP(pk.TopicName, pk.Payload, h.key)
 	if !valid {
 		h.stats.IncDropped()
+		if h.store != nil {
+			if err := h.store.InsertDiscardDetails(record, pk.Payload, mqttClientInfoFromClient(cl)); err != nil {
+				printJSON(map[string]any{"event": "db_error", "type": "discard_details", "topic": pk.TopicName, "error": err.Error()})
+			}
+		}
 		return pk, packets.ErrRejectPacket
 	}
 	h.stats.IncForwarded()

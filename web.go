@@ -54,6 +54,14 @@ func registerAPIRoutes(r gin.IRouter, store *store) {
 		rows, err := store.ListTextMessages(opts)
 		writeListResponse(c, rows, opts, err, textMessageDTO)
 	})
+	r.GET("/discard-details", func(c *gin.Context) {
+		opts, ok := parseListOptions(c)
+		if !ok {
+			return
+		}
+		rows, err := store.ListDiscardDetails(opts)
+		writeListResponse(c, rows, opts, err, discardDetailsDTO)
+	})
 	r.GET("/positions", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
 		if !ok {
@@ -157,7 +165,14 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 			c.JSON(http.StatusOK, adminMqttStatus{Running: false})
 			return
 		}
-		c.JSON(http.StatusOK, mqttStatus.Status())
+		status := mqttStatus.Status()
+		discardCount, err := store.CountDiscardDetails(listOptions{})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		status.MessagesDropped = discardCount
+		c.JSON(http.StatusOK, status)
 	})
 	protected.GET("/users", func(c *gin.Context) {
 		users, err := store.ListUsers()
@@ -416,6 +431,10 @@ func mapReportDTO(row mapReportRecord) gin.H {
 
 func textMessageDTO(row textMessageRecord) gin.H {
 	return gin.H{"id": row.ID, "from_id": row.FromID, "from_num": row.FromNum, "text": ptrString(row.Text), "topic": row.Topic, "created_at": row.CreatedAt, "mqtt_remote_host": ptrString(row.MQTTRemoteHost), "content_json": row.ContentJSON}
+}
+
+func discardDetailsDTO(row discardDetailsRecord) gin.H {
+	return gin.H{"id": row.ID, "topic": row.Topic, "error": row.Error, "payload_len": row.PayloadLen, "raw_base64": row.RawBase64, "mqtt_client_id": ptrString(row.MQTTClientID), "mqtt_username": ptrString(row.MQTTUsername), "mqtt_listener": ptrString(row.MQTTListener), "mqtt_remote_addr": ptrString(row.MQTTRemoteAddr), "mqtt_remote_host": ptrString(row.MQTTRemoteHost), "mqtt_remote_port": ptrString(row.MQTTRemotePort), "created_at": row.CreatedAt, "content_json": row.ContentJSON}
 }
 
 func positionDTO(row positionRecord) gin.H {
