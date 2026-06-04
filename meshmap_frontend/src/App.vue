@@ -112,6 +112,10 @@ function mergeMessages(existing: TextMessage[], incoming: TextMessage[]): TextMe
   return Array.from(byId.values()).sort(compareMessages)
 }
 
+function isSameJSON(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
 async function loadInitialChatMessages() {
   const response = await getTextMessages(chatPageSize, 0)
   messages.value = toChronological(response.items)
@@ -170,7 +174,9 @@ async function loadMapReportsForBounds(bounds: MapBoundsQuery, zoom: number, sho
     if (requestSeq !== mapReportRequestSeq) {
       return
     }
-    mapViewportItems.value = response.items
+    if (!isSameJSON(mapViewportItems.value, response.items)) {
+      mapViewportItems.value = response.items
+    }
     mapViewportMode.value = response.mode
     mapReportTotal.value = response.total
   } catch (err) {
