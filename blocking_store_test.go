@@ -120,6 +120,42 @@ func TestIPBlockingCRUDAndValidation(t *testing.T) {
 	}
 }
 
+func TestListEnabledBlockingRules(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	nodeNum := int64(1)
+	if _, err := st.CreateNodeBlocking("!00000001", &nodeNum, "enabled", true); err != nil {
+		t.Fatalf("CreateNodeBlocking(enabled) error = %v", err)
+	}
+	if _, err := st.CreateNodeBlocking("!00000002", nil, "disabled", false); err != nil {
+		t.Fatalf("CreateNodeBlocking(disabled) error = %v", err)
+	}
+	if rows, err := st.ListEnabledNodeBlocking(); err != nil || len(rows) != 1 || rows[0].NodeID != "!00000001" {
+		t.Fatalf("ListEnabledNodeBlocking() = %+v, %v, want only enabled node", rows, err)
+	}
+
+	if _, err := st.CreateIPBlocking("127.0.0.1", "enabled", true); err != nil {
+		t.Fatalf("CreateIPBlocking(enabled) error = %v", err)
+	}
+	if _, err := st.CreateIPBlocking("192.168.1.1", "disabled", false); err != nil {
+		t.Fatalf("CreateIPBlocking(disabled) error = %v", err)
+	}
+	if rows, err := st.ListEnabledIPBlocking(); err != nil || len(rows) != 1 || rows[0].IPValue != "127.0.0.1" {
+		t.Fatalf("ListEnabledIPBlocking() = %+v, %v, want only enabled IP", rows, err)
+	}
+
+	if _, err := st.CreateForbiddenWordBlocking("spam", "contains", false, "enabled", true); err != nil {
+		t.Fatalf("CreateForbiddenWordBlocking(enabled) error = %v", err)
+	}
+	if _, err := st.CreateForbiddenWordBlocking("eggs", "contains", false, "disabled", false); err != nil {
+		t.Fatalf("CreateForbiddenWordBlocking(disabled) error = %v", err)
+	}
+	if rows, err := st.ListEnabledForbiddenWordBlocking(); err != nil || len(rows) != 1 || rows[0].Word != "spam" {
+		t.Fatalf("ListEnabledForbiddenWordBlocking() = %+v, %v, want only enabled word", rows, err)
+	}
+}
+
 func TestForbiddenWordBlockingCRUDAndValidation(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()

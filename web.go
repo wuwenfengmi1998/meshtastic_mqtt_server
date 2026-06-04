@@ -14,19 +14,19 @@ import (
 	"gorm.io/gorm"
 )
 
-func newHTTPServer(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider) *http.Server {
+func newHTTPServer(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache) *http.Server {
 	return &http.Server{
 		Addr:    net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
-		Handler: newRouter(cfg, store, sessions, mqttStatus),
+		Handler: newRouter(cfg, store, sessions, mqttStatus, blocking),
 	}
 }
 
-func newRouter(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider) *gin.Engine {
+func newRouter(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	api := r.Group("/api")
 	registerAPIRoutes(api, store)
-	registerAdminRoutes(api.Group("/admin"), store, sessions, mqttStatus)
+	registerAdminRoutes(api.Group("/admin"), store, sessions, mqttStatus, blocking)
 	registerStaticRoutes(r, cfg.StaticDir)
 	return r
 }
@@ -96,7 +96,7 @@ func registerAPIRoutes(r gin.IRouter, store *store) {
 	})
 }
 
-func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider) {
+func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache) {
 	type loginRequest struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -156,7 +156,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 
 	protected := r.Group("")
 	protected.Use(requireAdmin(sessions))
-	registerAdminBlockingRoutes(protected, store)
+	registerAdminBlockingRoutes(protected, store, blocking)
 	protected.GET("/me", func(c *gin.Context) {
 		claims := c.MustGet("admin_claims").(*sessionClaims)
 		c.JSON(http.StatusOK, gin.H{"user": adminUserDTO{Username: claims.Username, Role: claims.Role}})

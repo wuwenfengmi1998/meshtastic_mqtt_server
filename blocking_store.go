@@ -30,6 +30,11 @@ func (s *store) CountNodeBlocking(opts listOptions) (int64, error) {
 	return total, s.db.Model(&nodeBlockingRecord{}).Count(&total).Error
 }
 
+func (s *store) ListEnabledNodeBlocking() ([]nodeBlockingRecord, error) {
+	var rows []nodeBlockingRecord
+	return rows, s.db.Where("enabled = ?", true).Find(&rows).Error
+}
+
 func (s *store) CreateNodeBlocking(nodeID string, nodeNum *int64, reason string, enabled bool) (*nodeBlockingRecord, error) {
 	nodeID = strings.TrimSpace(nodeID)
 	if nodeID == "" {
@@ -93,6 +98,11 @@ func (s *store) CountIPBlocking(opts listOptions) (int64, error) {
 	return total, s.db.Model(&ipBlockingRecord{}).Count(&total).Error
 }
 
+func (s *store) ListEnabledIPBlocking() ([]ipBlockingRecord, error) {
+	var rows []ipBlockingRecord
+	return rows, s.db.Where("enabled = ?", true).Find(&rows).Error
+}
+
 func (s *store) CreateIPBlocking(ipValue string, reason string, enabled bool) (*ipBlockingRecord, error) {
 	value, err := normalizeIPBlockingValue(ipValue)
 	if err != nil {
@@ -154,6 +164,11 @@ func (s *store) ListForbiddenWordBlocking(opts listOptions) ([]forbiddenWordBloc
 func (s *store) CountForbiddenWordBlocking(opts listOptions) (int64, error) {
 	var total int64
 	return total, s.db.Model(&forbiddenWordBlockingRecord{}).Count(&total).Error
+}
+
+func (s *store) ListEnabledForbiddenWordBlocking() ([]forbiddenWordBlockingRecord, error) {
+	var rows []forbiddenWordBlockingRecord
+	return rows, s.db.Where("enabled = ?", true).Find(&rows).Error
 }
 
 func (s *store) CreateForbiddenWordBlocking(word, matchType string, caseSensitive bool, reason string, enabled bool) (*forbiddenWordBlockingRecord, error) {

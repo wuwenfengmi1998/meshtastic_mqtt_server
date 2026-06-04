@@ -30,7 +30,14 @@ type forbiddenWordBlockingRequest struct {
 	Enabled       bool   `json:"enabled"`
 }
 
-func registerAdminBlockingRoutes(r gin.IRouter, store *store) {
+func registerAdminBlockingRoutes(r gin.IRouter, store *store, blocking *blockingCache) {
+	reloadBlocking := func() error {
+		if blocking == nil {
+			return nil
+		}
+		return blocking.Reload(store)
+	}
+
 	r.GET("/blocking/nodes", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
 		if !ok {
@@ -51,7 +58,7 @@ func registerAdminBlockingRoutes(r gin.IRouter, store *store) {
 			return
 		}
 		row, err := store.CreateNodeBlocking(req.NodeID, req.NodeNum, req.Reason, req.Enabled)
-		writeBlockingMutationResponse(c, http.StatusCreated, row, err, nodeBlockingDTO)
+		writeBlockingMutationResponse(c, http.StatusCreated, row, err, nodeBlockingDTO, reloadBlocking)
 	})
 	r.PUT("/blocking/nodes/:id", func(c *gin.Context) {
 		id, ok := parseBlockingID(c)
@@ -64,14 +71,14 @@ func registerAdminBlockingRoutes(r gin.IRouter, store *store) {
 			return
 		}
 		row, err := store.UpdateNodeBlocking(id, req.NodeID, req.NodeNum, req.Reason, req.Enabled)
-		writeBlockingMutationResponse(c, http.StatusOK, row, err, nodeBlockingDTO)
+		writeBlockingMutationResponse(c, http.StatusOK, row, err, nodeBlockingDTO, reloadBlocking)
 	})
 	r.DELETE("/blocking/nodes/:id", func(c *gin.Context) {
 		id, ok := parseBlockingID(c)
 		if !ok {
 			return
 		}
-		writeBlockingDeleteResponse(c, store.DeleteNodeBlocking(id))
+		writeBlockingDeleteResponse(c, store.DeleteNodeBlocking(id), reloadBlocking)
 	})
 
 	r.GET("/blocking/ips", func(c *gin.Context) {
@@ -94,7 +101,7 @@ func registerAdminBlockingRoutes(r gin.IRouter, store *store) {
 			return
 		}
 		row, err := store.CreateIPBlocking(req.IPValue, req.Reason, req.Enabled)
-		writeBlockingMutationResponse(c, http.StatusCreated, row, err, ipBlockingDTO)
+		writeBlockingMutationResponse(c, http.StatusCreated, row, err, ipBlockingDTO, reloadBlocking)
 	})
 	r.PUT("/blocking/ips/:id", func(c *gin.Context) {
 		id, ok := parseBlockingID(c)
@@ -107,14 +114,14 @@ func registerAdminBlockingRoutes(r gin.IRouter, store *store) {
 			return
 		}
 		row, err := store.UpdateIPBlocking(id, req.IPValue, req.Reason, req.Enabled)
-		writeBlockingMutationResponse(c, http.StatusOK, row, err, ipBlockingDTO)
+		writeBlockingMutationResponse(c, http.StatusOK, row, err, ipBlockingDTO, reloadBlocking)
 	})
 	r.DELETE("/blocking/ips/:id", func(c *gin.Context) {
 		id, ok := parseBlockingID(c)
 		if !ok {
 			return
 		}
-		writeBlockingDeleteResponse(c, store.DeleteIPBlocking(id))
+		writeBlockingDeleteResponse(c, store.DeleteIPBlocking(id), reloadBlocking)
 	})
 
 	r.GET("/blocking/words", func(c *gin.Context) {
@@ -137,7 +144,7 @@ func registerAdminBlockingRoutes(r gin.IRouter, store *store) {
 			return
 		}
 		row, err := store.CreateForbiddenWordBlocking(req.Word, req.MatchType, req.CaseSensitive, req.Reason, req.Enabled)
-		writeBlockingMutationResponse(c, http.StatusCreated, row, err, forbiddenWordBlockingDTO)
+		writeBlockingMutationResponse(c, http.StatusCreated, row, err, forbiddenWordBlockingDTO, reloadBlocking)
 	})
 	r.PUT("/blocking/words/:id", func(c *gin.Context) {
 		id, ok := parseBlockingID(c)
@@ -150,14 +157,14 @@ func registerAdminBlockingRoutes(r gin.IRouter, store *store) {
 			return
 		}
 		row, err := store.UpdateForbiddenWordBlocking(id, req.Word, req.MatchType, req.CaseSensitive, req.Reason, req.Enabled)
-		writeBlockingMutationResponse(c, http.StatusOK, row, err, forbiddenWordBlockingDTO)
+		writeBlockingMutationResponse(c, http.StatusOK, row, err, forbiddenWordBlockingDTO, reloadBlocking)
 	})
 	r.DELETE("/blocking/words/:id", func(c *gin.Context) {
 		id, ok := parseBlockingID(c)
 		if !ok {
 			return
 		}
-		writeBlockingDeleteResponse(c, store.DeleteForbiddenWordBlocking(id))
+		writeBlockingDeleteResponse(c, store.DeleteForbiddenWordBlocking(id), reloadBlocking)
 	})
 }
 
@@ -170,7 +177,7 @@ func parseBlockingID(c *gin.Context) (uint64, bool) {
 	return id, true
 }
 
-func writeBlockingMutationResponse[T any](c *gin.Context, status int, row *T, err error, convert func(T) gin.H) {
+func writeBlockingMutationResponse[T any](c *gin.Context, status int, row *T, err error, convert func(T) gin.H, afterSuccess func() error) {
 	if errors.Is(err, errBlockingAlreadyExists) {
 		c.JSON(http.StatusConflict, gin.H{"error": "blocking rule already exists"})
 		return
@@ -183,10 +190,16 @@ func writeBlockingMutationResponse[T any](c *gin.Context, status int, row *T, er
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if afterSuccess != nil {
+		if err := afterSuccess(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "blocking rule saved but cache reload failed: " + err.Error()})
+			return
+		}
+	}
 	c.JSON(status, gin.H{"item": convert(*row)})
 }
 
-func writeBlockingDeleteResponse(c *gin.Context, err error) {
+func writeBlockingDeleteResponse(c *gin.Context, err error, afterSuccess func() error) {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "blocking rule not found"})
 		return
@@ -194,6 +207,12 @@ func writeBlockingDeleteResponse(c *gin.Context, err error) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if afterSuccess != nil {
+		if err := afterSuccess(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "blocking rule deleted but cache reload failed: " + err.Error()})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

@@ -41,3 +41,42 @@ func TestMQTTClientInfoFromClientUnsplitRemote(t *testing.T) {
 		t.Fatalf("remote fields = %#v, want host localhost and empty port", info)
 	}
 }
+
+func TestBlockingViolationForRecordNode(t *testing.T) {
+	cache := &blockingCache{nodes: map[string]struct{}{"!12345678": {}}, nodeNums: map[int64]struct{}{}, ips: map[string]struct{}{}}
+	record := map[string]any{"type": "position", "from": "!12345678", "from_num": uint32(305419896)}
+
+	violation := blockingViolationForRecord(cache, record)
+	if violation == nil || violation["blocking_type"] != "node" {
+		t.Fatalf("blockingViolationForRecord() = %#v, want node violation", violation)
+	}
+}
+
+func TestBlockingViolationForRecordForbiddenWordFields(t *testing.T) {
+	cache := &blockingCache{nodes: map[string]struct{}{}, nodeNums: map[int64]struct{}{}, ips: map[string]struct{}{}, words: []forbiddenWordRule{{word: "spam", foldedWord: "spam", matchType: forbiddenWordMatchContains}}}
+
+	for _, tc := range []struct {
+		name   string
+		record map[string]any
+		field  string
+	}{
+		{name: "text", record: map[string]any{"type": "text_message", "from": "!1", "text": "has SPAM"}, field: "text"},
+		{name: "nodeinfo", record: map[string]any{"type": "nodeinfo", "from": "!1", "long_name": "has SPAM"}, field: "long_name"},
+		{name: "map_report", record: map[string]any{"type": "map_report", "from": "!1", "long_name": "has SPAM"}, field: "long_name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			violation := blockingViolationForRecord(cache, tc.record)
+			if violation == nil || violation["blocking_type"] != "forbidden_word" || violation["blocking_field"] != tc.field || violation["matched_word"] != "spam" {
+				t.Fatalf("blockingViolationForRecord() = %#v, want forbidden word on %s", violation, tc.field)
+			}
+		})
+	}
+}
+
+func TestBlockingViolationForRecordAllowed(t *testing.T) {
+	cache := &blockingCache{nodes: map[string]struct{}{}, nodeNums: map[int64]struct{}{}, ips: map[string]struct{}{}, words: []forbiddenWordRule{{word: "spam", foldedWord: "spam", matchType: forbiddenWordMatchContains}}}
+	record := map[string]any{"type": "text_message", "from": "!1", "text": "hello"}
+	if violation := blockingViolationForRecord(cache, record); violation != nil {
+		t.Fatalf("blockingViolationForRecord() = %#v, want nil", violation)
+	}
+}
