@@ -106,6 +106,159 @@ func TestUpsertMapReportInsertsAndUpdatesSameNode(t *testing.T) {
 	}
 }
 
+func TestListMapReportsFiltersByBounds(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	inside := mapReportTestRecord("inside")
+	inside["from"] = "!00000001"
+	inside["from_num"] = uint32(1)
+	inside["latitude"] = 10.5
+	inside["longitude"] = 20.5
+	outside := mapReportTestRecord("outside")
+	outside["from"] = "!00000002"
+	outside["from_num"] = uint32(2)
+	outside["latitude"] = 50.0
+	outside["longitude"] = 20.5
+	missingCoords := mapReportTestRecord("missing coords")
+	missingCoords["from"] = "!00000003"
+	missingCoords["from_num"] = uint32(3)
+	delete(missingCoords, "latitude")
+	delete(missingCoords, "longitude")
+
+	for _, record := range []map[string]any{inside, outside, missingCoords} {
+		if err := st.UpsertMapReport(record); err != nil {
+			t.Fatalf("UpsertMapReport() error = %v", err)
+		}
+	}
+
+	minLat, maxLat := 10.0, 11.0
+	minLng, maxLng := 20.0, 21.0
+	opts := listOptions{Limit: 100, MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng}
+	rows, err := st.ListMapReports(opts)
+	if err != nil {
+		t.Fatalf("ListMapReports() error = %v", err)
+	}
+	if len(rows) != 1 || rows[0].NodeID != "!00000001" {
+		t.Fatalf("ListMapReports() = %+v, want only !00000001", rows)
+	}
+	total, err := st.CountMapReports(opts)
+	if err != nil || total != 1 {
+		t.Fatalf("CountMapReports() = %d, %v, want 1, nil", total, err)
+	}
+}
+
+func TestListMapReportsFiltersAcrossAntimeridian(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	west := mapReportTestRecord("west")
+	west["from"] = "!00000001"
+	west["from_num"] = uint32(1)
+	west["latitude"] = 0.0
+	west["longitude"] = 175.0
+	east := mapReportTestRecord("east")
+	east["from"] = "!00000002"
+	east["from_num"] = uint32(2)
+	east["latitude"] = 0.0
+	east["longitude"] = -175.0
+	outside := mapReportTestRecord("outside")
+	outside["from"] = "!00000003"
+	outside["from_num"] = uint32(3)
+	outside["latitude"] = 0.0
+	outside["longitude"] = 0.0
+
+	for _, record := range []map[string]any{west, east, outside} {
+		if err := st.UpsertMapReport(record); err != nil {
+			t.Fatalf("UpsertMapReport() error = %v", err)
+		}
+	}
+
+	minLat, maxLat := -10.0, 10.0
+	minLng, maxLng := 170.0, -170.0
+	rows, err := st.ListMapReports(listOptions{Limit: 100, MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng})
+	if err != nil {
+		t.Fatalf("ListMapReports() error = %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("ListMapReports() length = %d, want 2: %+v", len(rows), rows)
+	}
+	seen := map[string]bool{}
+	for _, row := range rows {
+		seen[row.NodeID] = true
+	}
+	if !seen["!00000001"] || !seen["!00000002"] || seen["!00000003"] {
+		t.Fatalf("seen nodes = %+v, want west/east only", seen)
+	}
+}
+
+func TestListMapReportViewportReturnsPointsBelowThreshold(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	for index := 0; index < 3; index++ {
+		record := mapReportTestRecord("point")
+		record["from"] = "!0000000" + string(rune('1'+index))
+		record["from_num"] = uint32(index + 1)
+		record["latitude"] = float64(index)
+		record["longitude"] = float64(index)
+		if err := st.UpsertMapReport(record); err != nil {
+			t.Fatalf("UpsertMapReport() error = %v", err)
+		}
+	}
+
+	minLat, maxLat := -1.0, 5.0
+	minLng, maxLng := -1.0, 5.0
+	result, err := st.ListMapReportViewport(mapReportViewportOptions{
+		ListOptions:      listOptions{MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng},
+		Zoom:             8,
+		Limit:            1000,
+		ClusterThreshold: 10,
+		TargetCells:      64,
+	})
+	if err != nil {
+		t.Fatalf("ListMapReportViewport() error = %v", err)
+	}
+	if result.Mode != "points" || result.Total != 3 || len(result.Points) != 3 || len(result.Clusters) != 0 {
+		t.Fatalf("viewport result = %+v, want 3 points", result)
+	}
+}
+
+func TestListMapReportViewportReturnsClustersAboveThreshold(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	for index := 0; index < 4; index++ {
+		record := mapReportTestRecord("cluster")
+		record["from"] = "!0000000" + string(rune('1'+index))
+		record["from_num"] = uint32(index + 1)
+		record["latitude"] = 10.0 + float64(index)*0.01
+		record["longitude"] = 20.0 + float64(index)*0.01
+		if err := st.UpsertMapReport(record); err != nil {
+			t.Fatalf("UpsertMapReport() error = %v", err)
+		}
+	}
+
+	minLat, maxLat := 9.0, 11.0
+	minLng, maxLng := 19.0, 21.0
+	result, err := st.ListMapReportViewport(mapReportViewportOptions{
+		ListOptions:      listOptions{MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng},
+		Zoom:             4,
+		Limit:            1000,
+		ClusterThreshold: 2,
+		TargetCells:      1,
+	})
+	if err != nil {
+		t.Fatalf("ListMapReportViewport() error = %v", err)
+	}
+	if result.Mode != "clusters" || result.Total != 4 || len(result.Clusters) != 1 || result.Clusters[0].Count != 4 {
+		t.Fatalf("viewport result = %+v, want one cluster with count 4", result)
+	}
+	if result.Clusters[0].Latitude < 10 || result.Clusters[0].Latitude > 10.1 || result.Clusters[0].Longitude < 20 || result.Clusters[0].Longitude > 20.1 {
+		t.Fatalf("cluster center = %v/%v, want center near inserted points", result.Clusters[0].Latitude, result.Clusters[0].Longitude)
+	}
+}
+
 func TestNodeInfoAndMapReportAreStoredSeparately(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()

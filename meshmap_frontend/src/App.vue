@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { adminLogout, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReports, getNodeInfo, getPositions, getTextMessages } from './api'
+import { adminLogout, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReportViewport, getNodeInfo, getPositions, getTextMessages } from './api'
 import AdminBlockingManagement from './components/AdminBlockingManagement.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
 import AdminDiscardDetails from './components/AdminDiscardDetails.vue'
@@ -12,7 +12,7 @@ import HelpPage from './components/HelpPage.vue'
 import MeshMap from './components/MeshMap.vue'
 import NodeDetailedPage from './components/NodeDetailedPage.vue'
 import NodeListPanel from './components/NodeListPanel.vue'
-import type { AdminUser, HealthStatus, MapNode, MapReport, NodeInfo, NodeInfoById, PositionRecord, TextMessage } from './types'
+import type { AdminUser, HealthStatus, MapBoundsChangePayload, MapBoundsQuery, MapRenderable, MapViewportItem, NodeInfo, NodeInfoById, PositionRecord, TextMessage } from './types'
 
 const currentPath = window.location.pathname
 const adminPath = currentPath
@@ -30,7 +30,8 @@ const error = ref('')
 const selectedNodeId = ref<string | null>(null)
 const health = ref<HealthStatus | null>(null)
 const nodeInfoSource = ref<NodeInfo[]>([])
-const mapReportSource = ref<MapReport[]>([])
+const mapViewportItems = ref<MapViewportItem[]>([])
+const mapViewportMode = ref<'points' | 'clusters'>('points')
 const pagedNodeInfo = ref<NodeInfo[]>([])
 const nodePage = ref(1)
 const nodePageSize = 25
@@ -41,7 +42,13 @@ const chatLoadingOlder = ref(false)
 const chatHasMore = ref(true)
 const chatInitialized = ref(false)
 const positions = ref<PositionRecord[]>([])
+const currentMapBounds = ref<MapBoundsQuery | null>(null)
+const currentMapZoom = ref(2)
+const mapReportsLoading = ref(false)
+const mapReportTotal = ref(0)
 let refreshTimer: number | undefined
+let mapBoundsTimer: number | undefined
+let mapReportRequestSeq = 0
 
 const nodesById = computed<NodeInfoById>(() => {
   const map = new Map<string, NodeInfo>()
@@ -54,21 +61,31 @@ const nodesById = computed<NodeInfoById>(() => {
   return Object.fromEntries(map)
 })
 
-const mapNodes = computed<MapNode[]>(() => {
-  return mapReportSource.value
-    .filter((report) => report.latitude != null && report.longitude != null)
-    .map((report) => {
-      const nodeinfo = nodesById.value[report.node_id] ?? null
+const mapItems = computed<MapRenderable[]>(() => {
+  return mapViewportItems.value
+    .filter((item) => item.type === 'cluster' || (item.latitude != null && item.longitude != null))
+    .map((item) => {
+      if (item.type === 'cluster') {
+        return {
+          type: 'cluster',
+          cluster_id: item.cluster_id,
+          latitude: item.latitude,
+          longitude: item.longitude,
+          count: item.count,
+        }
+      }
+      const nodeinfo = nodesById.value[item.node_id] ?? null
       return {
-        node_id: report.node_id,
-        label: report.short_name || report.long_name || nodeinfo?.short_name || nodeinfo?.long_name || report.node_id,
-        latitude: report.latitude as number,
-        longitude: report.longitude as number,
-        altitude: report.altitude,
+        type: 'node',
+        node_id: item.node_id,
+        label: item.short_name || item.long_name || nodeinfo?.short_name || nodeinfo?.long_name || item.node_id,
+        latitude: item.latitude as number,
+        longitude: item.longitude as number,
+        altitude: item.altitude,
         source: 'map_report',
-        updated_at: report.updated_at,
+        updated_at: item.updated_at,
         nodeinfo,
-        map_report: report,
+        map_report: item,
         latest_position: null,
       }
     })
@@ -142,23 +159,57 @@ async function loadNodePage(page: number, showLoading = true) {
   }
 }
 
+async function loadMapReportsForBounds(bounds: MapBoundsQuery, zoom: number, showLoading = true) {
+  const requestSeq = ++mapReportRequestSeq
+  if (showLoading) {
+    mapReportsLoading.value = true
+  }
+  try {
+    const response = await getMapReportViewport(bounds, zoom)
+    if (requestSeq !== mapReportRequestSeq) {
+      return
+    }
+    mapViewportItems.value = response.items
+    mapViewportMode.value = response.mode
+    mapReportTotal.value = response.total
+  } catch (err) {
+    if (requestSeq === mapReportRequestSeq) {
+      error.value = err instanceof Error ? err.message : String(err)
+    }
+  } finally {
+    if (requestSeq === mapReportRequestSeq && showLoading) {
+      mapReportsLoading.value = false
+    }
+  }
+}
+
+function handleMapBoundsChange(payload: MapBoundsChangePayload) {
+  currentMapBounds.value = payload.bounds
+  currentMapZoom.value = payload.zoom
+  if (mapBoundsTimer !== undefined) {
+    window.clearTimeout(mapBoundsTimer)
+  }
+  mapBoundsTimer = window.setTimeout(() => {
+    loadMapReportsForBounds(payload.bounds, payload.zoom)
+  }, 250)
+}
+
 async function refresh(showLoading = true) {
   if (showLoading) {
     loading.value = true
   }
   error.value = ''
   try {
-    const [healthData, nodeInfoData, mapReportData, positionData] = await Promise.all([
+    const [healthData, nodeInfoData, positionData] = await Promise.all([
       getHealth(),
       getNodeInfo(500, 0),
-      getMapReports(500, 0),
       getPositions(500),
     ])
     health.value = healthData
     nodeInfoSource.value = nodeInfoData.items
-    mapReportSource.value = mapReportData.items
     positions.value = positionData.items
     await Promise.all([
+      currentMapBounds.value ? loadMapReportsForBounds(currentMapBounds.value, currentMapZoom.value, false) : Promise.resolve(),
       loadNodePage(nodePage.value, showLoading),
       chatInitialized.value ? pollLatestMessages() : loadInitialChatMessages(),
     ])
@@ -205,7 +256,7 @@ async function deleteNodeById(nodeId: string) {
     await deleteNode(nodeId)
     nodeInfoSource.value = nodeInfoSource.value.filter((node) => node.node_id !== nodeId)
     pagedNodeInfo.value = pagedNodeInfo.value.filter((node) => node.node_id !== nodeId)
-    mapReportSource.value = mapReportSource.value.filter((report) => report.node_id !== nodeId)
+    mapViewportItems.value = mapViewportItems.value.filter((item) => item.type === 'cluster' || item.node_id !== nodeId)
     if (selectedNodeId.value === nodeId) {
       selectedNodeId.value = null
     }
@@ -231,6 +282,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (refreshTimer !== undefined) {
     window.clearInterval(refreshTimer)
+  }
+  if (mapBoundsTimer !== undefined) {
+    window.clearTimeout(mapBoundsTimer)
   }
 })
 </script>
@@ -266,7 +320,7 @@ onBeforeUnmount(() => {
         </template>
         <template v-else>
           <a class="topbar-link" href="/help">使用帮助</a>
-          <span class="counter">节点 {{ nodeTotal }} · 已加载消息 {{ messages.length }} · 坐标 {{ mapNodes.length }}</span>
+          <span class="counter">节点 {{ nodeTotal }} · 已加载消息 {{ messages.length }} · 坐标 {{ mapItems.length }} / {{ mapReportTotal }}{{ mapViewportMode === 'clusters' ? ' · 已聚合' : '' }}{{ mapReportsLoading ? ' · 坐标加载中...' : '' }}</span>
           <a class="topbar-link" href="/admin">管理</a>
           <button @click="() => refresh()" :disabled="loading">{{ loading ? '刷新中...' : '刷新' }}</button>
         </template>
@@ -316,9 +370,12 @@ onBeforeUnmount(() => {
           @delete-message="deleteMessage"
         />
         <MeshMap
-          :nodes="mapNodes"
+          :items="mapItems"
           :selected-node-id="selectedNodeId"
           :is-admin="!!adminUser"
+          :auto-fit="false"
+          :loading="mapReportsLoading"
+          @bounds-change="handleMapBoundsChange"
           @select-node="selectedNodeId = $event"
           @clear-node="selectedNodeId = null"
           @delete-node="deleteNodeById"

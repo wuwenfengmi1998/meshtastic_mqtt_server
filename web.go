@@ -295,8 +295,30 @@ func registerNodeInfoRoutes(r gin.IRouter, store *store, path string) {
 }
 
 func registerMapReportRoutes(r gin.IRouter, store *store) {
+	r.GET("/map-reports/viewport", func(c *gin.Context) {
+		opts, ok := parseMapReportViewportOptions(c)
+		if !ok {
+			return
+		}
+		result, err := store.ListMapReportViewport(opts)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		items := make([]gin.H, 0, len(result.Points)+len(result.Clusters))
+		if result.Mode == "points" {
+			for _, row := range result.Points {
+				items = append(items, mapReportViewportPointDTO(row))
+			}
+		} else {
+			for _, row := range result.Clusters {
+				items = append(items, mapReportClusterDTO(row))
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"mode": result.Mode, "items": items, "total": result.Total, "limit": result.Limit, "zoom": result.Zoom})
+	})
 	r.GET("/map-reports", func(c *gin.Context) {
-		opts, ok := parseListOptions(c)
+		opts, ok := parseMapReportListOptions(c)
 		if !ok {
 			return
 		}
@@ -385,6 +407,108 @@ func parseListOptions(c *gin.Context) (listOptions, bool) {
 	return normalizeListOptions(listOptions{Limit: limit, Offset: offset, NodeID: nodeID, Since: since, Until: until}), true
 }
 
+func parseMapReportListOptions(c *gin.Context) (listOptions, bool) {
+	opts, ok := parseListOptions(c)
+	if !ok {
+		return listOptions{}, false
+	}
+	minLat, hasMinLat, ok := parseOptionalFloatQuery(c, "min_lat")
+	if !ok {
+		return listOptions{}, false
+	}
+	maxLat, hasMaxLat, ok := parseOptionalFloatQuery(c, "max_lat")
+	if !ok {
+		return listOptions{}, false
+	}
+	minLng, hasMinLng, ok := parseOptionalFloatQuery(c, "min_lng")
+	if !ok {
+		return listOptions{}, false
+	}
+	maxLng, hasMaxLng, ok := parseOptionalFloatQuery(c, "max_lng")
+	if !ok {
+		return listOptions{}, false
+	}
+	boundsCount := 0
+	for _, present := range []bool{hasMinLat, hasMaxLat, hasMinLng, hasMaxLng} {
+		if present {
+			boundsCount++
+		}
+	}
+	if boundsCount == 0 {
+		return opts, true
+	}
+	if boundsCount != 4 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "map bounds require min_lat, max_lat, min_lng, and max_lng"})
+		return listOptions{}, false
+	}
+	if minLat < -90 || minLat > 90 || maxLat < -90 || maxLat > 90 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude bounds must be between -90 and 90"})
+		return listOptions{}, false
+	}
+	if minLat > maxLat {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "min_lat must be <= max_lat"})
+		return listOptions{}, false
+	}
+	if minLng < -180 || minLng > 180 || maxLng < -180 || maxLng > 180 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "longitude bounds must be between -180 and 180"})
+		return listOptions{}, false
+	}
+	opts.MinLat = &minLat
+	opts.MaxLat = &maxLat
+	opts.MinLng = &minLng
+	opts.MaxLng = &maxLng
+	return opts, true
+}
+
+func parseMapReportViewportOptions(c *gin.Context) (mapReportViewportOptions, bool) {
+	opts, ok := parseMapReportListOptions(c)
+	if !ok {
+		return mapReportViewportOptions{}, false
+	}
+	if opts.MinLat == nil || opts.MaxLat == nil || opts.MinLng == nil || opts.MaxLng == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "viewport bounds are required"})
+		return mapReportViewportOptions{}, false
+	}
+	zoom, ok := parseIntQuery(c, "zoom", 0)
+	if !ok {
+		return mapReportViewportOptions{}, false
+	}
+	if zoom < 0 || zoom > 24 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "zoom must be between 0 and 24"})
+		return mapReportViewportOptions{}, false
+	}
+	limit, ok := parseIntQuery(c, "limit", 1000)
+	if !ok {
+		return mapReportViewportOptions{}, false
+	}
+	clusterThreshold, ok := parseIntQuery(c, "cluster_threshold", 500)
+	if !ok {
+		return mapReportViewportOptions{}, false
+	}
+	targetCells, ok := parseIntQuery(c, "target_cells", 64)
+	if !ok {
+		return mapReportViewportOptions{}, false
+	}
+	if limit <= 0 || clusterThreshold <= 0 || targetCells <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "limit, cluster_threshold, and target_cells must be positive"})
+		return mapReportViewportOptions{}, false
+	}
+	return normalizeMapReportViewportOptions(mapReportViewportOptions{ListOptions: opts, Zoom: zoom, Limit: limit, ClusterThreshold: clusterThreshold, TargetCells: targetCells}), true
+}
+
+func parseOptionalFloatQuery(c *gin.Context, name string) (float64, bool, bool) {
+	value := c.Query(name)
+	if value == "" {
+		return 0, false, true
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid " + name})
+		return 0, true, false
+	}
+	return parsed, true, true
+}
+
 func parseIntQuery(c *gin.Context, name string, defaultValue int) (int, bool) {
 	value := c.Query(name)
 	if value == "" {
@@ -428,6 +552,16 @@ func nodeInfoDTO(row nodeInfoRecord) gin.H {
 
 func mapReportDTO(row mapReportRecord) gin.H {
 	return gin.H{"node_id": row.NodeID, "node_num": row.NodeNum, "long_name": ptrString(row.LongName), "short_name": ptrString(row.ShortName), "hw_model": ptrString(row.HWModel), "role": ptrString(row.Role), "firmware_version": ptrString(row.FirmwareVersion), "region": ptrString(row.Region), "modem_preset": ptrString(row.ModemPreset), "latitude": ptrFloat64(row.Latitude), "longitude": ptrFloat64(row.Longitude), "altitude": ptrInt64(row.Altitude), "position_precision": ptrInt64(row.PositionPrecision), "num_online_local_nodes": ptrInt64(row.NumOnlineLocalNodes), "has_opted_report_location": ptrBool(row.HasOptedReportLocation), "updated_at": row.UpdatedAt, "content_json": row.ContentJSON}
+}
+
+func mapReportViewportPointDTO(row mapReportRecord) gin.H {
+	item := mapReportDTO(row)
+	item["type"] = "point"
+	return item
+}
+
+func mapReportClusterDTO(row mapReportClusterRecord) gin.H {
+	return gin.H{"type": "cluster", "cluster_id": row.ClusterID, "latitude": row.Latitude, "longitude": row.Longitude, "count": row.Count}
 }
 
 func textMessageDTO(row textMessageRecord) gin.H {

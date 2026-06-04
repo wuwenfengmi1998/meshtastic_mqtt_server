@@ -44,6 +44,40 @@ export interface MapReport {
   content_json: string
 }
 
+export interface MapBoundsQuery {
+  min_lat: number
+  max_lat: number
+  min_lng: number
+  max_lng: number
+}
+
+export interface MapBoundsChangePayload {
+  bounds: MapBoundsQuery
+  zoom: number
+}
+
+export interface MapViewportPoint extends MapReport {
+  type: 'point'
+}
+
+export interface MapViewportCluster {
+  type: 'cluster'
+  cluster_id: string
+  latitude: number
+  longitude: number
+  count: number
+}
+
+export type MapViewportItem = MapViewportPoint | MapViewportCluster
+
+export interface MapViewportResponse {
+  mode: 'points' | 'clusters'
+  items: MapViewportItem[]
+  total: number
+  limit: number
+  zoom: number
+}
+
 export interface TextMessage {
   id: number
   from_id: string
@@ -77,6 +111,7 @@ export interface TelemetryRecord {
 }
 
 export interface MapNode {
+  type: 'node'
   node_id: string
   label: string
   latitude: number
@@ -88,6 +123,16 @@ export interface MapNode {
   map_report: MapReport | null
   latest_position: PositionRecord | null
 }
+
+export interface MapClusterNode {
+  type: 'cluster'
+  cluster_id: string
+  latitude: number
+  longitude: number
+  count: number
+}
+
+export type MapRenderable = MapNode | MapClusterNode
 
 export type NodeInfoById = Record<string, NodeInfo>
 

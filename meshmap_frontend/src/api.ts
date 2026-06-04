@@ -12,7 +12,9 @@ import type {
   IPBlockingRule,
   IPBlockingRulePayload,
   ListResponse,
+  MapBoundsQuery,
   MapReport,
+  MapViewportResponse,
   NodeBlockingRule,
   NodeBlockingRulePayload,
   NodeInfo,
@@ -82,12 +84,31 @@ export function getNodeInfoById(nodeId: string): Promise<NodeInfo> {
   return getJSON<NodeInfo>(`/api/nodeinfo/${encodeURIComponent(nodeId)}`)
 }
 
-export function getMapReports(limit = 500, offset = 0): Promise<ListResponse<MapReport>> {
-  return getJSON<ListResponse<MapReport>>(listPath('/api/map-reports', limit, offset))
+export function getMapReports(limit = 500, offset = 0, bounds?: MapBoundsQuery): Promise<ListResponse<MapReport>> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (bounds) {
+    params.set('min_lat', String(bounds.min_lat))
+    params.set('max_lat', String(bounds.max_lat))
+    params.set('min_lng', String(bounds.min_lng))
+    params.set('max_lng', String(bounds.max_lng))
+  }
+  return getJSON<ListResponse<MapReport>>(`/api/map-reports?${params.toString()}`)
 }
 
 export function getMapReportById(nodeId: string): Promise<MapReport> {
   return getJSON<MapReport>(`/api/map-reports/${encodeURIComponent(nodeId)}`)
+}
+
+export function getMapReportViewport(bounds: MapBoundsQuery, zoom: number, limit = 1000): Promise<MapViewportResponse> {
+  const params = new URLSearchParams({
+    min_lat: String(bounds.min_lat),
+    max_lat: String(bounds.max_lat),
+    min_lng: String(bounds.min_lng),
+    max_lng: String(bounds.max_lng),
+    zoom: String(zoom),
+    limit: String(limit),
+  })
+  return getJSON<MapViewportResponse>(`/api/map-reports/viewport?${params.toString()}`)
 }
 
 export function getTextMessages(limit = 100, offset = 0, nodeId = ''): Promise<ListResponse<TextMessage>> {
