@@ -117,7 +117,7 @@ go run .
 
 构建后的文件位于项目根目录 `dist/`，Gin 会提供静态文件服务；`/api` 路径保留给后端接口。
 
-管理页面位于 `/admin`，默认管理员账号为 `admin` / `admin`。生产环境请修改 `web.admin.password` 或设置 `MESH_ADMIN_PASSWORD`，并配置固定的 `web.admin.session_secret` 或 `MESH_ADMIN_SESSION_SECRET`；如果 `session_secret` 为空，程序会在启动时生成临时签名密钥，重启后需要重新登录。后台页面包括 `/admin` 服务状态、`/admin/users` 用户管理、`/admin/log/login` 登录日志。后台支持新增管理员用户和修改用户密码；密码使用 bcrypt hash 保存，API 不会返回密码 hash。修改密码不会立即使已签发 Session 失效，当前 Session 到期或退出登录后才需要使用新密码。登录成功和失败都会记录到登录日志，包含用户名、结果、原因、来源地址、User-Agent 和时间。
+管理页面位于 `/admin`，默认管理员账号为 `admin` / `admin`。生产环境请修改 `web.admin.password` 或设置 `MESH_ADMIN_PASSWORD`，并配置固定的 `web.admin.session_secret` 或 `MESH_ADMIN_SESSION_SECRET`；如果 `session_secret` 为空，程序会在启动时生成临时签名密钥，重启后需要重新登录。后台页面包括 `/admin` 服务状态、`/admin/users` 用户管理、`/admin/log/login` 登录日志。后台支持新增管理员用户和修改用户密码；密码使用 bcrypt hash 保存，API 不会返回密码 hash。修改密码不会立即使已签发 Session 失效，当前 Session 到期或退出登录后才需要使用新密码。登录成功和失败都会记录到登录日志，包含用户名、结果、原因、来源地址、User-Agent 和时间。管理员可在主页右键删除聊天消息、地图节点或节点列表记录；删除节点会删除 `nodeinfo` 和 `map_report` 当前状态，不会删除历史消息、位置、遥测等 append 记录，后续收到新的节点上报时可能重新出现。
 
 常用 API：
 
@@ -132,6 +132,7 @@ GET /api/admin/users
 POST /api/admin/users
 PUT /api/admin/users/:id/password
 DELETE /api/admin/text-messages/:id
+DELETE /api/admin/nodes/:id
 GET /api/nodeinfo
 GET /api/nodeinfo/:id
 GET /api/map-reports

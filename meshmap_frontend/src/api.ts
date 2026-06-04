@@ -9,6 +9,7 @@ import type {
   MapReport,
   NodeInfo,
   PositionRecord,
+  TelemetryRecord,
   TextMessage,
 } from './types'
 
@@ -27,6 +28,14 @@ async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(message)
   }
   return response.json() as Promise<T>
+}
+
+function listPath(path: string, limit: number, offset: number, nodeId = ''): string {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (nodeId) {
+    params.set('node_id', nodeId)
+  }
+  return `${path}?${params.toString()}`
 }
 
 function getJSON<T>(path: string): Promise<T> {
@@ -58,15 +67,23 @@ export function getHealth(): Promise<HealthStatus> {
 }
 
 export function getNodeInfo(limit = 500, offset = 0): Promise<ListResponse<NodeInfo>> {
-  return getJSON<ListResponse<NodeInfo>>(`/api/nodeinfo?limit=${limit}&offset=${offset}`)
+  return getJSON<ListResponse<NodeInfo>>(listPath('/api/nodeinfo', limit, offset))
+}
+
+export function getNodeInfoById(nodeId: string): Promise<NodeInfo> {
+  return getJSON<NodeInfo>(`/api/nodeinfo/${encodeURIComponent(nodeId)}`)
 }
 
 export function getMapReports(limit = 500, offset = 0): Promise<ListResponse<MapReport>> {
-  return getJSON<ListResponse<MapReport>>(`/api/map-reports?limit=${limit}&offset=${offset}`)
+  return getJSON<ListResponse<MapReport>>(listPath('/api/map-reports', limit, offset))
 }
 
-export function getTextMessages(limit = 100, offset = 0): Promise<ListResponse<TextMessage>> {
-  return getJSON<ListResponse<TextMessage>>(`/api/text-messages?limit=${limit}&offset=${offset}`)
+export function getMapReportById(nodeId: string): Promise<MapReport> {
+  return getJSON<MapReport>(`/api/map-reports/${encodeURIComponent(nodeId)}`)
+}
+
+export function getTextMessages(limit = 100, offset = 0, nodeId = ''): Promise<ListResponse<TextMessage>> {
+  return getJSON<ListResponse<TextMessage>>(listPath('/api/text-messages', limit, offset, nodeId))
 }
 
 export function deleteTextMessage(id: number): Promise<{ status: string }> {
@@ -77,8 +94,12 @@ export function deleteNode(nodeId: string): Promise<{ status: string }> {
   return deleteJSON<{ status: string }>(`/api/admin/nodes/${encodeURIComponent(nodeId)}`)
 }
 
-export function getPositions(limit = 500): Promise<ListResponse<PositionRecord>> {
-  return getJSON<ListResponse<PositionRecord>>(`/api/positions?limit=${limit}`)
+export function getPositions(limit = 500, offset = 0, nodeId = ''): Promise<ListResponse<PositionRecord>> {
+  return getJSON<ListResponse<PositionRecord>>(listPath('/api/positions', limit, offset, nodeId))
+}
+
+export function getTelemetry(limit = 500, offset = 0, nodeId = ''): Promise<ListResponse<TelemetryRecord>> {
+  return getJSON<ListResponse<TelemetryRecord>>(listPath('/api/telemetry', limit, offset, nodeId))
 }
 
 export function adminLogin(username: string, password: string): Promise<AdminLoginResponse> {

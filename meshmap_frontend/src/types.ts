@@ -66,6 +66,16 @@ export interface PositionRecord {
   content_json: string
 }
 
+export interface TelemetryRecord {
+  id: number
+  from_id: string
+  from_num: number
+  telemetry_type: string | null
+  metrics_json: string | null
+  created_at: string
+  content_json: string
+}
+
 export interface MapNode {
   node_id: string
   label: string

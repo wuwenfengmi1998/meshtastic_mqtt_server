@@ -134,6 +134,35 @@ func TestNodeInfoAndMapReportAreStoredSeparately(t *testing.T) {
 	}
 }
 
+func TestDeleteNodeDeletesNodeInfoAndMapReport(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.UpsertNodeInfo(nodeInfoTestRecord("node name")); err != nil {
+		t.Fatalf("UpsertNodeInfo() error = %v", err)
+	}
+	if err := st.UpsertMapReport(mapReportTestRecord("map name")); err != nil {
+		t.Fatalf("UpsertMapReport() error = %v", err)
+	}
+	if err := st.DeleteNode("!12345678"); err != nil {
+		t.Fatalf("DeleteNode() error = %v", err)
+	}
+
+	var nodeCount, reportCount int
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM nodeinfo WHERE node_id = ?", "!12345678").Scan(&nodeCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM map_report WHERE node_id = ?", "!12345678").Scan(&reportCount); err != nil {
+		t.Fatal(err)
+	}
+	if nodeCount != 0 || reportCount != 0 {
+		t.Fatalf("nodeinfo/map_report counts = %d/%d, want 0/0", nodeCount, reportCount)
+	}
+	if err := st.DeleteNode("!12345678"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("DeleteNode(missing) error = %v, want record not found", err)
+	}
+}
+
 func TestUpsertNodeInfoRequiresNodeFields(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()

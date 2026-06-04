@@ -53,10 +53,11 @@ function closeMessageMenu() {
   menuMessage.value = null
 }
 
+function nodeDetailHref(nodeId: string): string {
+  return `/detailed/${encodeURIComponent(nodeId)}`
+}
+
 function openMessageMenu(message: TextMessage, event: MouseEvent) {
-  if (!props.isAdmin) {
-    return
-  }
   emit('select-node', message.from_id)
   menuMessage.value = message
   menuX.value = event.clientX
@@ -180,7 +181,8 @@ onUpdated(() => {
       :style="{ left: `${menuX}px`, top: `${menuY}px` }"
       @click.stop
     >
-      <button class="danger" type="button" @click="deleteSelectedMessage">删除</button>
+      <a :href="nodeDetailHref(menuMessage.from_id)">节点详细</a>
+      <button v-if="isAdmin" class="danger" type="button" @click="deleteSelectedMessage">删除</button>
     </div>
   </aside>
 </template>

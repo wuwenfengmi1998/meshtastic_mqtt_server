@@ -7,11 +7,16 @@ import AdminLoginLogs from './components/AdminLoginLogs.vue'
 import AdminUsers from './components/AdminUsers.vue'
 import ChatPanel from './components/ChatPanel.vue'
 import MeshMap from './components/MeshMap.vue'
+import NodeDetailedPage from './components/NodeDetailedPage.vue'
 import NodeListPanel from './components/NodeListPanel.vue'
 import type { AdminUser, HealthStatus, MapNode, MapReport, NodeInfo, NodeInfoById, PositionRecord, TextMessage } from './types'
 
-const adminPath = window.location.pathname
+const currentPath = window.location.pathname
+const adminPath = currentPath
 const isAdminPage = adminPath.startsWith('/admin')
+const detailMatch = currentPath.match(/^\/detailed\/(.+)$/)
+const detailedNodeId = detailMatch ? decodeURIComponent(detailMatch[1]) : ''
+const isDetailedPage = !!detailedNodeId
 const adminUser = ref<AdminUser | null>(null)
 const adminChecking = ref(false)
 
@@ -212,6 +217,9 @@ onMounted(() => {
     return
   }
   checkAdminSession()
+  if (isDetailedPage) {
+    return
+  }
   refresh()
   refreshTimer = window.setInterval(() => refresh(false), 5000)
 })
@@ -228,7 +236,8 @@ onBeforeUnmount(() => {
     <header class="topbar">
       <div>
         <p class="eyebrow">Meshtastic MQTT Server</p>
-        <h1>{{ isAdminPage ? 'Admin' : 'MeshMap' }}</h1>
+        <h1 v-if="isDetailedPage">节点详情</h1>
+        <h1 v-else>{{ isAdminPage ? 'Admin' : 'MeshMap' }}</h1>
       </div>
       <div class="topbar-actions">
         <template v-if="isAdminPage">
@@ -238,6 +247,11 @@ onBeforeUnmount(() => {
             <a href="/admin/log/login" :class="{ active: adminPath === '/admin/log/login' }">登录日志</a>
           </nav>
           <a class="topbar-link" href="/">返回地图</a>
+        </template>
+        <template v-else-if="isDetailedPage">
+          <span class="counter">{{ detailedNodeId }}</span>
+          <a class="topbar-link" href="/">返回地图</a>
+          <a class="topbar-link" href="/admin">管理</a>
         </template>
         <template v-else>
           <span class="status-pill" :class="{ ok: health?.status === 'ok' }">
@@ -265,6 +279,10 @@ onBeforeUnmount(() => {
         <AdminDashboard v-else />
       </template>
       <AdminLogin v-else @login="adminUser = $event" />
+    </template>
+
+    <template v-else-if="isDetailedPage">
+      <NodeDetailedPage :node-id="detailedNodeId" :is-admin="!!adminUser" />
     </template>
 
     <template v-else>

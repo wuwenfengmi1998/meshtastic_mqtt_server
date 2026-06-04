@@ -33,10 +33,11 @@ function closeNodeMenu() {
   menuNode.value = null
 }
 
+function nodeDetailHref(nodeId: string): string {
+  return `/detailed/${encodeURIComponent(nodeId)}`
+}
+
 function openNodeMenu(node: NodeInfo, event: MouseEvent) {
-  if (!props.isAdmin) {
-    return
-  }
   emit('select-node', node.node_id)
   menuNode.value = node
   menuX.value = event.clientX
@@ -118,7 +119,8 @@ onBeforeUnmount(() => {
       :style="{ left: `${menuX}px`, top: `${menuY}px` }"
       @click.stop
     >
-      <button class="danger" type="button" @click="deleteSelectedNode">删除</button>
+      <a :href="nodeDetailHref(menuNode.node_id)">节点详细</a>
+      <button v-if="isAdmin" class="danger" type="button" @click="deleteSelectedNode">删除</button>
     </div>
 
     <div class="pagination">

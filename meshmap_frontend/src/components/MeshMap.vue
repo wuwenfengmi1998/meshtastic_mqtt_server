@@ -25,6 +25,8 @@ let markerLayer: L.LayerGroup | null = null
 let hasFitBounds = false
 
 onMounted(async () => {
+  window.addEventListener('click', closeNodeMenu)
+  window.addEventListener('keydown', handleKeydown)
   await nextTick()
   if (!mapEl.value) {
     return
@@ -51,6 +53,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('click', closeNodeMenu)
+  window.removeEventListener('keydown', handleKeydown)
   map?.remove()
   map = null
   markerLayer = null
@@ -61,6 +65,35 @@ watch(
   () => renderMarkers(false),
   { deep: true },
 )
+
+function closeNodeMenu() {
+  menuNodeId.value = null
+}
+
+function nodeDetailHref(nodeId: string): string {
+  return `/detailed/${encodeURIComponent(nodeId)}`
+}
+
+function openNodeMenu(node: MapNode, event: L.LeafletMouseEvent) {
+  L.DomEvent.stopPropagation(event)
+  emit('select-node', node.node_id)
+  menuNodeId.value = node.node_id
+  menuX.value = event.originalEvent.clientX
+  menuY.value = event.originalEvent.clientY
+}
+
+function deleteSelectedNode() {
+  if (menuNodeId.value) {
+    emit('delete-node', menuNodeId.value)
+  }
+  closeNodeMenu()
+}
+
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    closeNodeMenu()
+  }
+}
 
 function renderMarkers(forceFit: boolean) {
   if (!map || !markerLayer) {
@@ -83,8 +116,10 @@ function renderMarkers(forceFit: boolean) {
     marker.bindPopup(buildNodePopupHTML(node), { maxWidth: 320, className: 'node-detail-popup' })
     marker.on('click', (event) => {
       L.DomEvent.stopPropagation(event)
+      closeNodeMenu()
       emit('select-node', node.node_id)
     })
+    marker.on('contextmenu', (event) => openNodeMenu(node, event))
     marker.addTo(markerLayer)
     if (selected) {
       marker.openPopup()
@@ -159,5 +194,14 @@ function escapeHTML(value: string): string {
   <section class="map-panel panel">
     <div ref="mapEl" class="map-container"></div>
     <div v-if="nodes.length === 0" class="map-empty">暂无可显示坐标的节点</div>
+    <div
+      v-if="menuNodeId"
+      class="context-menu"
+      :style="{ left: `${menuX}px`, top: `${menuY}px` }"
+      @click.stop
+    >
+      <a :href="nodeDetailHref(menuNodeId)">节点详细</a>
+      <button v-if="isAdmin" class="danger" type="button" @click="deleteSelectedNode">删除</button>
+    </div>
   </section>
 </template>
