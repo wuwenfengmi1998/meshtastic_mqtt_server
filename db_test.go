@@ -121,8 +121,8 @@ func TestNodeInfoAndMapReportAreStoredSeparately(t *testing.T) {
 	if err := rawTestDB(t, st).QueryRow("SELECT long_name, user_id, public_key FROM nodeinfo WHERE node_id = ?", "!12345678").Scan(&nodeLongName, &userID, &publicKey); err != nil {
 		t.Fatal(err)
 	}
-	if nodeLongName != "node name" || userID != "!12345678" || publicKey != "abcd" {
-		t.Fatalf("nodeinfo row = %q/%q/%q, want node fields", nodeLongName, userID, publicKey)
+	if nodeLongName != "map name" || userID != "!12345678" || publicKey != "abcd" {
+		t.Fatalf("nodeinfo row = %q/%q/%q, want synced map name plus node-only fields", nodeLongName, userID, publicKey)
 	}
 
 	var mapLongName, firmware string
@@ -132,6 +132,89 @@ func TestNodeInfoAndMapReportAreStoredSeparately(t *testing.T) {
 	}
 	if mapLongName != "map name" || firmware != "1.2.3" || latitude != 42.5 {
 		t.Fatalf("map_report row = %q/%q/%v, want map fields", mapLongName, firmware, latitude)
+	}
+}
+
+func TestUpsertNodeInfoUpdatesExistingMapReportFields(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.UpsertMapReport(mapReportTestRecord("map name")); err != nil {
+		t.Fatalf("UpsertMapReport() error = %v", err)
+	}
+	node := nodeInfoTestRecord("node name")
+	node["short_name"] = "nod"
+	node["hw_model"] = "NODE_HW"
+	node["role"] = "CLIENT"
+	if err := st.UpsertNodeInfo(node); err != nil {
+		t.Fatalf("UpsertNodeInfo() error = %v", err)
+	}
+
+	var longName, shortName, hwModel, role, firmware string
+	var latitude float64
+	if err := rawTestDB(t, st).QueryRow("SELECT long_name, short_name, hw_model, role, firmware_version, latitude FROM map_report WHERE node_id = ?", "!12345678").Scan(&longName, &shortName, &hwModel, &role, &firmware, &latitude); err != nil {
+		t.Fatal(err)
+	}
+	if longName != "node name" || shortName != "nod" || hwModel != "NODE_HW" || role != "CLIENT" || firmware != "1.2.3" || latitude != 42.5 {
+		t.Fatalf("map_report row = %q/%q/%q/%q firmware %q lat %v, want node fields plus existing map fields", longName, shortName, hwModel, role, firmware, latitude)
+	}
+}
+
+func TestUpsertNodeInfoDoesNotCreateMapReport(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.UpsertNodeInfo(nodeInfoTestRecord("node name")); err != nil {
+		t.Fatalf("UpsertNodeInfo() error = %v", err)
+	}
+
+	var count int
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM map_report WHERE node_id = ?", "!12345678").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("map_report count = %d, want 0", count)
+	}
+}
+
+func TestUpsertMapReportUpdatesExistingNodeInfoFields(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.UpsertNodeInfo(nodeInfoTestRecord("node name")); err != nil {
+		t.Fatalf("UpsertNodeInfo() error = %v", err)
+	}
+	report := mapReportTestRecord("map name")
+	report["short_name"] = "map"
+	report["hw_model"] = "MAP_HW"
+	report["role"] = "CLIENT_MUTE"
+	if err := st.UpsertMapReport(report); err != nil {
+		t.Fatalf("UpsertMapReport() error = %v", err)
+	}
+
+	var longName, shortName, hwModel, role, userID, publicKey string
+	if err := rawTestDB(t, st).QueryRow("SELECT long_name, short_name, hw_model, role, user_id, public_key FROM nodeinfo WHERE node_id = ?", "!12345678").Scan(&longName, &shortName, &hwModel, &role, &userID, &publicKey); err != nil {
+		t.Fatal(err)
+	}
+	if longName != "map name" || shortName != "map" || hwModel != "MAP_HW" || role != "CLIENT_MUTE" || userID != "!12345678" || publicKey != "abcd" {
+		t.Fatalf("nodeinfo row = %q/%q/%q/%q user %q key %q, want map fields plus existing node-only fields", longName, shortName, hwModel, role, userID, publicKey)
+	}
+}
+
+func TestUpsertMapReportDoesNotCreateNodeInfo(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.UpsertMapReport(mapReportTestRecord("map name")); err != nil {
+		t.Fatalf("UpsertMapReport() error = %v", err)
+	}
+
+	var count int
+	if err := rawTestDB(t, st).QueryRow("SELECT COUNT(*) FROM nodeinfo WHERE node_id = ?", "!12345678").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("nodeinfo count = %d, want 0", count)
 	}
 }
 
@@ -553,6 +636,53 @@ func TestInsertPositionAppendsRows(t *testing.T) {
 	}
 	if latitude != 42.5 || longitude != -83.1 || altitude != 200 || locationSource != "LOC_INTERNAL" || remoteHost != "127.0.0.1" {
 		t.Fatalf("position row = lat %v lon %v alt %v source %q remote %q", latitude, longitude, altitude, locationSource, remoteHost)
+	}
+}
+
+func TestInsertPositionCreatesMapReportWhenMissing(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.InsertPosition(positionTestRecord(), mqttClientInfo{}); err != nil {
+		t.Fatalf("InsertPosition() error = %v", err)
+	}
+
+	var nodeID string
+	var nodeNum int64
+	var latitude, longitude float64
+	var altitude, precision int64
+	if err := rawTestDB(t, st).QueryRow("SELECT node_id, node_num, latitude, longitude, altitude, position_precision FROM map_report WHERE node_id = ?", "!12345678").Scan(&nodeID, &nodeNum, &latitude, &longitude, &altitude, &precision); err != nil {
+		t.Fatal(err)
+	}
+	if nodeID != "!12345678" || nodeNum != 0x12345678 || latitude != 42.5 || longitude != -83.1 || altitude != 200 || precision != 16 {
+		t.Fatalf("map_report from position = %q/%d lat %v lon %v alt %v precision %v", nodeID, nodeNum, latitude, longitude, altitude, precision)
+	}
+}
+
+func TestInsertPositionUpdatesExistingMapReportCoordinates(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if err := st.UpsertMapReport(mapReportTestRecord("map name")); err != nil {
+		t.Fatalf("UpsertMapReport() error = %v", err)
+	}
+	position := positionTestRecord()
+	position["latitude"] = 30.25
+	position["longitude"] = 120.75
+	position["altitude"] = int32(88)
+	position["precision_bits"] = uint32(10)
+	if err := st.InsertPosition(position, mqttClientInfo{}); err != nil {
+		t.Fatalf("InsertPosition() error = %v", err)
+	}
+
+	var longName string
+	var latitude, longitude float64
+	var altitude, precision int64
+	if err := rawTestDB(t, st).QueryRow("SELECT long_name, latitude, longitude, altitude, position_precision FROM map_report WHERE node_id = ?", "!12345678").Scan(&longName, &latitude, &longitude, &altitude, &precision); err != nil {
+		t.Fatal(err)
+	}
+	if longName != "map name" || latitude != 30.25 || longitude != 120.75 || altitude != 88 || precision != 10 {
+		t.Fatalf("map_report after position = %q lat %v lon %v alt %v precision %v", longName, latitude, longitude, altitude, precision)
 	}
 }
 

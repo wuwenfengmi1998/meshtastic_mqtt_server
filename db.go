@@ -399,6 +399,9 @@ func (s *store) UpsertNodeInfo(record map[string]any) error {
 	if err := s.upsertNodeInfoRecord(node); err != nil {
 		return fmt.Errorf("upsert nodeinfo %s: %w", node.NodeID, err)
 	}
+	if err := s.updateMapReportFromNodeInfo(node); err != nil {
+		return fmt.Errorf("update map_report from nodeinfo %s: %w", node.NodeID, err)
+	}
 	return nil
 }
 
@@ -409,6 +412,9 @@ func (s *store) UpsertMapReport(record map[string]any) error {
 	}
 	if err := s.upsertMapReportRecord(report); err != nil {
 		return fmt.Errorf("upsert map_report %s: %w", report.NodeID, err)
+	}
+	if err := s.updateNodeInfoFromMapReport(report); err != nil {
+		return fmt.Errorf("update nodeinfo from map_report %s: %w", report.NodeID, err)
 	}
 	return nil
 }
@@ -432,19 +438,23 @@ func (s *store) upsertNodeInfoRecord(node *nodeInfoRecord) error {
 
 func (s *store) upsertMapReportRecord(report *mapReportRecord) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		var existing mapReportRecord
-		err := tx.Where("node_id = ?", report.NodeID).Take(&existing).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			if err := tx.Create(report).Error; err != nil {
-				return s.updateMapReportRecord(tx, report)
-			}
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		return s.updateMapReportRecord(tx, report)
+		return s.upsertMapReportRecordTx(tx, report)
 	})
+}
+
+func (s *store) upsertMapReportRecordTx(tx *gorm.DB, report *mapReportRecord) error {
+	var existing mapReportRecord
+	err := tx.Where("node_id = ?", report.NodeID).Take(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := tx.Create(report).Error; err != nil {
+			return s.updateMapReportRecord(tx, report)
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return s.updateMapReportRecord(tx, report)
 }
 
 func (s *store) updateNodeInfoRecord(tx *gorm.DB, node *nodeInfoRecord) error {
@@ -455,6 +465,30 @@ func (s *store) updateNodeInfoRecord(tx *gorm.DB, node *nodeInfoRecord) error {
 func (s *store) updateMapReportRecord(tx *gorm.DB, report *mapReportRecord) error {
 	updates := mapReportUpdates(report)
 	return tx.Model(&mapReportRecord{}).Where("node_id = ?", report.NodeID).Updates(updates).Error
+}
+
+func (s *store) updateMapReportFromNodeInfo(node *nodeInfoRecord) error {
+	updates := map[string]any{
+		"node_num":   node.NodeNum,
+		"updated_at": time.Now(),
+	}
+	addStringUpdate(updates, "long_name", node.LongName)
+	addStringUpdate(updates, "short_name", node.ShortName)
+	addStringUpdate(updates, "hw_model", node.HWModel)
+	addStringUpdate(updates, "role", node.Role)
+	return s.db.Model(&mapReportRecord{}).Where("node_id = ?", node.NodeID).Updates(updates).Error
+}
+
+func (s *store) updateNodeInfoFromMapReport(report *mapReportRecord) error {
+	updates := map[string]any{
+		"node_num":   report.NodeNum,
+		"updated_at": time.Now(),
+	}
+	addStringUpdate(updates, "long_name", report.LongName)
+	addStringUpdate(updates, "short_name", report.ShortName)
+	addStringUpdate(updates, "hw_model", report.HWModel)
+	addStringUpdate(updates, "role", report.Role)
+	return s.db.Model(&nodeInfoRecord{}).Where("node_id = ?", report.NodeID).Updates(updates).Error
 }
 
 func nodeInfoUpdates(node *nodeInfoRecord) map[string]any {
@@ -511,10 +545,42 @@ func (s *store) InsertPosition(record map[string]any, clientInfo mqttClientInfo)
 	if err != nil {
 		return err
 	}
-	if err := s.db.Create(position).Error; err != nil {
-		return fmt.Errorf("insert position from %s: %w", position.FromID, err)
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(position).Error; err != nil {
+			return fmt.Errorf("insert position from %s: %w", position.FromID, err)
+		}
+		if err := s.upsertMapReportFromPosition(tx, position); err != nil {
+			return fmt.Errorf("upsert map_report from position %s: %w", position.FromID, err)
+		}
+		return nil
+	})
+}
+
+func (s *store) upsertMapReportFromPosition(tx *gorm.DB, position *positionRecord) error {
+	report := &mapReportRecord{
+		NodeID:            position.FromID,
+		NodeNum:           position.FromNum,
+		Latitude:          position.Latitude,
+		Longitude:         position.Longitude,
+		Altitude:          position.Altitude,
+		PositionPrecision: position.PrecisionBits,
+		ContentJSON:       position.ContentJSON,
 	}
-	return nil
+
+	var existing mapReportRecord
+	err := tx.Where("node_id = ?", position.FromID).Take(&existing).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return tx.Create(report).Error
+	}
+	if err != nil {
+		return err
+	}
+	updates := map[string]any{"node_num": position.FromNum, "updated_at": time.Now()}
+	addFloat64Update(updates, "latitude", position.Latitude)
+	addFloat64Update(updates, "longitude", position.Longitude)
+	addInt64Update(updates, "altitude", position.Altitude)
+	addInt64Update(updates, "position_precision", position.PrecisionBits)
+	return tx.Model(&mapReportRecord{}).Where("node_id = ?", position.FromID).Updates(updates).Error
 }
 
 func (s *store) InsertTelemetry(record map[string]any, clientInfo mqttClientInfo) error {
