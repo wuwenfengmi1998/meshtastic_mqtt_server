@@ -30,6 +30,12 @@ let map: L.Map | null = null
 let markerLayer: L.LayerGroup | null = null
 let hasFitBounds = false
 
+const minMapZoom = 3
+const worldBounds = L.latLngBounds(
+  [-85.05112878, -180],
+  [85.05112878, 180],
+)
+
 onMounted(async () => {
   window.addEventListener('click', closeNodeMenu)
   window.addEventListener('keydown', handleKeydown)
@@ -39,15 +45,16 @@ onMounted(async () => {
   }
   map = L.map(mapEl.value, {
     zoomControl: true,
-    maxBounds: [
-      [-85, -180],
-      [85, 180],
-    ],
+    minZoom: minMapZoom,
+    maxBounds: worldBounds,
     maxBoundsViscosity: 1.0,
     worldCopyJump: false,
-  }).setView([0, 0], 2)
+  }).setView([0, 0], minMapZoom)
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    minZoom: minMapZoom,
     maxZoom: 19,
+    noWrap: true,
+    bounds: worldBounds,
     attribution: '&copy; OpenStreetMap contributors',
   }).addTo(map)
   map.on('click', () => {
@@ -179,7 +186,7 @@ function buildClusterMarker(cluster: MapClusterNode): L.Marker {
   marker.on('click', () => {
     closeNodeMenu()
     if (map) {
-      map.setView([cluster.latitude, cluster.longitude], Math.min(map.getZoom() + 2, map.getMaxZoom()))
+      map.setView([cluster.latitude, cluster.longitude], Math.max(minMapZoom, Math.min(map.getZoom() + 2, map.getMaxZoom())))
     }
   })
   return marker
