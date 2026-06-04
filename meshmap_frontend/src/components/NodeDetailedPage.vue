@@ -334,7 +334,7 @@ onBeforeUnmount(() => {
         <div class="panel-header">
           <div>
             <p class="eyebrow">Chat</p>
-            <h2>历史聊天记录</h2>
+            <h2>历史聊天记录：{{ nodeTitle }}</h2>
           </div>
           <span class="badge">{{ messages.length }}</span>
         </div>
@@ -370,7 +370,7 @@ onBeforeUnmount(() => {
         <div class="panel-header">
           <div>
             <p class="eyebrow">Trajectory</p>
-            <h2>地图轨迹</h2>
+            <h2>地图轨迹：{{ nodeTitle }}</h2>
           </div>
           <span class="badge">{{ positions.length }}</span>
         </div>
@@ -382,7 +382,7 @@ onBeforeUnmount(() => {
       <div class="panel-header">
         <div>
           <p class="eyebrow">Telemetry</p>
-          <h2>遥测数据</h2>
+          <h2>遥测数据：{{ nodeTitle }}</h2>
         </div>
         <span class="badge">{{ telemetry.length }}</span>
       </div>
