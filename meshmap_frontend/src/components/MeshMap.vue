@@ -320,8 +320,8 @@ function escapeHTML(value: string): string {
 <template>
   <section class="map-panel panel">
     <div ref="mapEl" class="map-container"></div>
-    <div v-if="loading" class="map-empty">正在加载当前区域坐标...</div>
-    <div v-else-if="items.length === 0" class="map-empty">暂无可显示坐标的节点</div>
+    <!-- <div v-if="loading" class="map-empty">正在加载当前区域坐标...</div>
+    <div v-else-if="items.length === 0" class="map-empty">暂无可显示坐标的节点</div> -->
     <div
       v-if="menuNode"
       class="context-menu"
