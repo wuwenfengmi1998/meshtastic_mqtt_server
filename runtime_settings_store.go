@@ -35,7 +35,7 @@ func (s *store) GetBoolRuntimeSetting(key string, defaultValue bool) (bool, erro
 	}
 
 	var row runtimeSettingRecord
-	err := s.db.Where("key = ?", key).Take(&row).Error
+	err := s.db.Where("`key` = ?", key).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return defaultValue, nil
 	}
@@ -75,7 +75,7 @@ func (s *store) SetBoolRuntimeSetting(key string, value bool, label string) (*ru
 	}).Create(&row).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.Where("key = ?", key).Take(&row).Error; err != nil {
+	if err := s.db.Where("`key` = ?", key).Take(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
