@@ -38,6 +38,8 @@ let map: L.Map | null = null
 let tileLayer: L.TileLayer | null = null
 let markerLayer: L.LayerGroup | null = null
 const markersByKey = new Map<string, L.Marker>()
+const overlapShuffleOrders = new Map<string, string[]>()
+const shuffledSelectedNodeIds = new Set<string>()
 let hasFitBounds = false
 
 const minMapZoom = 3
@@ -65,6 +67,8 @@ onMounted(async () => {
   applyTileLayer()
   map.on('click', () => {
     closeNodeMenu()
+    overlapShuffleOrders.clear()
+    shuffledSelectedNodeIds.clear()
     emit('clear-node')
   })
   map.on('moveend', emitBoundsChange)
@@ -81,6 +85,8 @@ onBeforeUnmount(() => {
   tileLayer = null
   markerLayer = null
   markersByKey.clear()
+  overlapShuffleOrders.clear()
+  shuffledSelectedNodeIds.clear()
 })
 
 watch(
@@ -177,6 +183,7 @@ function renderMarkers(forceFit: boolean) {
   }
   const bounds = L.latLngBounds([])
   const visibleMarkerKeys = new Set<string>()
+  const overlapGroups = buildOverlapGroups(props.items)
 
   for (const item of props.items) {
     const markerKey = mapMarkerKey(item)
@@ -195,7 +202,12 @@ function renderMarkers(forceFit: boolean) {
 
     const node = item
     const selected = node.node_id === props.selectedNodeId
-    const raised = selected || node.node_id === lastRaisedNodeId.value
+    const overlapGroupKey = nodeOverlapGroupKey(node)
+    const overlapGroup = overlapGroupKey ? overlapGroups.get(overlapGroupKey) : undefined
+    const overlapIndex = overlapGroup ? nodeOverlapIndex(node, overlapGroup) : 0
+    const shuffledSelected = selected && shuffledSelectedNodeIds.has(node.node_id)
+    const raised = !shuffledSelected && (selected || node.node_id === lastRaisedNodeId.value)
+    const zIndexOffset = raised ? 1000 : overlapIndex
     const nodeIcon = L.divIcon({
       className: `node-marker${selected ? ' selected' : ''}`,
       html: `<span style="--node-color: ${nodeColor(node.node_id)}">${escapeHTML(node.label || 'N')}</span>`,
@@ -208,7 +220,7 @@ function renderMarkers(forceFit: boolean) {
       marker = L.marker([node.latitude, node.longitude], {
         icon: nodeIcon,
         title: node.label,
-        zIndexOffset: raised ? 1000 : 0,
+        zIndexOffset,
       })
       marker.bindPopup(buildNodePopupHTML(node), { maxWidth: 320, className: 'node-detail-popup' })
       marker.addTo(markerLayer)
@@ -216,7 +228,7 @@ function renderMarkers(forceFit: boolean) {
     } else {
       marker.setLatLng([node.latitude, node.longitude])
       marker.setIcon(nodeIcon)
-      marker.setZIndexOffset(raised ? 1000 : 0)
+      marker.setZIndexOffset(zIndexOffset)
       marker.options.title = node.label
       marker.getElement()?.setAttribute('title', node.label)
       const popup = marker.getPopup()
@@ -231,13 +243,22 @@ function renderMarkers(forceFit: boolean) {
     marker.off('contextmenu')
     marker.on('click', (event) => {
       L.DomEvent.stopPropagation(event)
-      lastRaisedNodeId.value = node.node_id
       closeNodeMenu()
+      if (node.node_id === props.selectedNodeId) {
+        if (moveSelectedNodeBehindOverlap(node, overlapGroups)) {
+          shuffledSelectedNodeIds.add(node.node_id)
+          marker?.closePopup()
+          renderMarkers(false)
+        }
+        return
+      }
+      shuffledSelectedNodeIds.clear()
+      lastRaisedNodeId.value = node.node_id
       emit('select-node', node.node_id)
     })
     marker.on('contextmenu', (event) => openNodeMenu(node, event))
 
-    if (selected && !marker.getPopup()?.isOpen()) {
+    if (selected && !shuffledSelected && !marker.getPopup()?.isOpen()) {
       marker.openPopup()
     }
     bounds.extend([node.latitude, node.longitude])
@@ -261,6 +282,71 @@ function mapMarkerKey(item: MapRenderable): string {
     return `cluster:${item.latitude}:${item.longitude}:${item.count}`
   }
   return `node:${item.node_id}`
+}
+
+function buildOverlapGroups(items: MapRenderable[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>()
+  for (const item of items) {
+    if (item.type === 'cluster') {
+      continue
+    }
+    const key = nodeOverlapGroupKey(item)
+    const group = groups.get(key)
+    if (group) {
+      group.push(item.node_id)
+    } else {
+      groups.set(key, [item.node_id])
+    }
+  }
+
+  for (const [key, nodeIds] of groups) {
+    if (nodeIds.length < 2) {
+      groups.delete(key)
+      overlapShuffleOrders.delete(key)
+      continue
+    }
+
+    const existingOrder = overlapShuffleOrders.get(key) ?? []
+    const activeIds = new Set(nodeIds)
+    const ordered = existingOrder.filter((nodeId) => activeIds.has(nodeId))
+    for (const nodeId of nodeIds) {
+      if (!ordered.includes(nodeId)) {
+        ordered.push(nodeId)
+      }
+    }
+    overlapShuffleOrders.set(key, ordered)
+    groups.set(key, ordered)
+  }
+
+  for (const key of overlapShuffleOrders.keys()) {
+    if (!groups.has(key)) {
+      overlapShuffleOrders.delete(key)
+    }
+  }
+
+  return groups
+}
+
+function nodeOverlapGroupKey(node: MapNode): string {
+  return `${node.latitude.toFixed(6)}:${node.longitude.toFixed(6)}`
+}
+
+function nodeOverlapIndex(node: MapNode, group: string[]): number {
+  const index = group.indexOf(node.node_id)
+  return index === -1 ? 0 : index
+}
+
+function moveSelectedNodeBehindOverlap(node: MapNode, overlapGroups: Map<string, string[]>): boolean {
+  const groupKey = nodeOverlapGroupKey(node)
+  const group = overlapGroups.get(groupKey)
+  if (!group || group.length < 2) {
+    return false
+  }
+
+  const nextOrder = [node.node_id, ...group.filter((nodeId) => nodeId !== node.node_id)]
+  overlapShuffleOrders.set(groupKey, nextOrder)
+  lastRaisedNodeId.value = null
+  return true
 }
 
 function buildClusterMarker(cluster: MapClusterNode): L.Marker {
