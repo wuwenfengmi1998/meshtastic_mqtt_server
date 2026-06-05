@@ -21,13 +21,12 @@ const chatHasMore = ref(true)
 const error = ref('')
 const chatPageSize = 20
 const chatHistoryRef = ref<HTMLElement | null>(null)
+type GroupedTextMessage = TextMessage & { mergedCount: number; mergedMessages: TextMessage[] }
 type PendingDeleteAction =
-  | { kind: 'delete-message'; message: TextMessage }
-  | { kind: 'delete-and-block-node'; message: TextMessage; nodeId: string; nodeNum: number | null }
+  | { kind: 'delete-message'; message: GroupedTextMessage }
+  | { kind: 'delete-and-block-node'; message: GroupedTextMessage; nodeId: string; nodeNum: number | null }
 
-type GroupedTextMessage = TextMessage & { mergedCount: number }
-
-const menuMessage = ref<TextMessage | null>(null)
+const menuMessage = ref<GroupedTextMessage | null>(null)
 const menuX = ref(0)
 const menuY = ref(0)
 const pendingDeleteAction = ref<PendingDeleteAction | null>(null)
@@ -55,10 +54,19 @@ const deleteModalTitle = computed(() => {
 })
 
 const deleteModalMessage = computed(() => {
-  if (pendingDeleteAction.value?.kind === 'delete-and-block-node') {
-    return '确定要删除这条聊天消息并屏蔽该节点吗？请输入屏蔽原因。'
+  const action = pendingDeleteAction.value
+  if (!action) {
+    return ''
   }
-  return '确定要删除这条聊天消息吗？此操作不可撤销。'
+  const count = deleteMessageCount(action.message)
+  if (action.kind === 'delete-and-block-node') {
+    return count > 1
+      ? `确定要删除这组已合并的 ${count} 条聊天消息并屏蔽该节点吗？请输入屏蔽原因。`
+      : '确定要删除这条聊天消息并屏蔽该节点吗？请输入屏蔽原因。'
+  }
+  return count > 1
+    ? `确定要删除这组已合并的 ${count} 条聊天消息吗？此操作不可撤销。`
+    : '确定要删除这条聊天消息吗？此操作不可撤销。'
 })
 
 const deleteModalConfirmText = computed(() => {
@@ -74,8 +82,9 @@ const groupedMessages = computed<GroupedTextMessage[]>(() => {
     const group = groups.get(key)
     if (group) {
       group.mergedCount += 1
+      group.mergedMessages.push(message)
     } else {
-      groups.set(key, { ...message, mergedCount: 1 })
+      groups.set(key, { ...message, mergedCount: 1, mergedMessages: [message] })
     }
   }
   return Array.from(groups.values())
@@ -150,6 +159,14 @@ function mergeMessages(existing: TextMessage[], incoming: TextMessage[]): TextMe
   return Array.from(byId.values()).sort(compareMessages)
 }
 
+function messagesForDelete(message: GroupedTextMessage): TextMessage[] {
+  return Array.from(new Map(message.mergedMessages.map((item) => [item.id, item])).values())
+}
+
+function deleteMessageCount(message: GroupedTextMessage): number {
+  return messagesForDelete(message).length
+}
+
 async function optional<T>(request: Promise<T>): Promise<T | null> {
   try {
     return await request
@@ -197,7 +214,7 @@ function closeMessageMenu() {
   menuMessage.value = null
 }
 
-function openMessageMenu(message: TextMessage, event: MouseEvent) {
+function openMessageMenu(message: GroupedTextMessage, event: MouseEvent) {
   if (!props.isAdmin) {
     return
   }
@@ -214,10 +231,9 @@ function deleteSelectedMessage() {
   closeMessageMenu()
 }
 
-async function performDeleteMessage(message: TextMessage) {
+async function performDeleteMessage(message: GroupedTextMessage) {
   try {
-    await deleteTextMessage(message.id)
-    messages.value = messages.value.filter((item) => item.id !== message.id)
+    await deleteMessagesFromLocalState(message)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
@@ -235,6 +251,32 @@ function isMessageNotFoundError(err: unknown): boolean {
   return err instanceof Error && err.message === 'message not found'
 }
 
+async function deleteMessagesFromLocalState(message: GroupedTextMessage) {
+  const items = messagesForDelete(message)
+  const removableIds = new Set<number>()
+  const errors: string[] = []
+
+  await Promise.all(items.map(async (item) => {
+    try {
+      await deleteTextMessage(item.id)
+      removableIds.add(item.id)
+    } catch (err) {
+      if (isMessageNotFoundError(err)) {
+        removableIds.add(item.id)
+        return
+      }
+      errors.push(err instanceof Error ? err.message : String(err))
+    }
+  }))
+
+  if (removableIds.size > 0) {
+    messages.value = messages.value.filter((item) => !removableIds.has(item.id))
+  }
+  if (errors.length > 0) {
+    throw new Error(`部分消息删除失败（${errors.length}/${items.length}）：${errors[0]}`)
+  }
+}
+
 function deleteAndBlockSelectedMessageNode() {
   if (!menuMessage.value) {
     return
@@ -249,16 +291,9 @@ function deleteAndBlockSelectedMessageNode() {
   closeMessageMenu()
 }
 
-async function performDeleteAndBlockMessageNode(payload: { message: TextMessage; nodeId: string; nodeNum: number | null; reason: string }) {
+async function performDeleteAndBlockMessageNode(payload: { message: GroupedTextMessage; nodeId: string; nodeNum: number | null; reason: string }) {
   try {
-    try {
-      await deleteTextMessage(payload.message.id)
-    } catch (err) {
-      if (!isMessageNotFoundError(err)) {
-        throw err
-      }
-    }
-    messages.value = messages.value.filter((item) => item.id !== payload.message.id)
+    await deleteMessagesFromLocalState(payload.message)
 
     try {
       await createNodeBlockingRule({

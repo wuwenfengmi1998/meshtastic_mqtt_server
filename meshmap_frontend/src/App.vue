@@ -51,10 +51,11 @@ const currentMapZoom = ref(2)
 const mapReportsLoading = ref(false)
 const mapReportTotal = ref(0)
 const pendingDeleteAction = ref<PendingDeleteAction | null>(null)
-type NodeActionRequest = { nodeId: string; nodeNum: number | null; message?: TextMessage }
+type DeletableTextMessage = TextMessage & { mergedCount?: number; mergedMessages?: TextMessage[] }
+type NodeActionRequest = { nodeId: string; nodeNum: number | null; message?: DeletableTextMessage }
 type NodeActionPayload = NodeActionRequest & { reason: string }
 type PendingDeleteAction =
-  | { kind: 'delete-message'; message: TextMessage }
+  | { kind: 'delete-message'; message: DeletableTextMessage }
   | { kind: 'delete-node'; nodeId: string }
   | ({ kind: 'delete-and-block-node' } & NodeActionRequest)
 let refreshTimer: number | undefined
@@ -122,14 +123,21 @@ const deleteModalMessage = computed(() => {
     return ''
   }
   if (action.kind === 'delete-message') {
-    return '确定要删除这条聊天消息吗？此操作不可撤销。'
+    const count = deleteMessageCount(action.message)
+    return count > 1
+      ? `确定要删除这组已合并的 ${count} 条聊天消息吗？此操作不可撤销。`
+      : '确定要删除这条聊天消息吗？此操作不可撤销。'
   }
   if (action.kind === 'delete-node') {
     return '确定要删除这个节点吗？此操作不可撤销。'
   }
-  return action.message
-    ? '确定要删除这条聊天消息并屏蔽该节点吗？请输入屏蔽原因。'
-    : '确定要删除并屏蔽这个节点吗？请输入屏蔽原因。'
+  if (!action.message) {
+    return '确定要删除并屏蔽这个节点吗？请输入屏蔽原因。'
+  }
+  const count = deleteMessageCount(action.message)
+  return count > 1
+    ? `确定要删除这组已合并的 ${count} 条聊天消息并屏蔽该节点吗？请输入屏蔽原因。`
+    : '确定要删除这条聊天消息并屏蔽该节点吗？请输入屏蔽原因。'
 })
 
 const deleteModalConfirmText = computed(() => {
@@ -156,6 +164,15 @@ function mergeMessages(existing: TextMessage[], incoming: TextMessage[]): TextMe
     byId.set(message.id, message)
   }
   return Array.from(byId.values()).sort(compareMessages)
+}
+
+function messagesForDelete(message: DeletableTextMessage): TextMessage[] {
+  const items = message.mergedMessages?.length ? message.mergedMessages : [message]
+  return Array.from(new Map(items.map((item) => [item.id, item])).values())
+}
+
+function deleteMessageCount(message: DeletableTextMessage): number {
+  return messagesForDelete(message).length
 }
 
 function isSameJSON(left: unknown, right: unknown): boolean {
@@ -295,7 +312,7 @@ async function logoutAdmin() {
   }
 }
 
-function requestDeleteMessage(message: TextMessage) {
+function requestDeleteMessage(message: DeletableTextMessage) {
   pendingDeleteAction.value = { kind: 'delete-message', message }
 }
 
@@ -340,10 +357,9 @@ async function confirmDeleteModal(payload: { reason?: string }) {
   })
 }
 
-async function deleteMessage(message: TextMessage) {
+async function deleteMessage(message: DeletableTextMessage) {
   try {
-    await deleteTextMessage(message.id)
-    messages.value = messages.value.filter((item) => item.id !== message.id)
+    await deleteMessagesFromLocalState(message)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
@@ -371,6 +387,32 @@ function isMessageNotFoundError(err: unknown): boolean {
   return err instanceof Error && err.message === 'message not found'
 }
 
+async function deleteMessagesFromLocalState(message: DeletableTextMessage) {
+  const items = messagesForDelete(message)
+  const removableIds = new Set<number>()
+  const errors: string[] = []
+
+  await Promise.all(items.map(async (item) => {
+    try {
+      await deleteTextMessage(item.id)
+      removableIds.add(item.id)
+    } catch (err) {
+      if (isMessageNotFoundError(err)) {
+        removableIds.add(item.id)
+        return
+      }
+      errors.push(err instanceof Error ? err.message : String(err))
+    }
+  }))
+
+  if (removableIds.size > 0) {
+    messages.value = messages.value.filter((item) => !removableIds.has(item.id))
+  }
+  if (errors.length > 0) {
+    throw new Error(`部分消息删除失败（${errors.length}/${items.length}）：${errors[0]}`)
+  }
+}
+
 async function deleteNodeById(nodeId: string) {
   try {
     await deleteNode(nodeId)
@@ -383,14 +425,7 @@ async function deleteNodeById(nodeId: string) {
 async function deleteAndBlockNode(payload: NodeActionPayload) {
   try {
     if (payload.message) {
-      try {
-        await deleteTextMessage(payload.message.id)
-      } catch (err) {
-        if (!isMessageNotFoundError(err)) {
-          throw err
-        }
-      }
-      messages.value = messages.value.filter((item) => item.id !== payload.message?.id)
+      await deleteMessagesFromLocalState(payload.message)
     }
 
     try {

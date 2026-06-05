@@ -11,21 +11,21 @@ const props = defineProps<{
   isAdmin: boolean
 }>()
 
+type GroupedTextMessage = TextMessage & { mergedCount: number; mergedMessages: TextMessage[] }
+
 const emit = defineEmits<{
   'select-node': [nodeId: string]
   'load-older': []
-  'delete-message': [message: TextMessage]
-  'delete-and-block-node': [payload: { nodeId: string; nodeNum: number | null; message: TextMessage }]
+  'delete-message': [message: GroupedTextMessage]
+  'delete-and-block-node': [payload: { nodeId: string; nodeNum: number | null; message: GroupedTextMessage }]
 }>()
 
 const panelRef = ref<HTMLElement | null>(null)
-const menuMessage = ref<TextMessage | null>(null)
+const menuMessage = ref<GroupedTextMessage | null>(null)
 const menuX = ref(0)
 const menuY = ref(0)
 const topThreshold = 8
 const bottomThreshold = 40
-
-type GroupedTextMessage = TextMessage & { mergedCount: number }
 
 const groupedMessages = computed<GroupedTextMessage[]>(() => {
   const groups = new Map<string, GroupedTextMessage>()
@@ -34,8 +34,9 @@ const groupedMessages = computed<GroupedTextMessage[]>(() => {
     const group = groups.get(key)
     if (group) {
       group.mergedCount += 1
+      group.mergedMessages.push(message)
     } else {
-      groups.set(key, { ...message, mergedCount: 1 })
+      groups.set(key, { ...message, mergedCount: 1, mergedMessages: [message] })
     }
   }
   return Array.from(groups.values())
@@ -74,7 +75,7 @@ function nodeDetailHref(nodeId: string): string {
   return `/detailed/${encodeURIComponent(nodeId)}`
 }
 
-function openMessageMenu(message: TextMessage, event: MouseEvent) {
+function openMessageMenu(message: GroupedTextMessage, event: MouseEvent) {
   emit('select-node', message.from_id)
   menuMessage.value = message
   menuX.value = event.clientX
