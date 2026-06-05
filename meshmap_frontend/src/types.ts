@@ -108,6 +108,10 @@ export interface PublicMapTileSourceResponse {
   item: PublicMapTileSource
 }
 
+export interface PublicMapTileSourcesResponse {
+  items: PublicMapTileSource[]
+}
+
 export interface MapViewportPoint extends MapReport {
   type: 'point'
 }

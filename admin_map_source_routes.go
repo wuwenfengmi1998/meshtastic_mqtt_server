@@ -27,6 +27,18 @@ func registerMapSourceRoutes(r gin.IRouter, store *store) {
 		}
 		c.JSON(http.StatusOK, gin.H{"item": publicMapTileSourceDTO(*row)})
 	})
+	r.GET("/map-source/enabled", func(c *gin.Context) {
+		rows, err := store.ListEnabledMapTileSources()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		items := make([]gin.H, 0, len(rows))
+		for _, row := range rows {
+			items = append(items, publicMapTileSourceDTO(row))
+		}
+		c.JSON(http.StatusOK, gin.H{"items": items})
+	})
 }
 
 func registerAdminMapSourceRoutes(r gin.IRouter, store *store) {

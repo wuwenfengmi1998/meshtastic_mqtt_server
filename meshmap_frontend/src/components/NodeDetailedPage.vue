@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { createNodeBlockingRule, deleteNode, deleteTextMessage, getMapReportById, getNodeInfoById, getPositions, getTelemetry, getTextMessages } from '../api'
 import type { MapReport, NodeInfo, PositionRecord, PublicMapTileSource, TelemetryRecord, TextMessage } from '../types'
-import { fallbackMapSource, loadDefaultMapSource } from '../mapSource'
+import { fallbackMapSource, loadEnabledMapSources } from '../mapSource'
 import ConfirmDeleteModal from './ConfirmDeleteModal.vue'
 import NodeTrajectoryMap from './NodeTrajectoryMap.vue'
 
@@ -16,6 +16,7 @@ const mapReport = ref<MapReport | null>(null)
 const messages = ref<TextMessage[]>([])
 const positions = ref<PositionRecord[]>([])
 const telemetry = ref<TelemetryRecord[]>([])
+const mapSources = ref<PublicMapTileSource[]>([fallbackMapSource])
 const mapSource = ref<PublicMapTileSource>(fallbackMapSource)
 const loading = ref(true)
 const chatLoadingOlder = ref(false)
@@ -370,7 +371,16 @@ function handleChatScroll() {
 }
 
 async function loadMapSource() {
-  mapSource.value = await loadDefaultMapSource()
+  const sources = await loadEnabledMapSources()
+  mapSources.value = sources
+  mapSource.value = sources[0] ?? fallbackMapSource
+}
+
+function selectMapSource(sourceId: number) {
+  const source = mapSources.value.find((item) => item.id === sourceId)
+  if (source) {
+    mapSource.value = source
+  }
 }
 
 async function loadDetails() {
@@ -499,7 +509,12 @@ onBeforeUnmount(() => {
           </div>
           <span class="badge">{{ positions.length }}</span>
         </div>
-        <NodeTrajectoryMap :positions="positions" :map-source="mapSource" />
+        <NodeTrajectoryMap
+          :positions="positions"
+          :map-source="mapSource"
+          :map-sources="mapSources"
+          @map-source-change="selectMapSource"
+        />
       </div>
     </div>
 

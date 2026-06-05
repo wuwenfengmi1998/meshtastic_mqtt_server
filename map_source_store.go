@@ -52,6 +52,22 @@ func (s *store) CountMapTileSources(opts listOptions) (int64, error) {
 	return total, s.db.Model(&mapTileSourceRecord{}).Count(&total).Error
 }
 
+func (s *store) ListEnabledMapTileSources() ([]mapTileSourceRecord, error) {
+	var rows []mapTileSourceRecord
+	if err := s.db.Model(&mapTileSourceRecord{}).
+		Where("enabled = ?", true).
+		Order("is_default DESC").
+		Order("updated_at DESC").
+		Order("id DESC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return []mapTileSourceRecord{defaultMapTileSourceRecord()}, nil
+	}
+	return rows, nil
+}
+
 func (s *store) GetDefaultMapTileSource() (*mapTileSourceRecord, error) {
 	var row mapTileSourceRecord
 	err := s.db.Where("enabled = ? AND is_default = ?", true, true).Order("id ASC").Take(&row).Error

@@ -33,6 +33,42 @@ func TestCreateMapTileSourceValidation(t *testing.T) {
 	}
 }
 
+func TestListEnabledMapTileSources(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	disabled, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Disabled", URLTemplate: "https://disabled.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: false})
+	if err != nil {
+		t.Fatalf("CreateMapTileSource(disabled) error = %v", err)
+	}
+	custom, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Custom", URLTemplate: "https://custom.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	if err != nil {
+		t.Fatalf("CreateMapTileSource(custom) error = %v", err)
+	}
+	if _, err := st.SetDefaultMapTileSource(custom.ID); err != nil {
+		t.Fatalf("SetDefaultMapTileSource() error = %v", err)
+	}
+
+	rows, err := st.ListEnabledMapTileSources()
+	if err != nil {
+		t.Fatalf("ListEnabledMapTileSources() error = %v", err)
+	}
+	if len(rows) < 2 {
+		t.Fatalf("ListEnabledMapTileSources() length = %d, want at least 2", len(rows))
+	}
+	if rows[0].ID != custom.ID {
+		t.Fatalf("first enabled source id = %d, want default %d", rows[0].ID, custom.ID)
+	}
+	for _, row := range rows {
+		if row.ID == disabled.ID {
+			t.Fatalf("disabled source was returned: %+v", row)
+		}
+		if !row.Enabled {
+			t.Fatalf("disabled row returned: %+v", row)
+		}
+	}
+}
+
 func TestMapTileSourceDuplicateAndDefaultRules(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()

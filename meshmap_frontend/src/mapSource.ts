@@ -1,4 +1,4 @@
-import { getDefaultMapSource } from './api'
+import { getDefaultMapSource, getEnabledMapSources } from './api'
 import type { PublicMapTileSource } from './types'
 
 export const fallbackMapSource: PublicMapTileSource = {
@@ -15,5 +15,14 @@ export async function loadDefaultMapSource(): Promise<PublicMapTileSource> {
     return response.item
   } catch {
     return fallbackMapSource
+  }
+}
+
+export async function loadEnabledMapSources(): Promise<PublicMapTileSource[]> {
+  try {
+    const response = await getEnabledMapSources()
+    return response.items.length > 0 ? response.items : [fallbackMapSource]
+  } catch {
+    return [fallbackMapSource]
   }
 }

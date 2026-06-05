@@ -33,6 +33,7 @@ import type {
   NodeInfo,
   PositionRecord,
   PublicMapTileSourceResponse,
+  PublicMapTileSourcesResponse,
   TelemetryRecord,
   TextMessage,
 } from './types'
@@ -131,6 +132,10 @@ export function getMapReportViewport(bounds: MapBoundsQuery, zoom: number, limit
 
 export function getDefaultMapSource(): Promise<PublicMapTileSourceResponse> {
   return getJSON<PublicMapTileSourceResponse>('/api/map-source/default')
+}
+
+export function getEnabledMapSources(): Promise<PublicMapTileSourcesResponse> {
+  return getJSON<PublicMapTileSourcesResponse>('/api/map-source/enabled')
 }
 
 export function getTextMessages(limit = 100, offset = 0, nodeId = ''): Promise<ListResponse<TextMessage>> {

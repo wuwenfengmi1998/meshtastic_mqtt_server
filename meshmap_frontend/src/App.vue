@@ -16,7 +16,7 @@ import HelpPage from './components/HelpPage.vue'
 import MeshMap from './components/MeshMap.vue'
 import NodeDetailedPage from './components/NodeDetailedPage.vue'
 import NodeListPanel from './components/NodeListPanel.vue'
-import { fallbackMapSource, loadDefaultMapSource } from './mapSource'
+import { fallbackMapSource, loadEnabledMapSources } from './mapSource'
 import type { AdminUser, HealthStatus, MapBoundsChangePayload, MapBoundsQuery, MapRenderable, MapViewportItem, NodeInfo, NodeInfoById, PositionRecord, PublicMapTileSource, TextMessage } from './types'
 
 const currentPath = window.location.pathname
@@ -52,6 +52,7 @@ const currentMapBounds = ref<MapBoundsQuery | null>(null)
 const currentMapZoom = ref(2)
 const mapReportsLoading = ref(false)
 const mapReportTotal = ref(0)
+const mapSources = ref<PublicMapTileSource[]>([fallbackMapSource])
 const mapSource = ref<PublicMapTileSource>(fallbackMapSource)
 const pendingDeleteAction = ref<PendingDeleteAction | null>(null)
 type DeletableTextMessage = TextMessage & { mergedCount?: number; mergedMessages?: TextMessage[] }
@@ -296,7 +297,16 @@ async function refresh(showLoading = true) {
 }
 
 async function loadMapSource() {
-  mapSource.value = await loadDefaultMapSource()
+  const sources = await loadEnabledMapSources()
+  mapSources.value = sources
+  mapSource.value = sources[0] ?? fallbackMapSource
+}
+
+function selectMapSource(sourceId: number) {
+  const source = mapSources.value.find((item) => item.id === sourceId)
+  if (source) {
+    mapSource.value = source
+  }
 }
 
 async function checkAdminSession() {
@@ -581,6 +591,8 @@ onBeforeUnmount(() => {
           :auto-fit="false"
           :loading="mapReportsLoading"
           :map-source="mapSource"
+          :map-sources="mapSources"
+          @map-source-change="selectMapSource"
           @bounds-change="handleMapBoundsChange"
           @select-node="selectedNodeId = $event"
           @clear-node="selectedNodeId = null"
