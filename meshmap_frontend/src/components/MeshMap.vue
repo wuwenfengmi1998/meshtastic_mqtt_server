@@ -30,6 +30,7 @@ const menuY = ref(0)
 const lastRaisedNodeId = ref<string | null>(null)
 let map: L.Map | null = null
 let markerLayer: L.LayerGroup | null = null
+const markersByKey = new Map<string, L.Marker>()
 let hasFitBounds = false
 
 const minMapZoom = 3
@@ -77,6 +78,7 @@ onBeforeUnmount(() => {
   map?.remove()
   map = null
   markerLayer = null
+  markersByKey.clear()
 })
 
 watch(
@@ -145,30 +147,60 @@ function renderMarkers(forceFit: boolean) {
   if (!map || !markerLayer) {
     return
   }
-  markerLayer.clearLayers()
   const bounds = L.latLngBounds([])
+  const visibleMarkerKeys = new Set<string>()
 
   for (const item of props.items) {
+    const markerKey = mapMarkerKey(item)
+    visibleMarkerKeys.add(markerKey)
+
     if (item.type === 'cluster') {
-      const marker = buildClusterMarker(item)
-      marker.addTo(markerLayer)
+      const existingMarker = markersByKey.get(markerKey)
+      if (!existingMarker) {
+        const marker = buildClusterMarker(item)
+        marker.addTo(markerLayer)
+        markersByKey.set(markerKey, marker)
+      }
       bounds.extend([item.latitude, item.longitude])
       continue
     }
+
     const node = item
     const selected = node.node_id === props.selectedNodeId
     const raised = selected || node.node_id === lastRaisedNodeId.value
-    const marker = L.marker([node.latitude, node.longitude], {
-      icon: L.divIcon({
-        className: `node-marker${selected ? ' selected' : ''}`,
-        html: `<span style="--node-color: ${nodeColor(node.node_id)}">${escapeHTML(node.label || 'N')}</span>`,
-        iconSize: [34, 22],
-        iconAnchor: [17, 11],
-      }),
-      title: node.label,
-      zIndexOffset: raised ? 1000 : 0,
+    const nodeIcon = L.divIcon({
+      className: `node-marker${selected ? ' selected' : ''}`,
+      html: `<span style="--node-color: ${nodeColor(node.node_id)}">${escapeHTML(node.label || 'N')}</span>`,
+      iconSize: [34, 22],
+      iconAnchor: [17, 11],
     })
-    marker.bindPopup(buildNodePopupHTML(node), { maxWidth: 320, className: 'node-detail-popup' })
+    let marker = markersByKey.get(markerKey)
+
+    if (!marker) {
+      marker = L.marker([node.latitude, node.longitude], {
+        icon: nodeIcon,
+        title: node.label,
+        zIndexOffset: raised ? 1000 : 0,
+      })
+      marker.bindPopup(buildNodePopupHTML(node), { maxWidth: 320, className: 'node-detail-popup' })
+      marker.addTo(markerLayer)
+      markersByKey.set(markerKey, marker)
+    } else {
+      marker.setLatLng([node.latitude, node.longitude])
+      marker.setIcon(nodeIcon)
+      marker.setZIndexOffset(raised ? 1000 : 0)
+      marker.options.title = node.label
+      marker.getElement()?.setAttribute('title', node.label)
+      const popup = marker.getPopup()
+      if (popup) {
+        popup.setContent(buildNodePopupHTML(node))
+      } else {
+        marker.bindPopup(buildNodePopupHTML(node), { maxWidth: 320, className: 'node-detail-popup' })
+      }
+    }
+
+    marker.off('click')
+    marker.off('contextmenu')
     marker.on('click', (event) => {
       L.DomEvent.stopPropagation(event)
       lastRaisedNodeId.value = node.node_id
@@ -176,17 +208,31 @@ function renderMarkers(forceFit: boolean) {
       emit('select-node', node.node_id)
     })
     marker.on('contextmenu', (event) => openNodeMenu(node, event))
-    marker.addTo(markerLayer)
-    if (selected) {
+
+    if (selected && !marker.getPopup()?.isOpen()) {
       marker.openPopup()
     }
     bounds.extend([node.latitude, node.longitude])
+  }
+
+  for (const [markerKey, marker] of markersByKey) {
+    if (!visibleMarkerKeys.has(markerKey)) {
+      markerLayer.removeLayer(marker)
+      markersByKey.delete(markerKey)
+    }
   }
 
   if (props.autoFit && props.items.length > 0 && (forceFit || !hasFitBounds)) {
     map.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 })
     hasFitBounds = true
   }
+}
+
+function mapMarkerKey(item: MapRenderable): string {
+  if (item.type === 'cluster') {
+    return `cluster:${item.latitude}:${item.longitude}:${item.count}`
+  }
+  return `node:${item.node_id}`
 }
 
 function buildClusterMarker(cluster: MapClusterNode): L.Marker {
