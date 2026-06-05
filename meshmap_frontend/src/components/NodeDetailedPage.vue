@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { createNodeBlockingRule, deleteNode, deleteTextMessage, getMapReportById, getNodeInfoById, getPositions, getTelemetry, getTextMessages } from '../api'
-import type { MapReport, NodeInfo, PositionRecord, TelemetryRecord, TextMessage } from '../types'
+import type { MapReport, NodeInfo, PositionRecord, PublicMapTileSource, TelemetryRecord, TextMessage } from '../types'
+import { fallbackMapSource, loadDefaultMapSource } from '../mapSource'
 import ConfirmDeleteModal from './ConfirmDeleteModal.vue'
 import NodeTrajectoryMap from './NodeTrajectoryMap.vue'
 
@@ -15,6 +16,7 @@ const mapReport = ref<MapReport | null>(null)
 const messages = ref<TextMessage[]>([])
 const positions = ref<PositionRecord[]>([])
 const telemetry = ref<TelemetryRecord[]>([])
+const mapSource = ref<PublicMapTileSource>(fallbackMapSource)
 const loading = ref(true)
 const chatLoadingOlder = ref(false)
 const chatHasMore = ref(true)
@@ -367,6 +369,10 @@ function handleChatScroll() {
   loadOlderMessages()
 }
 
+async function loadMapSource() {
+  mapSource.value = await loadDefaultMapSource()
+}
+
 async function loadDetails() {
   loading.value = true
   error.value = ''
@@ -392,6 +398,7 @@ async function loadDetails() {
 onMounted(() => {
   window.addEventListener('click', closeMessageMenu)
   window.addEventListener('keydown', handleKeydown)
+  loadMapSource()
   loadDetails()
 })
 
@@ -492,7 +499,7 @@ onBeforeUnmount(() => {
           </div>
           <span class="badge">{{ positions.length }}</span>
         </div>
-        <NodeTrajectoryMap :positions="positions" />
+        <NodeTrajectoryMap :positions="positions" :map-source="mapSource" />
       </div>
     </div>
 

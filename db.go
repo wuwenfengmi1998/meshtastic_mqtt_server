@@ -115,6 +115,22 @@ func (runtimeSettingRecord) TableName() string {
 	return "runtime_settings"
 }
 
+type mapTileSourceRecord struct {
+	ID          uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	Name        string    `gorm:"column:name;not null;uniqueIndex"`
+	URLTemplate string    `gorm:"column:url_template;not null;uniqueIndex"`
+	Attribution string    `gorm:"column:attribution"`
+	MaxZoom     int       `gorm:"column:max_zoom;not null"`
+	Enabled     bool      `gorm:"column:enabled;not null;index"`
+	IsDefault   bool      `gorm:"column:is_default;not null;index"`
+	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt   time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (mapTileSourceRecord) TableName() string {
+	return "map_tile_sources"
+}
+
 type discardDetailsRecord struct {
 	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Topic          string    `gorm:"column:topic"`
@@ -415,6 +431,7 @@ func (s *store) migrate() error {
 			{label: "login_log", model: &loginLogRecord{}},
 			{label: "help_content", model: &helpContentRecord{}},
 			{label: "runtime_settings", model: &runtimeSettingRecord{}},
+			{label: "map_tile_sources", model: &mapTileSourceRecord{}},
 			{label: "discard_details", model: &discardDetailsRecord{}},
 			{label: "node_blocking", model: &nodeBlockingRecord{}},
 			{label: "ip_blocking", model: &ipBlockingRecord{}},
@@ -446,7 +463,7 @@ func (s *store) migrate() error {
 				return err
 			}
 		}
-		return nil
+		return (&store{db: tx, driver: s.driver}).EnsureDefaultMapTileSource()
 	})
 }
 

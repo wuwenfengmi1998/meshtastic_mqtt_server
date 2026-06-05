@@ -72,6 +72,7 @@ func registerAPIRoutes(r gin.IRouter, store *store) {
 	registerNodeInfoRoutes(r, store, "/nodeinfo")
 	registerNodeInfoRoutes(r, store, "/nodes")
 	registerMapReportRoutes(r, store)
+	registerMapSourceRoutes(r, store)
 	registerHelpRoutes(r, store)
 	r.GET("/text-messages", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
@@ -186,6 +187,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 	registerAdminBlockingRoutes(protected, store, blocking)
 	registerAdminMQTTForwardRoutes(protected, store, forwarder)
 	registerAdminRuntimeSettingsRoutes(protected, store, settings)
+	registerAdminMapSourceRoutes(protected, store)
 	registerAdminHelpRoutes(protected, store)
 	protected.GET("/me", func(c *gin.Context) {
 		claims := c.MustGet("admin_claims").(*sessionClaims)

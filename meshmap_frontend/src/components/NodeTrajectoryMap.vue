@@ -2,15 +2,33 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { PositionRecord } from '../types'
+import { fallbackMapSource } from '../mapSource'
+import type { PositionRecord, PublicMapTileSource } from '../types'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   positions: PositionRecord[]
-}>()
+  mapSource?: PublicMapTileSource
+}>(), {
+  mapSource: () => fallbackMapSource,
+})
 
 const mapEl = ref<HTMLElement | null>(null)
 let map: L.Map | null = null
+let tileLayer: L.TileLayer | null = null
 let layer: L.LayerGroup | null = null
+
+function applyTileLayer() {
+  if (!map) {
+    return
+  }
+  if (tileLayer) {
+    tileLayer.remove()
+  }
+  tileLayer = L.tileLayer(props.mapSource.url_template, {
+    maxZoom: props.mapSource.max_zoom || fallbackMapSource.max_zoom,
+    attribution: props.mapSource.attribution || fallbackMapSource.attribution,
+  }).addTo(map)
+}
 
 function renderTrajectory() {
   if (!map || !layer) {
@@ -49,10 +67,7 @@ onMounted(async () => {
     maxBoundsViscosity: 1.0,
     worldCopyJump: false,
   }).setView([0, 0], 2)
-  L.tileLayer('https://tile.openstreetmap.jp/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors',
-  }).addTo(map)
+  applyTileLayer()
   layer = L.layerGroup().addTo(map)
   renderTrajectory()
 })
@@ -60,12 +75,19 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   map?.remove()
   map = null
+  tileLayer = null
   layer = null
 })
 
 watch(
   () => props.positions,
   () => renderTrajectory(),
+  { deep: true },
+)
+
+watch(
+  () => props.mapSource,
+  () => applyTileLayer(),
   { deep: true },
 )
 </script>

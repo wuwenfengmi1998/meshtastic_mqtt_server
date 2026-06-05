@@ -2,7 +2,8 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { MapBoundsChangePayload, MapClusterNode, MapNode, MapRenderable } from '../types'
+import { fallbackMapSource } from '../mapSource'
+import type { MapBoundsChangePayload, MapClusterNode, MapNode, MapRenderable, PublicMapTileSource } from '../types'
 
 const props = withDefaults(defineProps<{
   items: MapRenderable[]
@@ -10,9 +11,11 @@ const props = withDefaults(defineProps<{
   isAdmin: boolean
   autoFit?: boolean
   loading?: boolean
+  mapSource?: PublicMapTileSource
 }>(), {
   autoFit: true,
   loading: false,
+  mapSource: () => fallbackMapSource,
 })
 
 const emit = defineEmits<{
@@ -29,6 +32,7 @@ const menuX = ref(0)
 const menuY = ref(0)
 const lastRaisedNodeId = ref<string | null>(null)
 let map: L.Map | null = null
+let tileLayer: L.TileLayer | null = null
 let markerLayer: L.LayerGroup | null = null
 const markersByKey = new Map<string, L.Marker>()
 let hasFitBounds = false
@@ -55,13 +59,7 @@ onMounted(async () => {
     maxBoundsViscosity: 1.0,
     worldCopyJump: false,
   }).setView(defaultMapCenter, defaultMapZoom)
-  L.tileLayer('https://tile.openstreetmap.jp/{z}/{x}/{y}.png', {
-    minZoom: minMapZoom,
-    maxZoom: 19,
-    noWrap: true,
-    bounds: worldBounds,
-    attribution: '&copy; OpenStreetMap contributors',
-  }).addTo(map)
+  applyTileLayer()
   map.on('click', () => {
     closeNodeMenu()
     emit('clear-node')
@@ -77,6 +75,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
   map?.remove()
   map = null
+  tileLayer = null
   markerLayer = null
   markersByKey.clear()
 })
@@ -86,6 +85,28 @@ watch(
   () => renderMarkers(false),
   { deep: true },
 )
+
+watch(
+  () => props.mapSource,
+  () => applyTileLayer(),
+  { deep: true },
+)
+
+function applyTileLayer() {
+  if (!map) {
+    return
+  }
+  if (tileLayer) {
+    tileLayer.remove()
+  }
+  tileLayer = L.tileLayer(props.mapSource.url_template, {
+    minZoom: minMapZoom,
+    maxZoom: props.mapSource.max_zoom || fallbackMapSource.max_zoom,
+    noWrap: true,
+    bounds: worldBounds,
+    attribution: props.mapSource.attribution || fallbackMapSource.attribution,
+  }).addTo(map)
+}
 
 function closeNodeMenu() {
   menuNode.value = null

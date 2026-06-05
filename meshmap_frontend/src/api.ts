@@ -18,6 +18,9 @@ import type {
   ListResponse,
   MapBoundsQuery,
   MapReport,
+  MapTileSource,
+  MapTileSourcePayload,
+  MapTileSourceResponse,
   MapViewportResponse,
   MQTTForwarder,
   MQTTForwarderPayload,
@@ -29,6 +32,7 @@ import type {
   NodeBlockingRulePayload,
   NodeInfo,
   PositionRecord,
+  PublicMapTileSourceResponse,
   TelemetryRecord,
   TextMessage,
 } from './types'
@@ -125,6 +129,10 @@ export function getMapReportViewport(bounds: MapBoundsQuery, zoom: number, limit
   return getJSON<MapViewportResponse>(`/api/map-reports/viewport?${params.toString()}`)
 }
 
+export function getDefaultMapSource(): Promise<PublicMapTileSourceResponse> {
+  return getJSON<PublicMapTileSourceResponse>('/api/map-source/default')
+}
+
 export function getTextMessages(limit = 100, offset = 0, nodeId = ''): Promise<ListResponse<TextMessage>> {
   return getJSON<ListResponse<TextMessage>>(listPath('/api/text-messages', limit, offset, nodeId))
 }
@@ -199,6 +207,26 @@ export function updateAdminUserPassword(id: number, password: string): Promise<A
 
 export function getAdminLoginLogs(limit = 100, offset = 0): Promise<AdminLoginLogsResponse> {
   return getJSON<AdminLoginLogsResponse>(`/api/admin/log/login?limit=${limit}&offset=${offset}`)
+}
+
+export function getAdminMapSources(limit = 100, offset = 0): Promise<ListResponse<MapTileSource>> {
+  return getJSON<ListResponse<MapTileSource>>(listPath('/api/admin/map-source', limit, offset))
+}
+
+export function createAdminMapSource(payload: MapTileSourcePayload): Promise<MapTileSourceResponse> {
+  return postJSON<MapTileSourceResponse>('/api/admin/map-source', payload)
+}
+
+export function updateAdminMapSource(id: number, payload: MapTileSourcePayload): Promise<MapTileSourceResponse> {
+  return putJSON<MapTileSourceResponse>(`/api/admin/map-source/${id}`, payload)
+}
+
+export function deleteAdminMapSource(id: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/map-source/${id}`)
+}
+
+export function setDefaultAdminMapSource(id: number): Promise<MapTileSourceResponse> {
+  return postJSON<MapTileSourceResponse>(`/api/admin/map-source/${id}/default`)
 }
 
 export function getNodeBlockingRules(limit = 100, offset = 0): Promise<ListResponse<NodeBlockingRule>> {
