@@ -286,20 +286,19 @@ onMounted(refreshItems)
 
 .map-source-page :deep(input) {
   width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
   padding: 9px 11px;
-  color: #0f172a;
+  color: var(--color-heading);
   font: inherit;
-  background: #fff;
+  background: var(--color-surface);
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .map-source-page :deep(input:focus) {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 .map-source-page :deep(input[type='checkbox']) {
@@ -317,7 +316,7 @@ onMounted(refreshItems)
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  background: linear-gradient(135deg, #ffffff 0%, #eff6ff 100%);
+  background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-surface-soft) 100%);
 }
 
 .hero-copy {
@@ -332,17 +331,17 @@ onMounted(refreshItems)
 
 .hero-stats div {
   min-width: 0;
-  border: 1px solid #dbeafe;
-  border-radius: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: 12px 16px;
   text-align: center;
-  background: rgba(255, 255, 255, 0.78);
+  background: color-mix(in srgb, var(--color-surface) 84%, transparent);
 }
 
 .hero-stats strong {
   display: block;
   overflow: hidden;
-  color: #1d4ed8;
+  color: color-mix(in srgb, var(--color-primary) 72%, var(--color-heading));
   font-size: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -352,7 +351,7 @@ onMounted(refreshItems)
 .source-meta span,
 .template-tip,
 .source-url {
-  color: #64748b;
+  color: var(--color-muted);
   font-size: 13px;
 }
 
@@ -386,7 +385,7 @@ onMounted(refreshItems)
 .field {
   display: grid;
   gap: 6px;
-  color: #334155;
+  color: var(--color-text);
   font-size: 13px;
   font-weight: 700;
 }
@@ -410,13 +409,13 @@ onMounted(refreshItems)
   justify-content: center;
   gap: 8px;
   min-height: 39px;
-  border: 1px solid #dbe4ef;
-  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   padding: 9px 11px;
-  color: #334155;
+  color: var(--color-text);
   font-size: 13px;
   font-weight: 700;
-  background: #f8fafc;
+  background: var(--color-surface-soft);
 }
 
 .template-tip {
@@ -424,26 +423,26 @@ onMounted(refreshItems)
 }
 
 .map-source-card {
-  border: 1px solid #dbe4ef;
-  border-radius: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   padding: 1rem;
   margin-top: 1rem;
-  background: #fff;
-  box-shadow: inset 4px 0 0 #dbeafe;
+  background: var(--color-surface);
+  box-shadow: inset 4px 0 0 var(--color-primary-soft);
 }
 
 .map-source-card.default {
-  box-shadow: inset 4px 0 0 #22c55e;
+  box-shadow: inset 4px 0 0 var(--color-success);
 }
 
 .map-source-card.disabled {
-  background: #f8fafc;
-  box-shadow: inset 4px 0 0 #cbd5e1;
+  background: var(--color-surface-soft);
+  box-shadow: inset 4px 0 0 var(--color-border-strong);
 }
 
 .source-title-row h3 {
   margin: 0;
-  color: #0f172a;
+  color: var(--color-heading);
   font-size: 18px;
 }
 
@@ -451,26 +450,26 @@ onMounted(refreshItems)
   max-width: 860px;
   margin: 6px 0 0;
   overflow-wrap: anywhere;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .status-pill {
   border-radius: 999px;
   padding: 7px 12px;
-  color: #1d4ed8;
+  color: color-mix(in srgb, var(--color-primary) 72%, var(--color-heading));
   font-size: 13px;
   font-weight: 800;
-  background: #dbeafe;
+  background: var(--color-primary-soft);
 }
 
 .status-pill.ok {
-  color: #166534;
-  background: #dcfce7;
+  color: color-mix(in srgb, var(--color-success) 72%, var(--color-heading));
+  background: var(--color-success-soft);
 }
 
 .status-pill.disabled {
-  color: #475569;
-  background: #e2e8f0;
+  color: var(--color-muted);
+  background: var(--color-surface-muted);
 }
 
 .source-edit-grid {
@@ -487,16 +486,16 @@ onMounted(refreshItems)
 
 .source-meta div {
   min-width: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
-  background: #f8fafc;
+  background: var(--color-surface-soft);
 }
 
 .source-meta strong {
   display: block;
   margin-top: 3px;
   overflow-wrap: anywhere;
-  color: #0f172a;
+  color: var(--color-heading);
 }
 
 .actions {
@@ -504,12 +503,12 @@ onMounted(refreshItems)
 }
 
 .empty-state {
-  border: 1px dashed #cbd5e1;
-  border-radius: 16px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
   padding: 24px;
-  color: #64748b;
+  color: var(--color-muted);
   text-align: center;
-  background: #f8fafc;
+  background: var(--color-surface-soft);
 }
 
 @media (max-width: 1100px) {

@@ -56,10 +56,10 @@ function renderTrajectory() {
   }
 
   if (points.length > 1) {
-    L.polyline(points, { color: '#2563eb', weight: 4, opacity: 0.8 }).addTo(layer)
+    L.polyline(points, { color: '#7d8f9a', weight: 4, opacity: 0.78 }).addTo(layer)
   }
-  L.circleMarker(points[0], { radius: 6, color: '#16a34a', fillColor: '#22c55e', fillOpacity: 0.9 }).bindPopup('起点').addTo(layer)
-  L.circleMarker(points[points.length - 1], { radius: 6, color: '#dc2626', fillColor: '#ef4444', fillOpacity: 0.9 }).bindPopup('终点').addTo(layer)
+  L.circleMarker(points[0], { radius: 6, color: '#7f9183', fillColor: '#9aaa95', fillOpacity: 0.88 }).bindPopup('起点').addTo(layer)
+  L.circleMarker(points[points.length - 1], { radius: 6, color: '#b4877f', fillColor: '#c59b93', fillOpacity: 0.88 }).bindPopup('终点').addTo(layer)
   map.fitBounds(L.latLngBounds(points), { padding: [24, 24], maxZoom: 14 })
 }
 

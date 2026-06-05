@@ -370,15 +370,15 @@ function nodeColor(nodeId: string): string {
   }
 
   const hueRanges = [
-    [35, 75],
-    [95, 165],
-    [185, 250],
-    [265, 315],
+    [42, 68],
+    [92, 136],
+    [188, 218],
+    [330, 354],
   ]
   const range = hueRanges[hash % hueRanges.length]
   const hue = range[0] + (hash % (range[1] - range[0]))
-  const saturation = 68 + (hash % 18)
-  const lightness = 32 + (hash % 10)
+  const saturation = 24 + (hash % 14)
+  const lightness = 42 + (hash % 12)
   return `hsl(${hue} ${saturation}% ${lightness}%)`
 }
 
