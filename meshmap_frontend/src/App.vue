@@ -381,10 +381,12 @@ onBeforeUnmount(() => {
           <a class="topbar-link" href="/admin">管理</a>
         </template>
         <template v-else>
-          <a class="topbar-link" href="/help">使用帮助</a>
+          
           <span class="counter">节点 {{ nodeTotal }} · 已加载消息 {{ messages.length }} · 坐标 {{ mapItems.length }} / {{ mapReportTotal }}{{ mapViewportMode === 'clusters' ? ' · 已聚合' : '' }}{{ mapReportsLoading ? ' · 坐标加载中...' : '' }}</span>
+          <a class="topbar-link" href="/help">使用帮助</a>
           <a class="topbar-link" href="/admin">管理</a>
           <button @click="() => refresh()" :disabled="loading">{{ loading ? '刷新中...' : '刷新' }}</button>
+          
         </template>
       </div>
     </header>
