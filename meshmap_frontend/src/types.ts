@@ -10,6 +10,26 @@ export interface HealthStatus {
   database: string
 }
 
+export interface HelpContent {
+  id: number | null
+  markdown: string
+  html: string
+  created_by: string
+  created_at: string | null
+}
+
+export interface HelpContentResponse {
+  item: HelpContent
+}
+
+export interface HelpContentPayload {
+  markdown: string
+}
+
+export interface HelpPreviewResponse {
+  html: string
+}
+
 export interface NodeInfo {
   node_id: string
   node_num: number

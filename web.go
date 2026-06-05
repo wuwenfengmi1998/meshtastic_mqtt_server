@@ -72,6 +72,7 @@ func registerAPIRoutes(r gin.IRouter, store *store) {
 	registerNodeInfoRoutes(r, store, "/nodeinfo")
 	registerNodeInfoRoutes(r, store, "/nodes")
 	registerMapReportRoutes(r, store)
+	registerHelpRoutes(r, store)
 	r.GET("/text-messages", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
 		if !ok {
@@ -184,6 +185,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 	protected.Use(requireAdmin(sessions))
 	registerAdminBlockingRoutes(protected, store, blocking)
 	registerAdminMQTTForwardRoutes(protected, store, forwarder)
+	registerAdminHelpRoutes(protected, store)
 	protected.GET("/me", func(c *gin.Context) {
 		claims := c.MustGet("admin_claims").(*sessionClaims)
 		c.JSON(http.StatusOK, gin.H{"user": adminUserDTO{Username: claims.Username, Role: claims.Role}})

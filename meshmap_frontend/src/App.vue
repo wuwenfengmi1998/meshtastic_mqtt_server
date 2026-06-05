@@ -4,6 +4,7 @@ import { adminLogout, createNodeBlockingRule, deleteNode, deleteTextMessage, get
 import AdminBlockingManagement from './components/AdminBlockingManagement.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
 import AdminDiscardDetails from './components/AdminDiscardDetails.vue'
+import AdminHelpEdit from './components/AdminHelpEdit.vue'
 import AdminLogin from './components/AdminLogin.vue'
 import AdminLoginLogs from './components/AdminLoginLogs.vue'
 import AdminMqttForward from './components/AdminMqttForward.vue'
@@ -457,6 +458,7 @@ onBeforeUnmount(() => {
             <a href="/admin/users" :class="{ active: adminPath === '/admin/users' }">用户管理</a>
             <a href="/admin/blocking_management" :class="{ active: adminPath === '/admin/blocking_management' }">屏蔽管理</a>
             <a href="/admin/mqtt_forward/" :class="{ active: isMqttForwardAdminPage }">MQTT转发</a>
+            <a href="/admin/help_edit" :class="{ active: adminPath === '/admin/help_edit' }">帮助编辑</a>
             <a href="/admin/log/login" :class="{ active: adminPath === '/admin/log/login' }">登录日志</a>
             <a href="/admin/discard_details" :class="{ active: adminPath === '/admin/discard_details' }">丢弃数据</a>
           </nav>
@@ -495,6 +497,7 @@ onBeforeUnmount(() => {
         <AdminUsers v-if="adminPath === '/admin/users'" :user="adminUser" />
         <AdminBlockingManagement v-else-if="adminPath === '/admin/blocking_management'" />
         <AdminMqttForward v-else-if="isMqttForwardAdminPage" />
+        <AdminHelpEdit v-else-if="adminPath === '/admin/help_edit'" />
         <AdminLoginLogs v-else-if="adminPath === '/admin/log/login'" />
         <AdminDiscardDetails v-else-if="adminPath === '/admin/discard_details'" />
         <AdminDashboard v-else />

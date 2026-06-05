@@ -9,6 +9,8 @@ import type {
   ForbiddenWordBlockingRule,
   ForbiddenWordBlockingRulePayload,
   HealthStatus,
+  HelpContentResponse,
+  HelpPreviewResponse,
   IPBlockingRule,
   IPBlockingRulePayload,
   ListResponse,
@@ -80,6 +82,10 @@ function deleteJSON<T>(path: string): Promise<T> {
 
 export function getHealth(): Promise<HealthStatus> {
   return getJSON<HealthStatus>('/api/health')
+}
+
+export function getHelpContent(): Promise<HelpContentResponse> {
+  return getJSON<HelpContentResponse>('/api/help')
 }
 
 export function getNodeInfo(limit = 500, offset = 0): Promise<ListResponse<NodeInfo>> {
@@ -155,6 +161,18 @@ export function getAdminMe(): Promise<AdminLoginResponse> {
 
 export function getAdminMqttStatus(): Promise<AdminMqttStatus> {
   return getJSON<AdminMqttStatus>('/api/admin/mqtt/status')
+}
+
+export function getAdminHelpContent(): Promise<HelpContentResponse> {
+  return getJSON<HelpContentResponse>('/api/admin/help')
+}
+
+export function saveAdminHelpContent(markdown: string): Promise<HelpContentResponse> {
+  return postJSON<HelpContentResponse>('/api/admin/help', { markdown })
+}
+
+export function previewAdminHelpContent(markdown: string): Promise<HelpPreviewResponse> {
+  return postJSON<HelpPreviewResponse>('/api/admin/help/preview', { markdown })
 }
 
 export function getAdminUsers(): Promise<AdminUsersResponse> {

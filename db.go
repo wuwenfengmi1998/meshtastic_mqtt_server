@@ -91,6 +91,17 @@ func (loginLogRecord) TableName() string {
 	return "login_log"
 }
 
+type helpContentRecord struct {
+	ID        uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	Markdown  string    `gorm:"column:markdown;type:text;not null"`
+	CreatedBy string    `gorm:"column:created_by;index"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime;index"`
+}
+
+func (helpContentRecord) TableName() string {
+	return "help_content"
+}
+
 type discardDetailsRecord struct {
 	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Topic          string    `gorm:"column:topic"`
@@ -389,6 +400,7 @@ func (s *store) migrate() error {
 		}{
 			{label: "users", model: &userRecord{}},
 			{label: "login_log", model: &loginLogRecord{}},
+			{label: "help_content", model: &helpContentRecord{}},
 			{label: "discard_details", model: &discardDetailsRecord{}},
 			{label: "node_blocking", model: &nodeBlockingRecord{}},
 			{label: "ip_blocking", model: &ipBlockingRecord{}},
