@@ -220,6 +220,7 @@ export interface AdminMqttStatus {
   messages_received: number
   messages_sent: number
   messages_dropped: number
+  db_write_queue_length: number
   retained: number
   inflight: number
   inflight_dropped: number

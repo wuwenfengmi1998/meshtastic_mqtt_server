@@ -13,6 +13,7 @@ type mqttRuntimeStatus struct {
 	address string
 	tls     bool
 	stats   *meshtasticMessageStats
+	dbQueue *dbWriteQueue
 }
 
 type adminMqttStatus struct {
@@ -31,6 +32,7 @@ type adminMqttStatus struct {
 	MessagesReceived    int64             `json:"messages_received"`
 	MessagesSent        int64             `json:"messages_sent"`
 	MessagesDropped     int64             `json:"messages_dropped"`
+	DBWriteQueueLength  int               `json:"db_write_queue_length"`
 	Retained            int64             `json:"retained"`
 	Inflight            int64             `json:"inflight"`
 	InflightDropped     int64             `json:"inflight_dropped"`
@@ -51,7 +53,7 @@ type adminMqttClient struct {
 
 func (m mqttRuntimeStatus) Status() adminMqttStatus {
 	if m.server == nil || m.server.Info == nil {
-		return adminMqttStatus{Running: false, Address: m.address, TLS: m.tls}
+		return adminMqttStatus{Running: false, Address: m.address, TLS: m.tls, DBWriteQueueLength: m.dbQueue.Len()}
 	}
 	info := m.server.Info.Clone()
 	status := adminMqttStatus{
@@ -70,6 +72,7 @@ func (m mqttRuntimeStatus) Status() adminMqttStatus {
 		MessagesReceived:    info.MessagesReceived,
 		MessagesSent:        m.stats.Forwarded(),
 		MessagesDropped:     m.stats.Dropped(),
+		DBWriteQueueLength:  m.dbQueue.Len(),
 		Retained:            info.Retained,
 		Inflight:            info.Inflight,
 		InflightDropped:     info.InflightDropped,

@@ -36,7 +36,7 @@ const (
 type meshtasticFilterHook struct {
 	mqtt.HookBase
 	key      []byte
-	store    *store
+	dbQueue  *dbWriteQueue
 	stats    *meshtasticMessageStats
 	blocking *blockingCache
 }
@@ -77,50 +77,7 @@ func (h *meshtasticFilterHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (pa
 	}
 	h.stats.IncForwarded()
 
-	switch record["type"] {
-	case "nodeinfo":
-		if h.store != nil {
-			if err := h.store.UpsertNodeInfo(record); err != nil {
-				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
-			}
-		}
-	case "map_report":
-		if h.store != nil {
-			if err := h.store.UpsertMapReport(record); err != nil {
-				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
-			}
-		}
-	case "text_message":
-		if h.store != nil {
-			if err := h.store.InsertTextMessage(record, mqttClientInfoFromClient(cl)); err != nil {
-				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
-			}
-		}
-	case "position":
-		if h.store != nil {
-			if err := h.store.InsertPosition(record, mqttClientInfoFromClient(cl)); err != nil {
-				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
-			}
-		}
-	case "telemetry":
-		if h.store != nil {
-			if err := h.store.InsertTelemetry(record, mqttClientInfoFromClient(cl)); err != nil {
-				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
-			}
-		}
-	case "routing":
-		if h.store != nil {
-			if err := h.store.InsertRouting(record, mqttClientInfoFromClient(cl)); err != nil {
-				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
-			}
-		}
-	case "traceroute":
-		if h.store != nil {
-			if err := h.store.InsertTraceroute(record, mqttClientInfoFromClient(cl)); err != nil {
-				printJSON(map[string]any{"event": "db_error", "type": record["type"], "from": record["from"], "error": err.Error()})
-			}
-		}
-	}
+	h.dbQueue.EnqueueRecord(record, mqttClientInfoFromClient(cl))
 	if record["type"] != "empty_packet" {
 		printJSON(record)
 	}
@@ -131,11 +88,11 @@ func (h *meshtasticFilterHook) rejectPublish(cl *mqtt.Client, pk packets.Packet,
 	if h.stats != nil {
 		h.stats.IncDropped()
 	}
-	if h.store != nil {
-		if err := h.store.InsertDiscardDetails(record, pk.Payload, mqttClientInfoFromClient(cl)); err != nil {
-			printJSON(map[string]any{"event": "db_error", "type": "discard_details", "topic": pk.TopicName, "error": err.Error()})
-		}
+	if record == nil {
+		record = map[string]any{}
 	}
+	record["topic"] = pk.TopicName
+	h.dbQueue.EnqueueDiscard(record, pk.Payload, mqttClientInfoFromClient(cl))
 }
 
 func blockingViolationForRecord(blocking *blockingCache, record map[string]any) map[string]any {
@@ -246,6 +203,8 @@ func run(cfg *config) error {
 		return err
 	}
 	defer store.Close()
+	dbQueue := newDBWriteQueue(store)
+	defer dbQueue.Close()
 	if err := store.EnsureDefaultAdmin(cfg.Web.Admin.Username, cfg.Web.Admin.Password); err != nil {
 		return err
 	}
@@ -256,7 +215,7 @@ func run(cfg *config) error {
 	}
 
 	messageStats := &meshtasticMessageStats{}
-	server, mqttAddr, err := startMQTTServer(cfg, store, messageStats, blocking)
+	server, mqttAddr, err := startMQTTServer(cfg, dbQueue, messageStats, blocking)
 	if err != nil {
 		return err
 	}
@@ -268,7 +227,7 @@ func run(cfg *config) error {
 		if err != nil {
 			return err
 		}
-		mqttStatus := mqttRuntimeStatus{server: server, address: mqttAddr, tls: cfg.MQTT.TLS.Enabled, stats: messageStats}
+		mqttStatus := mqttRuntimeStatus{server: server, address: mqttAddr, tls: cfg.MQTT.TLS.Enabled, stats: messageStats, dbQueue: dbQueue}
 		httpServer = newHTTPServer(cfg.Web, store, sessions, mqttStatus, blocking)
 		webAddress := httpServer.Addr
 		go func() {
@@ -310,12 +269,12 @@ func run(cfg *config) error {
 	return runErr
 }
 
-func startMQTTServer(cfg *config, store *store, stats *meshtasticMessageStats, blocking *blockingCache) (*mqtt.Server, string, error) {
+func startMQTTServer(cfg *config, dbQueue *dbWriteQueue, stats *meshtasticMessageStats, blocking *blockingCache) (*mqtt.Server, string, error) {
 	server := mqtt.New(nil)
 	if err := server.AddHook(new(auth.AllowHook), nil); err != nil {
 		return nil, "", err
 	}
-	if err := server.AddHook(&meshtasticFilterHook{key: cfg.key, store: store, stats: stats, blocking: blocking}, nil); err != nil {
+	if err := server.AddHook(&meshtasticFilterHook{key: cfg.key, dbQueue: dbQueue, stats: stats, blocking: blocking}, nil); err != nil {
 		return nil, "", err
 	}
 

@@ -62,6 +62,7 @@ onBeforeUnmount(() => {
         <div><span>当前连接</span><strong>{{ status.clients_connected }}</strong></div>
         <div><span>订阅数</span><strong>{{ status.subscriptions }}</strong></div>
         <div><span>转发消息</span><strong>{{ status.messages_sent }}</strong></div>
+        <div><span>数据库队列</span><strong>{{ status.db_write_queue_length }}</strong></div>
         <a class="status-card-link" href="/admin/discard_details"><span>丢弃消息</span><strong>{{ status.messages_dropped }}</strong></a>
         <div><span>收到包</span><strong>{{ status.packets_received }}</strong></div>
         <div><span>发送包</span><strong>{{ status.packets_sent }}</strong></div>
