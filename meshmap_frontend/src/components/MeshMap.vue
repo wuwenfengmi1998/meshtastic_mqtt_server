@@ -201,12 +201,13 @@ function renderMarkers(forceFit: boolean) {
     }
 
     const node = item
-    const selected = node.node_id === props.selectedNodeId
-    const overlapGroupKey = nodeOverlapGroupKey(node)
+    const rawSelected = node.node_id === props.selectedNodeId
+    const shuffledSelected = rawSelected && shuffledSelectedNodeIds.has(node.node_id)
+    const selected = rawSelected && !shuffledSelected
+    const overlapGroupKey = nodeOverlapGroupKey(node, overlapGroups)
     const overlapGroup = overlapGroupKey ? overlapGroups.get(overlapGroupKey) : undefined
     const overlapIndex = overlapGroup ? nodeOverlapIndex(node, overlapGroup) : 0
-    const shuffledSelected = selected && shuffledSelectedNodeIds.has(node.node_id)
-    const raised = !shuffledSelected && (selected || node.node_id === lastRaisedNodeId.value)
+    const raised = selected || node.node_id === lastRaisedNodeId.value
     const zIndexOffset = raised ? 1000 : overlapIndex
     const nodeIcon = L.divIcon({
       className: `node-marker${selected ? ' selected' : ''}`,
@@ -248,6 +249,7 @@ function renderMarkers(forceFit: boolean) {
         if (moveSelectedNodeBehindOverlap(node, overlapGroups)) {
           shuffledSelectedNodeIds.add(node.node_id)
           marker?.closePopup()
+          emit('clear-node')
           renderMarkers(false)
         }
         return
@@ -258,7 +260,7 @@ function renderMarkers(forceFit: boolean) {
     })
     marker.on('contextmenu', (event) => openNodeMenu(node, event))
 
-    if (selected && !shuffledSelected && !marker.getPopup()?.isOpen()) {
+    if (selected && !marker.getPopup()?.isOpen()) {
       marker.openPopup()
     }
     bounds.extend([node.latitude, node.longitude])
@@ -286,36 +288,55 @@ function mapMarkerKey(item: MapRenderable): string {
 
 function buildOverlapGroups(items: MapRenderable[]): Map<string, string[]> {
   const groups = new Map<string, string[]>()
-  for (const item of items) {
-    if (item.type === 'cluster') {
-      continue
-    }
-    const key = nodeOverlapGroupKey(item)
-    const group = groups.get(key)
-    if (group) {
-      group.push(item.node_id)
-    } else {
-      groups.set(key, [item.node_id])
-    }
+  if (!map) {
+    return groups
   }
 
-  for (const [key, nodeIds] of groups) {
-    if (nodeIds.length < 2) {
-      groups.delete(key)
-      overlapShuffleOrders.delete(key)
+  const capsules = items
+    .filter((item): item is MapNode => item.type !== 'cluster')
+    .map((node) => ({ node, bounds: nodeCapsuleBounds(node) }))
+  const visited = new Set<string>()
+
+  for (const capsule of capsules) {
+    if (visited.has(capsule.node.node_id)) {
       continue
     }
 
-    const existingOrder = overlapShuffleOrders.get(key) ?? []
-    const activeIds = new Set(nodeIds)
-    const ordered = existingOrder.filter((nodeId) => activeIds.has(nodeId))
-    for (const nodeId of nodeIds) {
-      if (!ordered.includes(nodeId)) {
-        ordered.push(nodeId)
+    const stack = [capsule]
+    const group: string[] = []
+    visited.add(capsule.node.node_id)
+
+    while (stack.length > 0) {
+      const current = stack.pop()
+      if (!current) {
+        continue
+      }
+      group.push(current.node.node_id)
+
+      for (const candidate of capsules) {
+        if (visited.has(candidate.node.node_id)) {
+          continue
+        }
+        if (capsuleBoundsOverlap(current.bounds, candidate.bounds)) {
+          visited.add(candidate.node.node_id)
+          stack.push(candidate)
+        }
       }
     }
-    overlapShuffleOrders.set(key, ordered)
-    groups.set(key, ordered)
+
+    if (group.length >= 2) {
+      const key = overlapGroupKey(group)
+      const existingOrder = overlapShuffleOrders.get(key) ?? []
+      const activeIds = new Set(group)
+      const ordered = existingOrder.filter((nodeId) => activeIds.has(nodeId))
+      for (const nodeId of group) {
+        if (!ordered.includes(nodeId)) {
+          ordered.push(nodeId)
+        }
+      }
+      overlapShuffleOrders.set(key, ordered)
+      groups.set(key, ordered)
+    }
   }
 
   for (const key of overlapShuffleOrders.keys()) {
@@ -327,8 +348,13 @@ function buildOverlapGroups(items: MapRenderable[]): Map<string, string[]> {
   return groups
 }
 
-function nodeOverlapGroupKey(node: MapNode): string {
-  return `${node.latitude.toFixed(6)}:${node.longitude.toFixed(6)}`
+function nodeOverlapGroupKey(node: MapNode, overlapGroups: Map<string, string[]>): string | null {
+  for (const [key, nodeIds] of overlapGroups) {
+    if (nodeIds.includes(node.node_id)) {
+      return key
+    }
+  }
+  return null
 }
 
 function nodeOverlapIndex(node: MapNode, group: string[]): number {
@@ -337,7 +363,10 @@ function nodeOverlapIndex(node: MapNode, group: string[]): number {
 }
 
 function moveSelectedNodeBehindOverlap(node: MapNode, overlapGroups: Map<string, string[]>): boolean {
-  const groupKey = nodeOverlapGroupKey(node)
+  const groupKey = nodeOverlapGroupKey(node, overlapGroups)
+  if (!groupKey) {
+    return false
+  }
   const group = overlapGroups.get(groupKey)
   if (!group || group.length < 2) {
     return false
@@ -347,6 +376,34 @@ function moveSelectedNodeBehindOverlap(node: MapNode, overlapGroups: Map<string,
   overlapShuffleOrders.set(groupKey, nextOrder)
   lastRaisedNodeId.value = null
   return true
+}
+
+function overlapGroupKey(nodeIds: string[]): string {
+  return [...nodeIds].sort().join('|')
+}
+
+function nodeCapsuleBounds(node: MapNode): { left: number; right: number; top: number; bottom: number } {
+  const point = map!.latLngToLayerPoint([node.latitude, node.longitude])
+  const width = nodeCapsuleWidth(node)
+  const height = 22
+  return {
+    left: point.x - width / 2,
+    right: point.x + width / 2,
+    top: point.y - height / 2,
+    bottom: point.y + height / 2,
+  }
+}
+
+function nodeCapsuleWidth(node: MapNode): number {
+  const label = node.label || 'N'
+  return Math.max(34, Math.ceil(label.length * 6 + 10))
+}
+
+function capsuleBoundsOverlap(
+  left: { left: number; right: number; top: number; bottom: number },
+  right: { left: number; right: number; top: number; bottom: number },
+): boolean {
+  return left.left <= right.right && left.right >= right.left && left.top <= right.bottom && left.bottom >= right.top
 }
 
 function buildClusterMarker(cluster: MapClusterNode): L.Marker {
