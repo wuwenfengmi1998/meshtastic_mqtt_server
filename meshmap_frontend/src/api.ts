@@ -15,6 +15,12 @@ import type {
   MapBoundsQuery,
   MapReport,
   MapViewportResponse,
+  MQTTForwarder,
+  MQTTForwarderPayload,
+  MQTTForwardMutationResponse,
+  MQTTForwardStatusResponse,
+  MQTTForwardTopic,
+  MQTTForwardTopicPayload,
   NodeBlockingRule,
   NodeBlockingRulePayload,
   NodeInfo,
@@ -213,4 +219,44 @@ export function updateForbiddenWordBlockingRule(id: number, payload: ForbiddenWo
 
 export function deleteForbiddenWordBlockingRule(id: number): Promise<{ status: string }> {
   return deleteJSON<{ status: string }>(`/api/admin/blocking/words/${id}`)
+}
+
+export function getMQTTForwarders(limit = 100, offset = 0): Promise<ListResponse<MQTTForwarder>> {
+  return getJSON<ListResponse<MQTTForwarder>>(listPath('/api/admin/mqtt-forward/forwarders', limit, offset))
+}
+
+export function createMQTTForwarder(payload: MQTTForwarderPayload): Promise<MQTTForwardMutationResponse<MQTTForwarder>> {
+  return postJSON<MQTTForwardMutationResponse<MQTTForwarder>>('/api/admin/mqtt-forward/forwarders', payload)
+}
+
+export function updateMQTTForwarder(id: number, payload: MQTTForwarderPayload): Promise<MQTTForwardMutationResponse<MQTTForwarder>> {
+  return putJSON<MQTTForwardMutationResponse<MQTTForwarder>>(`/api/admin/mqtt-forward/forwarders/${id}`, payload)
+}
+
+export function deleteMQTTForwarder(id: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/mqtt-forward/forwarders/${id}`)
+}
+
+export function restartMQTTForwarder(id: number): Promise<{ status: string }> {
+  return postJSON<{ status: string }>(`/api/admin/mqtt-forward/forwarders/${id}/restart`)
+}
+
+export function getMQTTForwardTopics(forwarderId: number, limit = 100, offset = 0): Promise<ListResponse<MQTTForwardTopic>> {
+  return getJSON<ListResponse<MQTTForwardTopic>>(listPath(`/api/admin/mqtt-forward/forwarders/${forwarderId}/topics`, limit, offset))
+}
+
+export function createMQTTForwardTopic(forwarderId: number, payload: MQTTForwardTopicPayload): Promise<MQTTForwardMutationResponse<MQTTForwardTopic>> {
+  return postJSON<MQTTForwardMutationResponse<MQTTForwardTopic>>(`/api/admin/mqtt-forward/forwarders/${forwarderId}/topics`, payload)
+}
+
+export function updateMQTTForwardTopic(id: number, payload: MQTTForwardTopicPayload): Promise<MQTTForwardMutationResponse<MQTTForwardTopic>> {
+  return putJSON<MQTTForwardMutationResponse<MQTTForwardTopic>>(`/api/admin/mqtt-forward/topics/${id}`, payload)
+}
+
+export function deleteMQTTForwardTopic(id: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/mqtt-forward/topics/${id}`)
+}
+
+export function getMQTTForwardStatus(): Promise<MQTTForwardStatusResponse> {
+  return getJSON<MQTTForwardStatusResponse>('/api/admin/mqtt-forward/status')
 }

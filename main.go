@@ -219,6 +219,12 @@ func run(cfg *config) error {
 	if err != nil {
 		return err
 	}
+	forwardManager := newMQTTForwardManager(store)
+	if err := forwardManager.StartFromStore(); err != nil {
+		server.Close()
+		return err
+	}
+	defer forwardManager.StopAll()
 
 	var httpServer *http.Server
 	errCh := make(chan error, 1)
@@ -228,7 +234,7 @@ func run(cfg *config) error {
 			return err
 		}
 		mqttStatus := mqttRuntimeStatus{server: server, address: mqttAddr, tls: cfg.MQTT.TLS.Enabled, stats: messageStats, dbQueue: dbQueue}
-		httpServer = newHTTPServer(cfg.Web, store, sessions, mqttStatus, blocking)
+		httpServer = newHTTPServer(cfg.Web, store, sessions, mqttStatus, blocking, forwardManager)
 		webAddress := httpServer.Addr
 		go func() {
 			if cfg.Web.SocketPath != "" {

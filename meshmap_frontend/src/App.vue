@@ -6,6 +6,7 @@ import AdminDashboard from './components/AdminDashboard.vue'
 import AdminDiscardDetails from './components/AdminDiscardDetails.vue'
 import AdminLogin from './components/AdminLogin.vue'
 import AdminLoginLogs from './components/AdminLoginLogs.vue'
+import AdminMqttForward from './components/AdminMqttForward.vue'
 import AdminUsers from './components/AdminUsers.vue'
 import ChatPanel from './components/ChatPanel.vue'
 import ConfirmDeleteModal from './components/ConfirmDeleteModal.vue'
@@ -18,6 +19,7 @@ import type { AdminUser, HealthStatus, MapBoundsChangePayload, MapBoundsQuery, M
 const currentPath = window.location.pathname
 const adminPath = currentPath
 const isAdminPage = adminPath.startsWith('/admin')
+const isMqttForwardAdminPage = adminPath === '/admin/mqtt_forward' || adminPath === '/admin/mqtt_forward/'
 const detailMatch = currentPath.match(/^\/detailed\/(.+)$/)
 const detailedNodeId = detailMatch ? decodeURIComponent(detailMatch[1]) : ''
 const isDetailedPage = !!detailedNodeId
@@ -454,6 +456,7 @@ onBeforeUnmount(() => {
             <a href="/admin" :class="{ active: adminPath === '/admin' }">服务状态</a>
             <a href="/admin/users" :class="{ active: adminPath === '/admin/users' }">用户管理</a>
             <a href="/admin/blocking_management" :class="{ active: adminPath === '/admin/blocking_management' }">屏蔽管理</a>
+            <a href="/admin/mqtt_forward/" :class="{ active: isMqttForwardAdminPage }">MQTT转发</a>
             <a href="/admin/log/login" :class="{ active: adminPath === '/admin/log/login' }">登录日志</a>
             <a href="/admin/discard_details" :class="{ active: adminPath === '/admin/discard_details' }">丢弃数据</a>
           </nav>
@@ -491,6 +494,7 @@ onBeforeUnmount(() => {
         </div>
         <AdminUsers v-if="adminPath === '/admin/users'" :user="adminUser" />
         <AdminBlockingManagement v-else-if="adminPath === '/admin/blocking_management'" />
+        <AdminMqttForward v-else-if="isMqttForwardAdminPage" />
         <AdminLoginLogs v-else-if="adminPath === '/admin/log/login'" />
         <AdminDiscardDetails v-else-if="adminPath === '/admin/discard_details'" />
         <AdminDashboard v-else />

@@ -153,6 +153,48 @@ func (forbiddenWordBlockingRecord) TableName() string {
 	return "forbidden_word_blocking"
 }
 
+type mqttForwarderRecord struct {
+	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	Name           string    `gorm:"column:name;not null;uniqueIndex"`
+	Enabled        bool      `gorm:"column:enabled;not null;index"`
+	SourceHost     string    `gorm:"column:source_host;not null"`
+	SourcePort     int       `gorm:"column:source_port;not null"`
+	SourceUsername string    `gorm:"column:source_username"`
+	SourcePassword string    `gorm:"column:source_password"`
+	SourceClientID string    `gorm:"column:source_client_id"`
+	SourceTLS      bool      `gorm:"column:source_tls;not null"`
+	TargetHost     string    `gorm:"column:target_host;not null"`
+	TargetPort     int       `gorm:"column:target_port;not null"`
+	TargetUsername string    `gorm:"column:target_username"`
+	TargetPassword string    `gorm:"column:target_password"`
+	TargetClientID string    `gorm:"column:target_client_id"`
+	TargetTLS      bool      `gorm:"column:target_tls;not null"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt      time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (mqttForwarderRecord) TableName() string {
+	return "mqtt_forwarders"
+}
+
+type mqttForwardTopicRecord struct {
+	ID           uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	ForwarderID  uint64    `gorm:"column:forwarder_id;not null;index;uniqueIndex:idx_mqtt_forward_topic_unique,priority:1"`
+	Topic        string    `gorm:"column:topic;not null;uniqueIndex:idx_mqtt_forward_topic_unique,priority:2"`
+	Enabled      bool      `gorm:"column:enabled;not null;index"`
+	Direction    string    `gorm:"column:direction;not null;index"`
+	SourcePrefix string    `gorm:"column:source_prefix"`
+	TargetPrefix string    `gorm:"column:target_prefix"`
+	QoS          int       `gorm:"column:qos;not null"`
+	Retain       bool      `gorm:"column:retain;not null"`
+	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (mqttForwardTopicRecord) TableName() string {
+	return "mqtt_forward_topics"
+}
+
 type nodeInfoRecord struct {
 	NodeID      string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum     int64     `gorm:"column:node_num;not null;index"`
@@ -351,6 +393,8 @@ func (s *store) migrate() error {
 			{label: "node_blocking", model: &nodeBlockingRecord{}},
 			{label: "ip_blocking", model: &ipBlockingRecord{}},
 			{label: "forbidden_word_blocking", model: &forbiddenWordBlockingRecord{}},
+			{label: "mqtt_forwarders", model: &mqttForwarderRecord{}},
+			{label: "mqtt_forward_topics", model: &mqttForwardTopicRecord{}},
 			{label: "nodeinfo", model: &nodeInfoRecord{}},
 			{label: "map_report", model: &mapReportRecord{}},
 			{label: "text_message", model: &textMessageRecord{}},

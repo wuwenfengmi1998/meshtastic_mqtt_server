@@ -14,10 +14,10 @@ import (
 	"gorm.io/gorm"
 )
 
-func newHTTPServer(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache) *http.Server {
+func newHTTPServer(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache, forwarder mqttForwardReloader) *http.Server {
 	return &http.Server{
 		Addr:    net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
-		Handler: newRouter(cfg, store, sessions, mqttStatus, blocking),
+		Handler: newRouter(cfg, store, sessions, mqttStatus, blocking, forwarder),
 	}
 }
 
@@ -47,12 +47,12 @@ func serveHTTPUnixSocket(server *http.Server, socketPath string) error {
 	return server.Serve(listener)
 }
 
-func newRouter(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache) *gin.Engine {
+func newRouter(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache, forwarder mqttForwardReloader) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	api := r.Group("/api")
 	registerAPIRoutes(api, store)
-	registerAdminRoutes(api.Group("/admin"), store, sessions, mqttStatus, blocking)
+	registerAdminRoutes(api.Group("/admin"), store, sessions, mqttStatus, blocking, forwarder)
 	registerStaticRoutes(r, cfg.StaticDir)
 	return r
 }
@@ -122,7 +122,7 @@ func registerAPIRoutes(r gin.IRouter, store *store) {
 	})
 }
 
-func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache) {
+func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache, forwarder mqttForwardReloader) {
 	type loginRequest struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -183,6 +183,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 	protected := r.Group("")
 	protected.Use(requireAdmin(sessions))
 	registerAdminBlockingRoutes(protected, store, blocking)
+	registerAdminMQTTForwardRoutes(protected, store, forwarder)
 	protected.GET("/me", func(c *gin.Context) {
 		claims := c.MustGet("admin_claims").(*sessionClaims)
 		c.JSON(http.StatusOK, gin.H{"user": adminUserDTO{Username: claims.Username, Role: claims.Role}})

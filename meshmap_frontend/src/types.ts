@@ -285,3 +285,87 @@ export interface ForbiddenWordBlockingRulePayload {
 export interface BlockingRuleResponse<T> {
   item: T
 }
+
+export type MQTTForwardDirection = 'source_to_target' | 'bidirectional'
+
+export interface MQTTForwarder {
+  id: number
+  name: string
+  enabled: boolean
+  source_host: string
+  source_port: number
+  source_username: string
+  source_password_set: boolean
+  source_client_id: string
+  source_tls: boolean
+  target_host: string
+  target_port: number
+  target_username: string
+  target_password_set: boolean
+  target_client_id: string
+  target_tls: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface MQTTForwarderPayload {
+  name: string
+  enabled: boolean
+  source_host: string
+  source_port: number
+  source_username: string
+  source_password?: string
+  source_password_clear?: boolean
+  source_client_id: string
+  source_tls: boolean
+  target_host: string
+  target_port: number
+  target_username: string
+  target_password?: string
+  target_password_clear?: boolean
+  target_client_id: string
+  target_tls: boolean
+}
+
+export interface MQTTForwardTopic {
+  id: number
+  forwarder_id: number
+  topic: string
+  enabled: boolean
+  direction: MQTTForwardDirection
+  source_prefix: string
+  target_prefix: string
+  qos: number
+  retain: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface MQTTForwardTopicPayload {
+  topic: string
+  enabled: boolean
+  direction: MQTTForwardDirection
+  source_prefix: string
+  target_prefix: string
+  qos: number
+  retain: boolean
+}
+
+export interface MQTTForwardRuntimeStatus {
+  forwarder_id: number
+  running: boolean
+  source_connected: boolean
+  target_connected: boolean
+  last_error: string
+  started_at: string | null
+  messages_forwarded: number
+  messages_dropped: number
+}
+
+export interface MQTTForwardMutationResponse<T> {
+  item: T
+}
+
+export interface MQTTForwardStatusResponse {
+  items: MQTTForwardRuntimeStatus[]
+}
