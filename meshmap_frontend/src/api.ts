@@ -3,6 +3,8 @@ import type {
   AdminLoginResponse,
   AdminManagedUserResponse,
   AdminMqttStatus,
+  AdminRuntimeSettingsPayload,
+  AdminRuntimeSettingsResponse,
   AdminUsersResponse,
   BlockingRuleResponse,
   DiscardDetails,
@@ -161,6 +163,14 @@ export function getAdminMe(): Promise<AdminLoginResponse> {
 
 export function getAdminMqttStatus(): Promise<AdminMqttStatus> {
   return getJSON<AdminMqttStatus>('/api/admin/mqtt/status')
+}
+
+export function getAdminRuntimeSettings(): Promise<AdminRuntimeSettingsResponse> {
+  return getJSON<AdminRuntimeSettingsResponse>('/api/admin/runtime-settings')
+}
+
+export function updateAdminRuntimeSettings(payload: AdminRuntimeSettingsPayload): Promise<AdminRuntimeSettingsResponse> {
+  return putJSON<AdminRuntimeSettingsResponse>('/api/admin/runtime-settings', payload)
 }
 
 export function getAdminHelpContent(): Promise<HelpContentResponse> {

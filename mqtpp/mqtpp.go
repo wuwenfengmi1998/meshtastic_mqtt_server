@@ -32,6 +32,10 @@ var defaultMeshtasticPSK = []byte{
 	0xCF, 0x4E, 0x69, 0x01,
 }
 
+type Options struct {
+	AllowEncryptedForwarding bool
+}
+
 type serviceEnvelope struct {
 	Packet    *meshPacket
 	ChannelID string
@@ -115,7 +119,7 @@ type telemetryInfo struct {
 
 // MQTTPP 处理一个 MQTT 原始 payload，返回合规状态、原始数据和解码后的记录。
 // 第一个返回值表示数据是否合规；第二个返回值在不合规时为 nil；第三个返回值是解码结果记录。
-func MQTTPP(topic string, raw []byte, key []byte) (bool, []byte, map[string]any) {
+func MQTTPP(topic string, raw []byte, key []byte, opts Options) (bool, []byte, map[string]any) {
 
 	env, err := parseServiceEnvelope(raw)
 	if err != nil {
@@ -127,7 +131,7 @@ func MQTTPP(topic string, raw []byte, key []byte) (bool, []byte, map[string]any)
 		//解码失败
 		return false, nil, map[string]any{"topic": topic, "error": err.Error(), "payload_len": len(raw)}
 	}
-	if record["type"] == "encrypted_packet" {
+	if record["type"] == "encrypted_packet" && !opts.AllowEncryptedForwarding {
 		record["error"] = "cannot be decrypted"
 		return false, nil, record
 	}

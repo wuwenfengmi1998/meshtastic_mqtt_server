@@ -102,6 +102,19 @@ func (helpContentRecord) TableName() string {
 	return "help_content"
 }
 
+type runtimeSettingRecord struct {
+	Key       string    `gorm:"column:key;primaryKey;size:128;not null"`
+	Value     string    `gorm:"column:value;type:text;not null"`
+	ValueType string    `gorm:"column:value_type;size:32;not null;index"`
+	Label     string    `gorm:"column:label"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (runtimeSettingRecord) TableName() string {
+	return "runtime_settings"
+}
+
 type discardDetailsRecord struct {
 	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Topic          string    `gorm:"column:topic"`
@@ -401,6 +414,7 @@ func (s *store) migrate() error {
 			{label: "users", model: &userRecord{}},
 			{label: "login_log", model: &loginLogRecord{}},
 			{label: "help_content", model: &helpContentRecord{}},
+			{label: "runtime_settings", model: &runtimeSettingRecord{}},
 			{label: "discard_details", model: &discardDetailsRecord{}},
 			{label: "node_blocking", model: &nodeBlockingRecord{}},
 			{label: "ip_blocking", model: &ipBlockingRecord{}},

@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { getAdminMqttStatus } from '../api'
-import type { AdminMqttStatus } from '../types'
+import { getAdminMqttStatus, getAdminRuntimeSettings, updateAdminRuntimeSettings } from '../api'
+import type { AdminMqttStatus, AdminRuntimeSettings } from '../types'
 
 const status = ref<AdminMqttStatus | null>(null)
+const runtimeSettings = ref<AdminRuntimeSettings | null>(null)
 const loading = ref(false)
+const settingsLoading = ref(false)
 const error = ref('')
+const settingsError = ref('')
+const settingsMessage = ref('')
 let timer: number | undefined
 
 function formatUptime(seconds: number): string {
@@ -27,8 +31,43 @@ async function refreshStatus() {
   }
 }
 
+async function refreshRuntimeSettings() {
+  settingsLoading.value = true
+  settingsError.value = ''
+  try {
+    const response = await getAdminRuntimeSettings()
+    runtimeSettings.value = response.item
+  } catch (err) {
+    settingsError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    settingsLoading.value = false
+  }
+}
+
+async function saveEncryptedForwarding(value: boolean) {
+  if (!runtimeSettings.value) {
+    return
+  }
+  const previous = runtimeSettings.value.allow_encrypted_forwarding
+  runtimeSettings.value.allow_encrypted_forwarding = value
+  settingsLoading.value = true
+  settingsError.value = ''
+  settingsMessage.value = ''
+  try {
+    const response = await updateAdminRuntimeSettings({ allow_encrypted_forwarding: value })
+    runtimeSettings.value = response.item
+    settingsMessage.value = '设置已保存'
+  } catch (err) {
+    runtimeSettings.value.allow_encrypted_forwarding = previous
+    settingsError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    settingsLoading.value = false
+  }
+}
+
 onMounted(() => {
   refreshStatus()
+  refreshRuntimeSettings()
   timer = window.setInterval(refreshStatus, 5000)
 })
 
@@ -69,6 +108,44 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <div class="panel admin-status-panel mqtt-control-panel">
+      <div class="panel-header control-header">
+        <div class="control-title">
+          <div>
+            <p class="eyebrow">MQTT Forwarding</p>
+            <h2>MQTT 转发控制</h2>
+          </div>
+        </div>
+        <span class="control-badge" :class="{ active: runtimeSettings?.allow_encrypted_forwarding }">
+          {{ runtimeSettings?.allow_encrypted_forwarding ? '加密包放行' : '默认拦截' }}
+        </span>
+      </div>
+      <div class="control-body">
+        <div class="control-copy">
+          <h3>加密转发</h3>
+          <p>
+            控制 Broker 在无法解密 Meshtastic 加密包时是否仍允许转发。关闭时保持当前行为：无法解密的加密包会被丢弃并记录到丢弃详情。
+          </p>
+        </div>
+        <div v-if="!runtimeSettings" class="empty control-empty">正在加载转发设置...</div>
+        <label v-else class="switch-card" :class="{ enabled: runtimeSettings.allow_encrypted_forwarding, saving: settingsLoading }">
+          <span class="switch-text">
+            <strong>允许无法解密的加密包继续转发</strong>
+            <small>{{ runtimeSettings.allow_encrypted_forwarding ? '已开启，原始 payload 将继续转发' : '已关闭，无法解密时会拒绝转发' }}</small>
+          </span>
+          <input
+            type="checkbox"
+            :checked="runtimeSettings.allow_encrypted_forwarding"
+            :disabled="settingsLoading"
+            @change="saveEncryptedForwarding(($event.target as HTMLInputElement).checked)"
+          />
+          <span class="switch-toggle" aria-hidden="true"></span>
+        </label>
+      </div>
+      <p v-if="settingsError" class="error">{{ settingsError }}</p>
+      <p v-if="settingsMessage" class="success">{{ settingsMessage }}</p>
+    </div>
+
     <div class="panel admin-status-panel">
       <div class="panel-header">
         <div>
@@ -105,3 +182,176 @@ onBeforeUnmount(() => {
     </div>
   </section>
 </template>
+
+<style scoped>
+.mqtt-control-panel {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.16), transparent 32%),
+    linear-gradient(135deg, #ffffff 0%, #f8fbff 52%, #eef6ff 100%);
+}
+
+.control-header {
+  position: relative;
+  align-items: flex-start;
+}
+
+.control-title {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.control-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 6px 12px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.control-badge.active {
+  border-color: rgba(22, 163, 74, 0.32);
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.control-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.control-copy,
+.switch-card {
+  border: 1px solid rgba(203, 213, 225, 0.78);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
+}
+
+.control-copy {
+  padding: 1rem;
+}
+
+.control-copy h3 {
+  margin: 0 0 0.45rem;
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.control-copy p {
+  margin: 0;
+  color: #64748b;
+  line-height: 1.7;
+}
+
+.control-empty {
+  align-self: center;
+}
+
+.switch-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 108px;
+  padding: 1rem;
+  color: #334155;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.switch-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(37, 99, 235, 0.35);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.09);
+}
+
+.switch-card.enabled {
+  border-color: rgba(22, 163, 74, 0.35);
+  background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
+}
+
+.switch-card.saving {
+  cursor: wait;
+  opacity: 0.76;
+}
+
+.switch-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.switch-text strong {
+  color: #0f172a;
+  font-size: 15px;
+}
+
+.switch-text small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.switch-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  width: 54px;
+  height: 30px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  box-shadow: inset 0 2px 4px rgba(15, 23, 42, 0.14);
+  transition: background 0.15s ease;
+}
+
+.switch-toggle::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.24);
+  transition: transform 0.15s ease;
+}
+
+.switch-card.enabled .switch-toggle {
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+}
+
+.switch-card.enabled .switch-toggle::after {
+  transform: translateX(24px);
+}
+
+@media (max-width: 820px) {
+  .control-body {
+    grid-template-columns: 1fr;
+  }
+
+  .control-header {
+    gap: 0.75rem;
+  }
+}
+</style>

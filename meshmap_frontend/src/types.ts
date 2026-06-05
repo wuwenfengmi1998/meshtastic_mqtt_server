@@ -225,6 +225,18 @@ export interface AdminMqttClient {
   remote_port: string
 }
 
+export interface AdminRuntimeSettings {
+  allow_encrypted_forwarding: boolean
+}
+
+export interface AdminRuntimeSettingsPayload {
+  allow_encrypted_forwarding: boolean
+}
+
+export interface AdminRuntimeSettingsResponse {
+  item: AdminRuntimeSettings
+}
+
 export interface AdminMqttStatus {
   running: boolean
   address: string

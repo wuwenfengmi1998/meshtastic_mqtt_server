@@ -5,7 +5,7 @@
 每条传入的 `PUBLISH` 都会先进入：
 
 ```go
-valid, _, record := mqtpp.MQTTPP(topic, payload, key)
+valid, _, record := mqtpp.MQTTPP(topic, payload, key, mqtpp.Options{})
 ```
 
 - `valid == true`：保留原始 topic、payload、QoS、retain 等字段，正常转发给订阅匹配 topic 的客户端
