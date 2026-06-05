@@ -19,13 +19,13 @@ from typing import Any
 import paho.mqtt.client as mqtt
 
 
-DEFAULT_HOST = "mqtt.meshtastic.org"
+DEFAULT_HOST = "mqtt.mess.host"
 DEFAULT_USERNAME = "meshdev"
 DEFAULT_PASSWORD = "large4cats"
-DEFAULT_TOPICS = ("msh/US/#",)
-SOURCE_TOPIC_PREFIX = "msh/US"
-LOCAL_TOPIC_PREFIX = "msh/US"
-DEFAULT_LOCAL_HOST = "127.0.0.1"
+DEFAULT_TOPICS = ("msh/#",)
+SOURCE_TOPIC_PREFIX = "msh/CN"
+LOCAL_TOPIC_PREFIX = "msh/CN"
+DEFAULT_LOCAL_HOST = "mesh.lmve.net"
 DEFAULT_LOCAL_PORT = 1883
 
 
