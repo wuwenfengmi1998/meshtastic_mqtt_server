@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref } from 'vue'
 import type { NodeInfoById, TextMessage } from '../types'
 
 const props = defineProps<{
@@ -24,6 +24,22 @@ const menuX = ref(0)
 const menuY = ref(0)
 const topThreshold = 8
 const bottomThreshold = 40
+
+type GroupedTextMessage = TextMessage & { mergedCount: number }
+
+const groupedMessages = computed<GroupedTextMessage[]>(() => {
+  const groups = new Map<string, GroupedTextMessage>()
+  for (const message of props.messages) {
+    const key = `${message.packet_id ?? ''}\n${message.text ?? ''}`
+    const group = groups.get(key)
+    if (group) {
+      group.mergedCount += 1
+    } else {
+      groups.set(key, { ...message, mergedCount: 1 })
+    }
+  }
+  return Array.from(groups.values())
+})
 
 let didInitialScroll = false
 let shouldStickToBottom = true
@@ -160,14 +176,14 @@ onUpdated(() => {
         <p class="eyebrow">Chat</p>
         <h2>聊天信息</h2>
       </div>
-      <span class="badge">{{ messages.length }}</span>
+      <span class="badge">{{ groupedMessages.length }}</span>
     </div>
 
     <div v-if="loadingOlder" class="chat-loading">正在加载更早消息...</div>
     <div v-else-if="!hasMoreMessages && messages.length > 0" class="chat-end">没有更多历史消息</div>
     <div v-if="messages.length === 0" class="empty">暂无聊天消息</div>
     <button
-      v-for="message in messages"
+      v-for="message in groupedMessages"
       :key="message.id"
       class="chat-item"
       :class="{ selected: selectedNodeId === message.from_id }"
@@ -180,7 +196,10 @@ onUpdated(() => {
         <small>{{ formatTime(message.created_at) }}</small>
       </span>
       <span class="chat-topic">{{ message.topic }}</span>
-      <span class="chat-text">{{ message.text || '[binary]' }}</span>
+      <span class="chat-text">
+        {{ message.text || '[binary]' }}
+        <span v-if="message.mergedCount > 1" class="message-merge-count">x{{ message.mergedCount }}</span>
+      </span>
     </button>
 
     <div

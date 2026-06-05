@@ -82,6 +82,7 @@ export interface TextMessage {
   id: number
   from_id: string
   from_num: number
+  packet_id: number | null
   text: string | null
   topic: string
   created_at: string

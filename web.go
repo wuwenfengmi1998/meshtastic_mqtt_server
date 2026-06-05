@@ -591,7 +591,7 @@ func mapReportClusterDTO(row mapReportClusterRecord) gin.H {
 }
 
 func textMessageDTO(row textMessageRecord) gin.H {
-	return gin.H{"id": row.ID, "from_id": row.FromID, "from_num": row.FromNum, "text": ptrString(row.Text), "topic": row.Topic, "created_at": row.CreatedAt, "mqtt_remote_host": ptrString(row.MQTTRemoteHost), "content_json": row.ContentJSON}
+	return gin.H{"id": row.ID, "from_id": row.FromID, "from_num": row.FromNum, "packet_id": ptrInt64(row.PacketID), "text": ptrString(row.Text), "topic": row.Topic, "created_at": row.CreatedAt, "mqtt_remote_host": ptrString(row.MQTTRemoteHost), "content_json": row.ContentJSON}
 }
 
 func discardDetailsDTO(row discardDetailsRecord) gin.H {

@@ -8,6 +8,7 @@ import AdminLogin from './components/AdminLogin.vue'
 import AdminLoginLogs from './components/AdminLoginLogs.vue'
 import AdminUsers from './components/AdminUsers.vue'
 import ChatPanel from './components/ChatPanel.vue'
+import ConfirmDeleteModal from './components/ConfirmDeleteModal.vue'
 import HelpPage from './components/HelpPage.vue'
 import MeshMap from './components/MeshMap.vue'
 import NodeDetailedPage from './components/NodeDetailedPage.vue'
@@ -46,7 +47,13 @@ const currentMapBounds = ref<MapBoundsQuery | null>(null)
 const currentMapZoom = ref(2)
 const mapReportsLoading = ref(false)
 const mapReportTotal = ref(0)
-type NodeActionPayload = { nodeId: string; nodeNum: number | null; message?: TextMessage }
+const pendingDeleteAction = ref<PendingDeleteAction | null>(null)
+type NodeActionRequest = { nodeId: string; nodeNum: number | null; message?: TextMessage }
+type NodeActionPayload = NodeActionRequest & { reason: string }
+type PendingDeleteAction =
+  | { kind: 'delete-message'; message: TextMessage }
+  | { kind: 'delete-node'; nodeId: string }
+  | ({ kind: 'delete-and-block-node' } & NodeActionRequest)
 let refreshTimer: number | undefined
 let mapBoundsTimer: number | undefined
 let mapReportRequestSeq = 0
@@ -91,6 +98,42 @@ const mapItems = computed<MapRenderable[]>(() => {
       }
     })
 })
+
+const deleteModalTitle = computed(() => {
+  const action = pendingDeleteAction.value
+  if (!action) {
+    return ''
+  }
+  if (action.kind === 'delete-message') {
+    return '确认删除消息'
+  }
+  if (action.kind === 'delete-node') {
+    return '确认删除节点'
+  }
+  return '确认删除并屏蔽节点'
+})
+
+const deleteModalMessage = computed(() => {
+  const action = pendingDeleteAction.value
+  if (!action) {
+    return ''
+  }
+  if (action.kind === 'delete-message') {
+    return '确定要删除这条聊天消息吗？此操作不可撤销。'
+  }
+  if (action.kind === 'delete-node') {
+    return '确定要删除这个节点吗？此操作不可撤销。'
+  }
+  return action.message
+    ? '确定要删除这条聊天消息并屏蔽该节点吗？请输入屏蔽原因。'
+    : '确定要删除并屏蔽这个节点吗？请输入屏蔽原因。'
+})
+
+const deleteModalConfirmText = computed(() => {
+  return pendingDeleteAction.value?.kind === 'delete-and-block-node' ? '删除并屏蔽' : '删除'
+})
+
+const deleteModalRequiresReason = computed(() => pendingDeleteAction.value?.kind === 'delete-and-block-node')
 
 function toChronological(items: TextMessage[]): TextMessage[] {
   return [...items].reverse()
@@ -249,6 +292,51 @@ async function logoutAdmin() {
   }
 }
 
+function requestDeleteMessage(message: TextMessage) {
+  pendingDeleteAction.value = { kind: 'delete-message', message }
+}
+
+function requestDeleteNode(nodeId: string) {
+  pendingDeleteAction.value = { kind: 'delete-node', nodeId }
+}
+
+function requestDeleteAndBlockNode(payload: NodeActionRequest) {
+  pendingDeleteAction.value = { kind: 'delete-and-block-node', ...payload }
+}
+
+function cancelDeleteModal() {
+  pendingDeleteAction.value = null
+}
+
+async function confirmDeleteModal(payload: { reason?: string }) {
+  const action = pendingDeleteAction.value
+  pendingDeleteAction.value = null
+  if (!action) {
+    return
+  }
+
+  if (action.kind === 'delete-message') {
+    await deleteMessage(action.message)
+    return
+  }
+
+  if (action.kind === 'delete-node') {
+    await deleteNodeById(action.nodeId)
+    return
+  }
+
+  const reason = payload.reason?.trim()
+  if (!reason) {
+    return
+  }
+  await deleteAndBlockNode({
+    nodeId: action.nodeId,
+    nodeNum: action.nodeNum,
+    message: action.message,
+    reason,
+  })
+}
+
 async function deleteMessage(message: TextMessage) {
   try {
     await deleteTextMessage(message.id)
@@ -306,7 +394,7 @@ async function deleteAndBlockNode(payload: NodeActionPayload) {
       await createNodeBlockingRule({
         node_id: payload.nodeId,
         node_num: payload.nodeNum,
-        reason: '管理员右键删除并屏蔽节点',
+        reason: payload.reason,
         enabled: true,
       })
     } catch (err) {
@@ -431,8 +519,8 @@ onBeforeUnmount(() => {
           :is-admin="!!adminUser"
           @select-node="selectedNodeId = $event"
           @load-older="loadOlderMessages"
-          @delete-message="deleteMessage"
-          @delete-and-block-node="deleteAndBlockNode"
+          @delete-message="requestDeleteMessage"
+          @delete-and-block-node="requestDeleteAndBlockNode"
         />
         <MeshMap
           :items="mapItems"
@@ -443,8 +531,8 @@ onBeforeUnmount(() => {
           @bounds-change="handleMapBoundsChange"
           @select-node="selectedNodeId = $event"
           @clear-node="selectedNodeId = null"
-          @delete-node="deleteNodeById"
-          @delete-and-block-node="deleteAndBlockNode"
+          @delete-node="requestDeleteNode"
+          @delete-and-block-node="requestDeleteAndBlockNode"
         />
       </section>
 
@@ -458,9 +546,21 @@ onBeforeUnmount(() => {
         :is-admin="!!adminUser"
         @select-node="selectedNodeId = $event"
         @page-change="loadNodePage"
-        @delete-node="deleteNodeById"
-        @delete-and-block-node="deleteAndBlockNode"
+        @delete-node="requestDeleteNode"
+        @delete-and-block-node="requestDeleteAndBlockNode"
       />
     </template>
+
+    <ConfirmDeleteModal
+      :open="!!pendingDeleteAction"
+      :title="deleteModalTitle"
+      :message="deleteModalMessage"
+      :confirm-text="deleteModalConfirmText"
+      :require-reason="deleteModalRequiresReason"
+      reason-label="屏蔽原因"
+      reason-placeholder="请输入屏蔽原因"
+      @cancel="cancelDeleteModal"
+      @confirm="confirmDeleteModal"
+    />
   </main>
 </template>

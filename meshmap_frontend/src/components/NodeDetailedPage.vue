@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { createNodeBlockingRule, deleteNode, deleteTextMessage, getMapReportById, getNodeInfoById, getPositions, getTelemetry, getTextMessages } from '../api'
 import type { MapReport, NodeInfo, PositionRecord, TelemetryRecord, TextMessage } from '../types'
+import ConfirmDeleteModal from './ConfirmDeleteModal.vue'
 import NodeTrajectoryMap from './NodeTrajectoryMap.vue'
 
 const props = defineProps<{
@@ -20,9 +21,16 @@ const chatHasMore = ref(true)
 const error = ref('')
 const chatPageSize = 20
 const chatHistoryRef = ref<HTMLElement | null>(null)
+type PendingDeleteAction =
+  | { kind: 'delete-message'; message: TextMessage }
+  | { kind: 'delete-and-block-node'; message: TextMessage; nodeId: string; nodeNum: number | null }
+
+type GroupedTextMessage = TextMessage & { mergedCount: number }
+
 const menuMessage = ref<TextMessage | null>(null)
 const menuX = ref(0)
 const menuY = ref(0)
+const pendingDeleteAction = ref<PendingDeleteAction | null>(null)
 
 const nodeTitle = computed(() => {
   return nodeInfo.value?.long_name || nodeInfo.value?.short_name || mapReport.value?.long_name || mapReport.value?.short_name || props.nodeId
@@ -37,6 +45,40 @@ const mergedNode = computed(() => {
     role: nodeInfo.value?.role || mapReport.value?.role || null,
     updated_at: nodeInfo.value?.updated_at || mapReport.value?.updated_at || null,
   }
+})
+
+const deleteModalTitle = computed(() => {
+  if (pendingDeleteAction.value?.kind === 'delete-and-block-node') {
+    return '确认删除并屏蔽节点'
+  }
+  return '确认删除消息'
+})
+
+const deleteModalMessage = computed(() => {
+  if (pendingDeleteAction.value?.kind === 'delete-and-block-node') {
+    return '确定要删除这条聊天消息并屏蔽该节点吗？请输入屏蔽原因。'
+  }
+  return '确定要删除这条聊天消息吗？此操作不可撤销。'
+})
+
+const deleteModalConfirmText = computed(() => {
+  return pendingDeleteAction.value?.kind === 'delete-and-block-node' ? '删除并屏蔽' : '删除'
+})
+
+const deleteModalRequiresReason = computed(() => pendingDeleteAction.value?.kind === 'delete-and-block-node')
+
+const groupedMessages = computed<GroupedTextMessage[]>(() => {
+  const groups = new Map<string, GroupedTextMessage>()
+  for (const message of messages.value) {
+    const key = `${message.packet_id ?? ''}\n${message.text ?? ''}`
+    const group = groups.get(key)
+    if (group) {
+      group.mergedCount += 1
+    } else {
+      groups.set(key, { ...message, mergedCount: 1 })
+    }
+  }
+  return Array.from(groups.values())
 })
 
 function formatTime(value: string): string {
@@ -164,12 +206,15 @@ function openMessageMenu(message: TextMessage, event: MouseEvent) {
   menuY.value = event.clientY
 }
 
-async function deleteSelectedMessage() {
+function deleteSelectedMessage() {
   if (!menuMessage.value) {
     return
   }
-  const message = menuMessage.value
+  pendingDeleteAction.value = { kind: 'delete-message', message: menuMessage.value }
   closeMessageMenu()
+}
+
+async function performDeleteMessage(message: TextMessage) {
   try {
     await deleteTextMessage(message.id)
     messages.value = messages.value.filter((item) => item.id !== message.id)
@@ -190,29 +235,36 @@ function isMessageNotFoundError(err: unknown): boolean {
   return err instanceof Error && err.message === 'message not found'
 }
 
-async function deleteAndBlockSelectedMessageNode() {
+function deleteAndBlockSelectedMessageNode() {
   if (!menuMessage.value) {
     return
   }
   const message = menuMessage.value
-  const nodeId = message.from_id || props.nodeId
-  const nodeNum = message.from_num ?? mergedNode.value.node_num ?? null
+  pendingDeleteAction.value = {
+    kind: 'delete-and-block-node',
+    message,
+    nodeId: message.from_id || props.nodeId,
+    nodeNum: message.from_num ?? mergedNode.value.node_num ?? null,
+  }
   closeMessageMenu()
+}
+
+async function performDeleteAndBlockMessageNode(payload: { message: TextMessage; nodeId: string; nodeNum: number | null; reason: string }) {
   try {
     try {
-      await deleteTextMessage(message.id)
+      await deleteTextMessage(payload.message.id)
     } catch (err) {
       if (!isMessageNotFoundError(err)) {
         throw err
       }
     }
-    messages.value = messages.value.filter((item) => item.id !== message.id)
+    messages.value = messages.value.filter((item) => item.id !== payload.message.id)
 
     try {
       await createNodeBlockingRule({
-        node_id: nodeId,
-        node_num: nodeNum,
-        reason: '管理员右键删除并屏蔽节点',
+        node_id: payload.nodeId,
+        node_num: payload.nodeNum,
+        reason: payload.reason,
         enabled: true,
       })
     } catch (err) {
@@ -222,19 +274,47 @@ async function deleteAndBlockSelectedMessageNode() {
     }
 
     try {
-      await deleteNode(nodeId)
+      await deleteNode(payload.nodeId)
     } catch (err) {
       if (!isNodeNotFoundError(err)) {
         throw err
       }
     }
-    if (nodeId === props.nodeId) {
+    if (payload.nodeId === props.nodeId) {
       nodeInfo.value = null
       mapReport.value = null
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   }
+}
+
+async function confirmDeleteModal(payload: { reason?: string }) {
+  const action = pendingDeleteAction.value
+  pendingDeleteAction.value = null
+  if (!action) {
+    return
+  }
+
+  if (action.kind === 'delete-message') {
+    await performDeleteMessage(action.message)
+    return
+  }
+
+  const reason = payload.reason?.trim()
+  if (!reason) {
+    return
+  }
+  await performDeleteAndBlockMessageNode({
+    message: action.message,
+    nodeId: action.nodeId,
+    nodeNum: action.nodeNum,
+    reason,
+  })
+}
+
+function cancelDeleteModal() {
+  pendingDeleteAction.value = null
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -336,14 +416,14 @@ onBeforeUnmount(() => {
             <p class="eyebrow">Chat</p>
             <h2>历史聊天记录：{{ nodeTitle }}</h2>
           </div>
-          <span class="badge">{{ messages.length }}</span>
+          <span class="badge">{{ groupedMessages.length }}</span>
         </div>
         <div ref="chatHistoryRef" class="detail-chat-history" @scroll.passive="handleChatScroll">
           <div v-if="chatLoadingOlder" class="chat-loading">正在加载更早消息...</div>
           <div v-else-if="!chatHasMore && messages.length > 0" class="chat-end">没有更多历史消息</div>
           <div v-if="messages.length === 0" class="empty">暂无聊天记录</div>
           <div
-            v-for="message in messages"
+            v-for="message in groupedMessages"
             :key="message.id"
             class="detail-chat-item"
             @contextmenu.prevent.stop="openMessageMenu(message, $event)"
@@ -352,7 +432,10 @@ onBeforeUnmount(() => {
               <strong>{{ formatTime(message.created_at) }}</strong>
               <small>{{ message.topic }}</small>
             </span>
-            <span class="chat-text">{{ message.text || '[binary]' }}</span>
+            <span class="chat-text">
+              {{ message.text || '[binary]' }}
+              <span v-if="message.mergedCount > 1" class="message-merge-count">x{{ message.mergedCount }}</span>
+            </span>
           </div>
         </div>
         <div
@@ -413,5 +496,17 @@ onBeforeUnmount(() => {
         <div v-if="telemetry.length === 0" class="empty">暂无遥测数据</div>
       </div>
     </div>
+
+    <ConfirmDeleteModal
+      :open="!!pendingDeleteAction"
+      :title="deleteModalTitle"
+      :message="deleteModalMessage"
+      :confirm-text="deleteModalConfirmText"
+      :require-reason="deleteModalRequiresReason"
+      reason-label="屏蔽原因"
+      reason-placeholder="请输入屏蔽原因"
+      @cancel="cancelDeleteModal"
+      @confirm="confirmDeleteModal"
+    />
   </section>
 </template>

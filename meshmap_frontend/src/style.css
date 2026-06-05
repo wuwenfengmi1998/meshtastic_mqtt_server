@@ -220,6 +220,18 @@ h3 {
   line-height: 1.35;
 }
 
+.message-merge-count {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: #1d4ed8;
+  background: #dbeafe;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .context-menu {
   position: fixed;
   z-index: 2000;
@@ -253,6 +265,123 @@ h3 {
 
 .context-menu button.danger {
   color: #b91c1c;
+}
+
+.modal-backdrop {
+  position: fixed;
+  z-index: 3000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(3px);
+}
+
+.confirm-modal {
+  width: min(460px, 100%);
+  overflow: hidden;
+  border: 1px solid #dbe4ef;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.confirm-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.confirm-modal-header h2 {
+  margin: 2px 0 0;
+  color: #0f172a;
+}
+
+.confirm-modal-close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  color: #64748b;
+  font-size: 24px;
+  line-height: 1;
+  background: #f8fafc;
+}
+
+.confirm-modal-close:hover {
+  color: #0f172a;
+  background: #e2e8f0;
+}
+
+.confirm-modal-body {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  color: #334155;
+}
+
+.confirm-modal-body p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.confirm-modal-reason {
+  display: grid;
+  gap: 8px;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.confirm-modal-reason textarea {
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: 400;
+}
+
+.confirm-modal-reason textarea:focus {
+  outline: 2px solid #bfdbfe;
+  border-color: #60a5fa;
+}
+
+.confirm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.confirm-modal-secondary,
+.confirm-modal-danger {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-weight: 700;
+}
+
+.confirm-modal-secondary {
+  color: #334155;
+  background: #e2e8f0;
+}
+
+.confirm-modal-danger {
+  color: #fff;
+  background: #dc2626;
+}
+
+.confirm-modal-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .map-panel {
