@@ -27,6 +27,7 @@ const mapEl = ref<HTMLElement | null>(null)
 const menuNode = ref<MapNode | null>(null)
 const menuX = ref(0)
 const menuY = ref(0)
+const lastRaisedNodeId = ref<string | null>(null)
 let map: L.Map | null = null
 let markerLayer: L.LayerGroup | null = null
 let hasFitBounds = false
@@ -94,6 +95,7 @@ function nodeDetailHref(nodeId: string): string {
 
 function openNodeMenu(node: MapNode, event: L.LeafletMouseEvent) {
   L.DomEvent.stopPropagation(event)
+  lastRaisedNodeId.value = node.node_id
   emit('select-node', node.node_id)
   menuNode.value = node
   menuX.value = event.originalEvent.clientX
@@ -155,6 +157,7 @@ function renderMarkers(forceFit: boolean) {
     }
     const node = item
     const selected = node.node_id === props.selectedNodeId
+    const raised = selected || node.node_id === lastRaisedNodeId.value
     const marker = L.marker([node.latitude, node.longitude], {
       icon: L.divIcon({
         className: `node-marker${selected ? ' selected' : ''}`,
@@ -163,10 +166,12 @@ function renderMarkers(forceFit: boolean) {
         iconAnchor: [17, 11],
       }),
       title: node.label,
+      zIndexOffset: raised ? 1000 : 0,
     })
     marker.bindPopup(buildNodePopupHTML(node), { maxWidth: 320, className: 'node-detail-popup' })
     marker.on('click', (event) => {
       L.DomEvent.stopPropagation(event)
+      lastRaisedNodeId.value = node.node_id
       closeNodeMenu()
       emit('select-node', node.node_id)
     })
