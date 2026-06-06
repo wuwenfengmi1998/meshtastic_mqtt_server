@@ -635,15 +635,12 @@ onBeforeUnmount(() => {
         <div class="trajectory-toolbar">
           <label class="trajectory-date-field">
             <span>开始日期</span>
-            <input v-model="trajectoryStartDate" type="date" :disabled="trajectoryLoading" />
+            <input v-model="trajectoryStartDate" type="date" :disabled="trajectoryLoading" @change="loadTrajectoryRange" />
           </label>
           <label class="trajectory-date-field">
             <span>结束日期</span>
-            <input v-model="trajectoryEndDate" type="date" :disabled="trajectoryLoading" />
+            <input v-model="trajectoryEndDate" type="date" :disabled="trajectoryLoading" @change="loadTrajectoryRange" />
           </label>
-          <button type="button" :disabled="trajectoryLoading" @click="loadTrajectoryRange">
-            {{ trajectoryLoading ? '查询中...' : '查询轨迹' }}
-          </button>
           <button type="button" :disabled="trajectoryLoading" @click="applyTodayTrajectory">今天</button>
           <button type="button" :disabled="trajectoryLoading" @click="applyRecentTrajectory(3)">最近三天</button>
           <button type="button" :disabled="trajectoryLoading" @click="applyRecentTrajectory(7)">最近七天</button>
