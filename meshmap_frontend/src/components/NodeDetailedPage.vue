@@ -21,8 +21,18 @@ const mapSource = ref<PublicMapTileSource>(fallbackMapSource)
 const loading = ref(true)
 const chatLoadingOlder = ref(false)
 const chatHasMore = ref(true)
+const telemetryLoading = ref(false)
+const trajectoryLoading = ref(false)
+const trajectoryError = ref('')
+const trajectoryTruncated = ref(false)
 const error = ref('')
 const chatPageSize = 20
+const telemetryPageSize = 25
+const trajectoryPageSize = 500
+const maxTrajectoryPoints = 5000
+const telemetryPage = ref(1)
+const trajectoryStartDate = ref(toDateInputValue())
+const trajectoryEndDate = ref(toDateInputValue())
 const chatHistoryRef = ref<HTMLElement | null>(null)
 const scrollOverflowAllowance = 1
 type GroupedTextMessage = TextMessage & { mergedCount: number; mergedMessages: TextMessage[] }
@@ -96,6 +106,27 @@ const groupedMessages = computed<GroupedTextMessage[]>(() => {
 
 function formatTime(value: string): string {
   return new Date(value).toLocaleString()
+}
+
+function toDateInputValue(date = new Date()): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function localDateRange(startDate: string, endDate: string): { since: string; until: string } | null {
+  if (!startDate || !endDate) {
+    trajectoryError.value = '请选择开始日期和结束日期'
+    return null
+  }
+  const safeStartDate = startDate <= endDate ? startDate : endDate
+  const safeEndDate = startDate <= endDate ? endDate : startDate
+  trajectoryStartDate.value = safeStartDate
+  trajectoryEndDate.value = safeEndDate
+  const since = new Date(`${safeStartDate}T00:00:00.000`)
+  const until = new Date(`${safeEndDate}T23:59:59.999`)
+  return { since: since.toISOString(), until: until.toISOString() }
 }
 
 function metricEntries(value: string | null): Array<[string, unknown]> {
@@ -177,6 +208,73 @@ async function optional<T>(request: Promise<T>): Promise<T | null> {
   } catch {
     return null
   }
+}
+
+function canTelemetryPrev(): boolean {
+  return telemetryPage.value > 1
+}
+
+function canTelemetryNext(): boolean {
+  return telemetry.value.length === telemetryPageSize
+}
+
+async function loadTelemetryPage() {
+  telemetryLoading.value = true
+  try {
+    const response = await getTelemetry(telemetryPageSize, (telemetryPage.value - 1) * telemetryPageSize, props.nodeId)
+    telemetry.value = response.items
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    telemetryLoading.value = false
+  }
+}
+
+function changeTelemetryPage(nextPage: number) {
+  telemetryPage.value = Math.max(1, nextPage)
+  loadTelemetryPage()
+}
+
+async function loadTrajectoryRange() {
+  const range = localDateRange(trajectoryStartDate.value, trajectoryEndDate.value)
+  if (!range) {
+    return
+  }
+
+  trajectoryLoading.value = true
+  trajectoryError.value = ''
+  trajectoryTruncated.value = false
+  positions.value = []
+  try {
+    const items: PositionRecord[] = []
+    for (let offset = 0; offset < maxTrajectoryPoints; offset += trajectoryPageSize) {
+      const response = await getPositions(trajectoryPageSize, offset, {
+        nodeId: props.nodeId,
+        since: range.since,
+        until: range.until,
+      })
+      items.push(...response.items)
+      if (response.items.length < trajectoryPageSize) {
+        break
+      }
+      if (items.length >= maxTrajectoryPoints) {
+        trajectoryTruncated.value = true
+        break
+      }
+    }
+    positions.value = items.slice(0, maxTrajectoryPoints)
+  } catch (err) {
+    trajectoryError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    trajectoryLoading.value = false
+  }
+}
+
+function applyTodayTrajectory() {
+  const today = toDateInputValue()
+  trajectoryStartDate.value = today
+  trajectoryEndDate.value = today
+  loadTrajectoryRange()
 }
 
 async function loadInitialMessages() {
@@ -403,18 +501,20 @@ function selectMapSource(sourceId: number) {
 async function loadDetails() {
   loading.value = true
   error.value = ''
+  trajectoryError.value = ''
+  telemetryPage.value = 1
   try {
-    const [nodeData, reportData, positionData, telemetryData] = await Promise.all([
+    const [nodeData, reportData] = await Promise.all([
       optional(getNodeInfoById(props.nodeId)),
       optional(getMapReportById(props.nodeId)),
-      getPositions(500, 0, props.nodeId),
-      getTelemetry(200, 0, props.nodeId),
     ])
     nodeInfo.value = nodeData
     mapReport.value = reportData
-    positions.value = positionData.items
-    telemetry.value = telemetryData.items
-    await loadInitialMessages()
+    await Promise.all([
+      loadTrajectoryRange(),
+      loadTelemetryPage(),
+      loadInitialMessages(),
+    ])
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -526,6 +626,23 @@ onBeforeUnmount(() => {
           </div>
           <span class="badge">{{ positions.length }}</span>
         </div>
+        <div class="trajectory-toolbar">
+          <label class="trajectory-date-field">
+            <span>开始日期</span>
+            <input v-model="trajectoryStartDate" type="date" :disabled="trajectoryLoading" />
+          </label>
+          <label class="trajectory-date-field">
+            <span>结束日期</span>
+            <input v-model="trajectoryEndDate" type="date" :disabled="trajectoryLoading" />
+          </label>
+          <button type="button" :disabled="trajectoryLoading" @click="loadTrajectoryRange">
+            {{ trajectoryLoading ? '查询中...' : '查询轨迹' }}
+          </button>
+          <button type="button" :disabled="trajectoryLoading" @click="applyTodayTrajectory">今天</button>
+        </div>
+        <p v-if="trajectoryError" class="error trajectory-status">{{ trajectoryError }}</p>
+        <p v-else-if="trajectoryTruncated" class="trajectory-status">轨迹点较多，仅显示前 {{ maxTrajectoryPoints }} 条，请缩小日期范围。</p>
+        <p v-else-if="trajectoryLoading" class="trajectory-status">正在加载轨迹...</p>
         <NodeTrajectoryMap
           :positions="positions"
           :map-source="mapSource"
@@ -541,8 +658,9 @@ onBeforeUnmount(() => {
           <p class="eyebrow">Telemetry</p>
           <h2>遥测数据：{{ nodeTitle }}</h2>
         </div>
-        <span class="badge">{{ telemetry.length }}</span>
+        <span class="badge">本页 {{ telemetry.length }}</span>
       </div>
+      <div v-if="telemetryLoading" class="admin-loading">正在加载遥测数据...</div>
       <div class="node-table-wrap">
         <table class="node-table">
           <thead>
@@ -568,6 +686,12 @@ onBeforeUnmount(() => {
           </tbody>
         </table>
         <div v-if="telemetry.length === 0" class="empty">暂无遥测数据</div>
+      </div>
+      <div class="pagination">
+        <button :disabled="telemetryLoading || !canTelemetryPrev()" @click="changeTelemetryPage(telemetryPage - 1)">上一页</button>
+        <span>第 {{ telemetryPage }} 页</span>
+        <span>每页 {{ telemetryPageSize }} 条</span>
+        <button :disabled="telemetryLoading || !canTelemetryNext()" @click="changeTelemetryPage(telemetryPage + 1)">下一页</button>
       </div>
     </div>
 

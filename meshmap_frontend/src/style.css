@@ -938,6 +938,61 @@ h3 {
   padding: 13px 16px;
 }
 
+.trajectory-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 0 0 14px;
+}
+
+.trajectory-date-field {
+  display: grid;
+  gap: 6px;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.trajectory-date-field input {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  color: var(--color-heading);
+  background: var(--color-surface);
+  outline: none;
+}
+
+.trajectory-date-field input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.trajectory-toolbar button {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  color: var(--color-heading);
+  background: var(--color-surface);
+}
+
+.trajectory-toolbar button:not(:disabled):hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary-hover);
+  background: var(--color-primary-soft);
+  transform: translateY(-1px);
+}
+
+.trajectory-toolbar button:disabled,
+.trajectory-date-field input:disabled {
+  opacity: 0.6;
+}
+
+.trajectory-status {
+  margin: 0 0 12px;
+  color: var(--color-muted);
+}
+
 .trajectory-map-shell {
   position: relative;
 }

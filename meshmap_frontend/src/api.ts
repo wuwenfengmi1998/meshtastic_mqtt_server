@@ -55,10 +55,23 @@ async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
-function listPath(path: string, limit: number, offset: number, nodeId = ''): string {
+type ListQueryOptions = {
+  nodeId?: string
+  since?: string
+  until?: string
+}
+
+function listPath(path: string, limit: number, offset: number, nodeIdOrOptions: string | ListQueryOptions = ''): string {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
-  if (nodeId) {
-    params.set('node_id', nodeId)
+  const options = typeof nodeIdOrOptions === 'string' ? { nodeId: nodeIdOrOptions } : nodeIdOrOptions
+  if (options.nodeId) {
+    params.set('node_id', options.nodeId)
+  }
+  if (options.since) {
+    params.set('since', options.since)
+  }
+  if (options.until) {
+    params.set('until', options.until)
   }
   return `${path}?${params.toString()}`
 }
@@ -150,8 +163,8 @@ export function deleteNode(nodeId: string): Promise<{ status: string }> {
   return deleteJSON<{ status: string }>(`/api/admin/nodes/${encodeURIComponent(nodeId)}`)
 }
 
-export function getPositions(limit = 500, offset = 0, nodeId = ''): Promise<ListResponse<PositionRecord>> {
-  return getJSON<ListResponse<PositionRecord>>(listPath('/api/positions', limit, offset, nodeId))
+export function getPositions(limit = 500, offset = 0, nodeIdOrOptions: string | ListQueryOptions = ''): Promise<ListResponse<PositionRecord>> {
+  return getJSON<ListResponse<PositionRecord>>(listPath('/api/positions', limit, offset, nodeIdOrOptions))
 }
 
 export function getDiscardDetails(limit = 100, offset = 0): Promise<ListResponse<DiscardDetails>> {
