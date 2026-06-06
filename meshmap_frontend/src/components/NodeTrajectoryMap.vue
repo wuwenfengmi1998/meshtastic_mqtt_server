@@ -77,6 +77,7 @@ onMounted(async () => {
     maxBoundsViscosity: 1.0,
     worldCopyJump: false,
   }).setView([0, 0], 2)
+  map.attributionControl.setPrefix(false)
   applyTileLayer()
   layer = L.layerGroup().addTo(map)
   renderTrajectory()

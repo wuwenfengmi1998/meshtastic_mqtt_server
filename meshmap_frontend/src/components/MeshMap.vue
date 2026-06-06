@@ -64,6 +64,7 @@ onMounted(async () => {
     maxBoundsViscosity: 1.0,
     worldCopyJump: false,
   }).setView(defaultMapCenter, defaultMapZoom)
+  map.attributionControl.setPrefix(false)
   applyTileLayer()
   map.on('click', () => {
     closeNodeMenu()
