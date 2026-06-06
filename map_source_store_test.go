@@ -25,13 +25,13 @@ func TestCreateMapTileSourceValidation(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	if _, err := st.CreateMapTileSource(mapTileSourceInput{Name: "bad", URLTemplate: "https://tiles.example.com/{z}/{x}.png", MaxZoom: 19, Enabled: true}); err == nil {
+	if _, err := st.CreateMapTileSource(mapTileSourceInput{Name: "bad", URLTemplate: "https://tiles.example.com/{z}/{x}.png", MaxZoom: 19, Enabled: true, ProxyEnabled: true}); err == nil {
 		t.Fatal("CreateMapTileSource() missing placeholder error = nil, want error")
 	}
-	if _, err := st.CreateMapTileSource(mapTileSourceInput{Name: "bad", URLTemplate: "javascript:alert(1)/{z}/{x}/{y}", MaxZoom: 19, Enabled: true}); err == nil {
+	if _, err := st.CreateMapTileSource(mapTileSourceInput{Name: "bad", URLTemplate: "javascript:alert(1)/{z}/{x}/{y}", MaxZoom: 19, Enabled: true, ProxyEnabled: true}); err == nil {
 		t.Fatal("CreateMapTileSource() invalid scheme error = nil, want error")
 	}
-	if _, err := st.CreateMapTileSource(mapTileSourceInput{Name: "bad", URLTemplate: "https://user:pass@tiles.example.com/{z}/{x}/{y}.png", MaxZoom: 19, Enabled: true}); err == nil {
+	if _, err := st.CreateMapTileSource(mapTileSourceInput{Name: "bad", URLTemplate: "https://user:pass@tiles.example.com/{z}/{x}/{y}.png", MaxZoom: 19, Enabled: true, ProxyEnabled: true}); err == nil {
 		t.Fatal("CreateMapTileSource() credentials error = nil, want error")
 	}
 }
@@ -44,7 +44,7 @@ func TestListEnabledMapTileSources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMapTileSource(disabled) error = %v", err)
 	}
-	custom, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Custom", URLTemplate: "https://custom.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	custom, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Custom", URLTemplate: "https://custom.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource(custom) error = %v", err)
 	}
@@ -76,14 +76,14 @@ func TestMapTileSourceDuplicateAndDefaultRules(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	first, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Custom", URLTemplate: "https://tiles.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	first, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Custom", URLTemplate: "https://tiles.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource() error = %v", err)
 	}
-	if _, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Custom", URLTemplate: "https://tiles2.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true}); !errors.Is(err, errMapTileSourceAlreadyExists) {
+	if _, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Custom", URLTemplate: "https://tiles2.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true}); !errors.Is(err, errMapTileSourceAlreadyExists) {
 		t.Fatalf("duplicate name error = %v, want errMapTileSourceAlreadyExists", err)
 	}
-	if _, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Custom 2", URLTemplate: first.URLTemplate, MaxZoom: 18, Enabled: true}); !errors.Is(err, errMapTileSourceAlreadyExists) {
+	if _, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Custom 2", URLTemplate: first.URLTemplate, MaxZoom: 18, Enabled: true, ProxyEnabled: true}); !errors.Is(err, errMapTileSourceAlreadyExists) {
 		t.Fatalf("duplicate url error = %v, want errMapTileSourceAlreadyExists", err)
 	}
 
@@ -114,13 +114,16 @@ func TestMapTileSourceHashIsSetOnCreate(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Hashed", URLTemplate: "https://test.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Hashed", URLTemplate: "https://test.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource() error = %v", err)
 	}
 	want := mapTileSourceHash("https://test.example.com/{z}/{x}/{y}.png")
 	if row.URLTemplateHash != want {
 		t.Fatalf("URLTemplateHash = %q, want %q", row.URLTemplateHash, want)
+	}
+	if !row.ProxyEnabled {
+		t.Fatal("ProxyEnabled = false, want true")
 	}
 }
 
@@ -142,7 +145,7 @@ func TestGetEnabledMapTileSourceByHash(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "HashLookup", URLTemplate: "https://lookup.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "HashLookup", URLTemplate: "https://lookup.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource() error = %v", err)
 	}
@@ -171,6 +174,21 @@ func TestGetEnabledMapTileSourceByHashDisabled(t *testing.T) {
 	}
 }
 
+func TestGetEnabledMapTileSourceByHashProxyDisabled(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "ProxyDisabledHash", URLTemplate: "https://proxy-disabled.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: false})
+	if err != nil {
+		t.Fatalf("CreateMapTileSource() error = %v", err)
+	}
+
+	_, err = st.GetEnabledMapTileSourceByHash(row.URLTemplateHash)
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("GetEnabledMapTileSourceByHash(proxy disabled) = %v, want gorm.ErrRecordNotFound", err)
+	}
+}
+
 func TestGetEnabledMapTileSourceByHashUnknown(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
@@ -185,7 +203,7 @@ func TestPublicMapTileSourceDTOProxyURL(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "ProxyTest", URLTemplate: "https://proxy.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "ProxyTest", URLTemplate: "https://proxy.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource() error = %v", err)
 	}
@@ -201,6 +219,25 @@ func TestPublicMapTileSourceDTOProxyURL(t *testing.T) {
 	}
 	if strings.Contains(urlTemplate, "proxy.example.com") {
 		t.Fatal("url_template should not contain upstream hostname")
+	}
+}
+
+func TestPublicMapTileSourceDTORawURLWhenProxyDisabled(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "RawTest", URLTemplate: "https://raw.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: false})
+	if err != nil {
+		t.Fatalf("CreateMapTileSource() error = %v", err)
+	}
+
+	dto := publicMapTileSourceDTO(*row)
+	urlTemplate, ok := dto["url_template"].(string)
+	if !ok {
+		t.Fatal("url_template is not a string")
+	}
+	if urlTemplate != row.URLTemplate {
+		t.Fatalf("url_template = %q, want raw %q", urlTemplate, row.URLTemplate)
 	}
 }
 

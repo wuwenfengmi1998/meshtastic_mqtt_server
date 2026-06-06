@@ -17,6 +17,7 @@ const newSource = ref<MapTileSourcePayload>({
   max_zoom: 19,
   enabled: true,
   is_default: false,
+  proxy_enabled: true,
 })
 
 const canPrev = () => page.value > 1
@@ -32,6 +33,7 @@ function editableCopy(item: MapTileSource): MapTileSourcePayload {
     max_zoom: item.max_zoom,
     enabled: item.enabled,
     is_default: item.is_default,
+    proxy_enabled: item.proxy_enabled,
   }
 }
 
@@ -45,6 +47,7 @@ function resetNewSource() {
     max_zoom: 19,
     enabled: true,
     is_default: false,
+    proxy_enabled: true,
   }
 }
 
@@ -214,6 +217,7 @@ onMounted(refreshItems)
         <label class="field zoom-field">最大缩放<input v-model.number="newSource.max_zoom" type="number" min="1" max="30" /></label>
         <label class="switch-card"><input v-model="newSource.enabled" type="checkbox" /> <span>启用</span></label>
         <label class="switch-card"><input v-model="newSource.is_default" type="checkbox" /> <span>设为默认</span></label>
+        <label class="switch-card"><input v-model="newSource.proxy_enabled" type="checkbox" /> <span>是否代理</span></label>
         <div class="form-actions">
           <button class="admin-button" type="submit" :disabled="loading">添加图源</button>
         </div>
@@ -254,6 +258,7 @@ onMounted(refreshItems)
           <label class="field attribution-field">Attribution<input v-model="drafts[item.id].attribution" /></label>
           <label class="field zoom-field">最大缩放<input v-model.number="drafts[item.id].max_zoom" type="number" min="1" max="30" /></label>
           <label class="switch-card"><input v-model="drafts[item.id].enabled" type="checkbox" :disabled="item.is_default" /> <span>启用图源</span></label>
+          <label class="switch-card"><input v-model="drafts[item.id].proxy_enabled" type="checkbox" /> <span>是否代理</span></label>
         </div>
 
         <div class="source-meta">

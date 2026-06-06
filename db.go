@@ -124,6 +124,7 @@ type mapTileSourceRecord struct {
 	MaxZoom         int       `gorm:"column:max_zoom;not null"`
 	Enabled         bool      `gorm:"column:enabled;not null;index"`
 	IsDefault       bool      `gorm:"column:is_default;not null;index"`
+	ProxyEnabled    bool      `gorm:"column:proxy_enabled;not null;index"`
 	CreatedAt       time.Time `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt       time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
@@ -472,6 +473,15 @@ func (s *store) migrate() error {
 }
 
 func migrateMapTileSourceHash(tx *gorm.DB, migrator gorm.Migrator, driver string) error {
+	if !migrator.HasColumn(&mapTileSourceRecord{}, "ProxyEnabled") {
+		if driver == databaseDriverSQLite {
+			if err := tx.Exec("ALTER TABLE map_tile_sources ADD COLUMN proxy_enabled numeric NOT NULL DEFAULT true").Error; err != nil {
+				return fmt.Errorf("migrate map_tile_sources proxy_enabled column: %w", err)
+			}
+		} else if err := migrator.AddColumn(&mapTileSourceRecord{}, "ProxyEnabled"); err != nil {
+			return fmt.Errorf("migrate map_tile_sources proxy_enabled column: %w", err)
+		}
+	}
 	if !migrator.HasColumn(&mapTileSourceRecord{}, "URLTemplateHash") {
 		if driver == databaseDriverSQLite {
 			if err := tx.Exec("ALTER TABLE map_tile_sources ADD COLUMN url_template_hash TEXT NOT NULL DEFAULT ''").Error; err != nil {

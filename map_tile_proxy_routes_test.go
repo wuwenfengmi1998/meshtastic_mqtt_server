@@ -24,7 +24,7 @@ func TestMapTileProxyFetchesAndCaches(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Tiles", URLTemplate: upstream.URL + "/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Tiles", URLTemplate: upstream.URL + "/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource() error = %v", err)
 	}
@@ -62,7 +62,7 @@ func TestMapTileProxyRejectsInvalidCoordinates(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Tiles", URLTemplate: "https://tiles.example.com/{z}/{x}/{y}.png", MaxZoom: 3, Enabled: true})
+	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Tiles", URLTemplate: "https://tiles.example.com/{z}/{x}/{y}.png", MaxZoom: 3, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource() error = %v", err)
 	}
@@ -91,7 +91,11 @@ func TestMapTileProxyUnknownAndDisabledSource(t *testing.T) {
 
 	disabled, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Disabled", URLTemplate: "https://disabled.example.com/{z}/{x}/{y}.png", MaxZoom: 3, Enabled: false})
 	if err != nil {
-		t.Fatalf("CreateMapTileSource() error = %v", err)
+		t.Fatalf("CreateMapTileSource(disabled) error = %v", err)
+	}
+	proxyDisabled, err := st.CreateMapTileSource(mapTileSourceInput{Name: "ProxyDisabled", URLTemplate: "https://proxy-disabled.example.com/{z}/{x}/{y}.png", MaxZoom: 3, Enabled: true, ProxyEnabled: false})
+	if err != nil {
+		t.Fatalf("CreateMapTileSource(proxy disabled) error = %v", err)
 	}
 
 	router := newRouter(webConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, st, nil, nil, nil, nil, nil)
@@ -100,8 +104,9 @@ func TestMapTileProxyUnknownAndDisabledSource(t *testing.T) {
 		"/api/map/not-a-hash?x=0&y=0&z=0",
 		"/api/map/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?x=0&y=0&z=0",
 		"/api/map/" + disabled.URLTemplateHash + "?x=0&y=0&z=0",
+		"/api/map/" + proxyDisabled.URLTemplateHash + "?x=0&y=0&z=0",
 	}
-	wantStatus := []int{http.StatusBadRequest, http.StatusNotFound, http.StatusNotFound}
+	wantStatus := []int{http.StatusBadRequest, http.StatusNotFound, http.StatusNotFound, http.StatusNotFound}
 	for i, url := range cases {
 		recorder := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -125,11 +130,11 @@ func TestMapTileProxyUpstreamStatus(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	row404, err := st.CreateMapTileSource(mapTileSourceInput{Name: "NotFoundTiles", URLTemplate: upstream.URL + "/404/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	row404, err := st.CreateMapTileSource(mapTileSourceInput{Name: "NotFoundTiles", URLTemplate: upstream.URL + "/404/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource(404) error = %v", err)
 	}
-	row500, err := st.CreateMapTileSource(mapTileSourceInput{Name: "StatusTiles", URLTemplate: upstream.URL + "/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	row500, err := st.CreateMapTileSource(mapTileSourceInput{Name: "StatusTiles", URLTemplate: upstream.URL + "/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource(500) error = %v", err)
 	}

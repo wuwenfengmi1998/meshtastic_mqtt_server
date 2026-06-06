@@ -10,12 +10,13 @@ import (
 )
 
 type mapTileSourceRequest struct {
-	Name        string `json:"name"`
-	URLTemplate string `json:"url_template"`
-	Attribution string `json:"attribution"`
-	MaxZoom     int    `json:"max_zoom"`
-	Enabled     bool   `json:"enabled"`
-	IsDefault   bool   `json:"is_default"`
+	Name         string `json:"name"`
+	URLTemplate  string `json:"url_template"`
+	Attribution  string `json:"attribution"`
+	MaxZoom      int    `json:"max_zoom"`
+	Enabled      bool   `json:"enabled"`
+	IsDefault    bool   `json:"is_default"`
+	ProxyEnabled bool   `json:"proxy_enabled"`
 }
 
 func registerMapSourceRoutes(r gin.IRouter, store *store) {
@@ -96,12 +97,13 @@ func registerAdminMapSourceRoutes(r gin.IRouter, store *store) {
 
 func mapTileSourceInputFromRequest(req mapTileSourceRequest) mapTileSourceInput {
 	return mapTileSourceInput{
-		Name:        req.Name,
-		URLTemplate: req.URLTemplate,
-		Attribution: req.Attribution,
-		MaxZoom:     req.MaxZoom,
-		Enabled:     req.Enabled,
-		IsDefault:   req.IsDefault,
+		Name:         req.Name,
+		URLTemplate:  req.URLTemplate,
+		Attribution:  req.Attribution,
+		MaxZoom:      req.MaxZoom,
+		Enabled:      req.Enabled,
+		IsDefault:    req.IsDefault,
+		ProxyEnabled: req.ProxyEnabled,
 	}
 }
 
@@ -151,13 +153,17 @@ func writeMapTileSourceDeleteResponse(c *gin.Context, err error) {
 }
 
 func mapTileSourceDTO(row mapTileSourceRecord) gin.H {
-	return gin.H{"id": row.ID, "name": row.Name, "url_template": row.URLTemplate, "attribution": row.Attribution, "max_zoom": row.MaxZoom, "enabled": row.Enabled, "is_default": row.IsDefault, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
+	return gin.H{"id": row.ID, "name": row.Name, "url_template": row.URLTemplate, "attribution": row.Attribution, "max_zoom": row.MaxZoom, "enabled": row.Enabled, "is_default": row.IsDefault, "proxy_enabled": row.ProxyEnabled, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
 }
 
 func publicMapTileSourceDTO(row mapTileSourceRecord) gin.H {
-	hash := row.URLTemplateHash
-	if hash == "" {
-		hash = mapTileSourceHash(row.URLTemplate)
+	urlTemplate := row.URLTemplate
+	if row.ProxyEnabled {
+		hash := row.URLTemplateHash
+		if hash == "" {
+			hash = mapTileSourceHash(row.URLTemplate)
+		}
+		urlTemplate = "/api/map/" + hash + "?x={x}&y={y}&z={z}"
 	}
-	return gin.H{"id": row.ID, "name": row.Name, "url_template": "/api/map/" + hash + "?x={x}&y={y}&z={z}", "attribution": row.Attribution, "max_zoom": row.MaxZoom}
+	return gin.H{"id": row.ID, "name": row.Name, "url_template": urlTemplate, "attribution": row.Attribution, "max_zoom": row.MaxZoom}
 }

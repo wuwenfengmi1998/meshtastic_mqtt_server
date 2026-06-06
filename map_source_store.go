@@ -29,12 +29,13 @@ var (
 )
 
 type mapTileSourceInput struct {
-	Name        string
-	URLTemplate string
-	Attribution string
-	MaxZoom     int
-	Enabled     bool
-	IsDefault   bool
+	Name         string
+	URLTemplate  string
+	Attribution  string
+	MaxZoom      int
+	Enabled      bool
+	IsDefault    bool
+	ProxyEnabled bool
 }
 
 func (s *store) ListMapTileSources(opts listOptions) ([]mapTileSourceRecord, error) {
@@ -85,7 +86,7 @@ func (s *store) GetDefaultMapTileSource() (*mapTileSourceRecord, error) {
 
 func (s *store) GetEnabledMapTileSourceByHash(hash string) (*mapTileSourceRecord, error) {
 	var row mapTileSourceRecord
-	if err := s.db.Where("enabled = ? AND url_template_hash = ?", true, hash).Take(&row).Error; err != nil {
+	if err := s.db.Where("enabled = ? AND proxy_enabled = ? AND url_template_hash = ?", true, true, hash).Take(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
@@ -154,6 +155,7 @@ func (s *store) UpdateMapTileSource(id uint64, input mapTileSourceInput) (*mapTi
 			"max_zoom":          row.MaxZoom,
 			"enabled":           row.Enabled,
 			"is_default":        row.IsDefault,
+			"proxy_enabled":     row.ProxyEnabled,
 			"updated_at":        time.Now(),
 		}
 		if err := tx.Model(&mapTileSourceRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
@@ -269,6 +271,7 @@ func defaultMapTileSourceRecord() mapTileSourceRecord {
 		MaxZoom:         defaultMapTileSourceMaxZoom,
 		Enabled:         true,
 		IsDefault:       true,
+		ProxyEnabled:    true,
 	}
 }
 
@@ -296,6 +299,7 @@ func mapTileSourceFromInput(input mapTileSourceInput) (*mapTileSourceRecord, err
 		MaxZoom:         maxZoom,
 		Enabled:         input.Enabled,
 		IsDefault:       input.IsDefault,
+		ProxyEnabled:    input.ProxyEnabled,
 	}, nil
 }
 

@@ -87,6 +87,7 @@ export interface PublicMapTileSource {
 export interface MapTileSource extends PublicMapTileSource {
   enabled: boolean
   is_default: boolean
+  proxy_enabled: boolean
   created_at: string
   updated_at: string
 }
@@ -98,6 +99,7 @@ export interface MapTileSourcePayload {
   max_zoom: number
   enabled: boolean
   is_default: boolean
+  proxy_enabled: boolean
 }
 
 export interface MapTileSourceResponse {
