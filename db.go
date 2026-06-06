@@ -116,15 +116,16 @@ func (runtimeSettingRecord) TableName() string {
 }
 
 type mapTileSourceRecord struct {
-	ID          uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	Name        string    `gorm:"column:name;not null;uniqueIndex"`
-	URLTemplate string    `gorm:"column:url_template;not null;uniqueIndex"`
-	Attribution string    `gorm:"column:attribution"`
-	MaxZoom     int       `gorm:"column:max_zoom;not null"`
-	Enabled     bool      `gorm:"column:enabled;not null;index"`
-	IsDefault   bool      `gorm:"column:is_default;not null;index"`
-	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt   time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+	ID              uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	Name            string    `gorm:"column:name;not null;uniqueIndex"`
+	URLTemplate     string    `gorm:"column:url_template;not null;uniqueIndex"`
+	URLTemplateHash string    `gorm:"column:url_template_hash;size:64;not null;uniqueIndex"`
+	Attribution     string    `gorm:"column:attribution"`
+	MaxZoom         int       `gorm:"column:max_zoom;not null"`
+	Enabled         bool      `gorm:"column:enabled;not null;index"`
+	IsDefault       bool      `gorm:"column:is_default;not null;index"`
+	CreatedAt       time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt       time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
 func (mapTileSourceRecord) TableName() string {
@@ -463,8 +464,39 @@ func (s *store) migrate() error {
 				return err
 			}
 		}
+		if err := migrateMapTileSourceHash(tx, migrator, s.driver); err != nil {
+			return err
+		}
 		return (&store{db: tx, driver: s.driver}).EnsureDefaultMapTileSource()
 	})
+}
+
+func migrateMapTileSourceHash(tx *gorm.DB, migrator gorm.Migrator, driver string) error {
+	if !migrator.HasColumn(&mapTileSourceRecord{}, "URLTemplateHash") {
+		if driver == databaseDriverSQLite {
+			if err := tx.Exec("ALTER TABLE map_tile_sources ADD COLUMN url_template_hash TEXT NOT NULL DEFAULT ''").Error; err != nil {
+				return fmt.Errorf("migrate map_tile_sources url_template_hash column: %w", err)
+			}
+		} else if err := migrator.AddColumn(&mapTileSourceRecord{}, "URLTemplateHash"); err != nil {
+			return fmt.Errorf("migrate map_tile_sources url_template_hash column: %w", err)
+		}
+	}
+
+	var rows []mapTileSourceRecord
+	if err := tx.Model(&mapTileSourceRecord{}).Where("url_template_hash = '' OR url_template_hash IS NULL").Find(&rows).Error; err != nil {
+		return fmt.Errorf("list map_tile_sources missing url_template_hash: %w", err)
+	}
+	for _, row := range rows {
+		if err := tx.Model(&mapTileSourceRecord{}).Where("id = ?", row.ID).Update("url_template_hash", mapTileSourceHash(row.URLTemplate)).Error; err != nil {
+			return fmt.Errorf("backfill map_tile_sources url_template_hash: %w", err)
+		}
+	}
+	if !migrator.HasIndex(&mapTileSourceRecord{}, "idx_map_tile_sources_url_template_hash") {
+		if err := migrator.CreateIndex(&mapTileSourceRecord{}, "idx_map_tile_sources_url_template_hash"); err != nil {
+			return fmt.Errorf("migrate map_tile_sources index idx_map_tile_sources_url_template_hash: %w", err)
+		}
+	}
+	return nil
 }
 
 func createMissingIndexes(migrator gorm.Migrator, model any, label string, indexNames []string) error {

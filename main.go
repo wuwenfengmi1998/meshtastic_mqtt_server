@@ -175,6 +175,7 @@ func parseArgs() (*config, error) {
 	flag.IntVar(&cfg.Web.Port, "web-port", cfg.Web.Port, "Web server listen port")
 	flag.StringVar(&cfg.Web.SocketPath, "web-socket-path", cfg.Web.SocketPath, "Web server Unix socket path; empty uses host and port; unsupported on Windows")
 	flag.StringVar(&cfg.Web.StaticDir, "web-static-dir", cfg.Web.StaticDir, "Web frontend static files directory")
+	flag.StringVar(&cfg.Web.MapTileCacheDir, "web-map-tile-cache-dir", cfg.Web.MapTileCacheDir, "Map tile disk cache root directory")
 	flag.StringVar(&cfg.Web.Admin.Username, "admin-username", cfg.Web.Admin.Username, "Web admin username")
 	flag.Parse()
 

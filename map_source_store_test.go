@@ -2,7 +2,10 @@ package main
 
 import (
 	"errors"
+	"strings"
 	"testing"
+
+	"gorm.io/gorm"
 )
 
 func TestMapTileSourceDefaultSeeded(t *testing.T) {
@@ -104,5 +107,115 @@ func TestMapTileSourceDuplicateAndDefaultRules(t *testing.T) {
 	}
 	if err := st.DeleteMapTileSource(first.ID); !errors.Is(err, errMapTileSourceCannotDeleteDefault) {
 		t.Fatalf("delete default error = %v, want errMapTileSourceCannotDeleteDefault", err)
+	}
+}
+
+func TestMapTileSourceHashIsSetOnCreate(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Hashed", URLTemplate: "https://test.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	if err != nil {
+		t.Fatalf("CreateMapTileSource() error = %v", err)
+	}
+	want := mapTileSourceHash("https://test.example.com/{z}/{x}/{y}.png")
+	if row.URLTemplateHash != want {
+		t.Fatalf("URLTemplateHash = %q, want %q", row.URLTemplateHash, want)
+	}
+}
+
+func TestMapTileSourceDefaultHasHash(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	row, err := st.GetDefaultMapTileSource()
+	if err != nil {
+		t.Fatalf("GetDefaultMapTileSource() error = %v", err)
+	}
+	want := mapTileSourceHash(defaultMapTileSourceURLTemplate)
+	if row.URLTemplateHash != want {
+		t.Fatalf("default URLTemplateHash = %q, want %q", row.URLTemplateHash, want)
+	}
+}
+
+func TestGetEnabledMapTileSourceByHash(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "HashLookup", URLTemplate: "https://lookup.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	if err != nil {
+		t.Fatalf("CreateMapTileSource() error = %v", err)
+	}
+
+	found, err := st.GetEnabledMapTileSourceByHash(row.URLTemplateHash)
+	if err != nil {
+		t.Fatalf("GetEnabledMapTileSourceByHash() error = %v", err)
+	}
+	if found.ID != row.ID {
+		t.Fatalf("found ID = %d, want %d", found.ID, row.ID)
+	}
+}
+
+func TestGetEnabledMapTileSourceByHashDisabled(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "DisabledHash", URLTemplate: "https://disabled-hash.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: false})
+	if err != nil {
+		t.Fatalf("CreateMapTileSource() error = %v", err)
+	}
+
+	_, err = st.GetEnabledMapTileSourceByHash(row.URLTemplateHash)
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("GetEnabledMapTileSourceByHash(disabled) = %v, want gorm.ErrRecordNotFound", err)
+	}
+}
+
+func TestGetEnabledMapTileSourceByHashUnknown(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	_, err := st.GetEnabledMapTileSourceByHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("GetEnabledMapTileSourceByHash(unknown) = %v, want gorm.ErrRecordNotFound", err)
+	}
+}
+
+func TestPublicMapTileSourceDTOProxyURL(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "ProxyTest", URLTemplate: "https://proxy.example.com/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true})
+	if err != nil {
+		t.Fatalf("CreateMapTileSource() error = %v", err)
+	}
+
+	dto := publicMapTileSourceDTO(*row)
+	urlTemplate, ok := dto["url_template"].(string)
+	if !ok {
+		t.Fatal("url_template is not a string")
+	}
+	wantPrefix := "/api/map/" + row.URLTemplateHash + "?x={x}&y={y}&z={z}"
+	if urlTemplate != wantPrefix {
+		t.Fatalf("url_template = %q, want %q", urlTemplate, wantPrefix)
+	}
+	if strings.Contains(urlTemplate, "proxy.example.com") {
+		t.Fatal("url_template should not contain upstream hostname")
+	}
+}
+
+func TestMapTileSourceHashFunction(t *testing.T) {
+	hash1 := mapTileSourceHash("https://tile.openstreetmap.jp/{z}/{x}/{y}.png")
+	hash2 := mapTileSourceHash("https://tile.openstreetmap.jp/{z}/{x}/{y}.png")
+	hash3 := mapTileSourceHash("https://other.example.com/{z}/{x}/{y}.png")
+
+	if hash1 != hash2 {
+		t.Fatal("hash should be deterministic")
+	}
+	if len(hash1) != 64 {
+		t.Fatalf("hash length = %d, want 64", len(hash1))
+	}
+	if hash1 == hash3 {
+		t.Fatal("different URLs should produce different hashes")
 	}
 }

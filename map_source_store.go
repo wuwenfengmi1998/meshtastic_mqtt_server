@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -81,6 +83,14 @@ func (s *store) GetDefaultMapTileSource() (*mapTileSourceRecord, error) {
 	return &row, nil
 }
 
+func (s *store) GetEnabledMapTileSourceByHash(hash string) (*mapTileSourceRecord, error) {
+	var row mapTileSourceRecord
+	if err := s.db.Where("enabled = ? AND url_template_hash = ?", true, hash).Take(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
 func (s *store) CreateMapTileSource(input mapTileSourceInput) (*mapTileSourceRecord, error) {
 	row, err := mapTileSourceFromInput(input)
 	if err != nil {
@@ -137,13 +147,14 @@ func (s *store) UpdateMapTileSource(id uint64, input mapTileSourceInput) (*mapTi
 			}
 		}
 		updates := map[string]any{
-			"name":         row.Name,
-			"url_template": row.URLTemplate,
-			"attribution":  row.Attribution,
-			"max_zoom":     row.MaxZoom,
-			"enabled":      row.Enabled,
-			"is_default":   row.IsDefault,
-			"updated_at":   time.Now(),
+			"name":              row.Name,
+			"url_template":      row.URLTemplate,
+			"url_template_hash": row.URLTemplateHash,
+			"attribution":       row.Attribution,
+			"max_zoom":          row.MaxZoom,
+			"enabled":           row.Enabled,
+			"is_default":        row.IsDefault,
+			"updated_at":        time.Now(),
 		}
 		if err := tx.Model(&mapTileSourceRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return err
@@ -244,14 +255,20 @@ func (s *store) EnsureDefaultMapTileSource() error {
 	})
 }
 
+func mapTileSourceHash(urlTemplate string) string {
+	h := sha256.Sum256([]byte(urlTemplate))
+	return hex.EncodeToString(h[:])
+}
+
 func defaultMapTileSourceRecord() mapTileSourceRecord {
 	return mapTileSourceRecord{
-		Name:        defaultMapTileSourceName,
-		URLTemplate: defaultMapTileSourceURLTemplate,
-		Attribution: defaultMapTileSourceAttribution,
-		MaxZoom:     defaultMapTileSourceMaxZoom,
-		Enabled:     true,
-		IsDefault:   true,
+		Name:            defaultMapTileSourceName,
+		URLTemplate:     defaultMapTileSourceURLTemplate,
+		URLTemplateHash: mapTileSourceHash(defaultMapTileSourceURLTemplate),
+		Attribution:     defaultMapTileSourceAttribution,
+		MaxZoom:         defaultMapTileSourceMaxZoom,
+		Enabled:         true,
+		IsDefault:       true,
 	}
 }
 
@@ -272,12 +289,13 @@ func mapTileSourceFromInput(input mapTileSourceInput) (*mapTileSourceRecord, err
 		return nil, fmt.Errorf("max zoom must be between 1 and 30")
 	}
 	return &mapTileSourceRecord{
-		Name:        name,
-		URLTemplate: urlTemplate,
-		Attribution: strings.TrimSpace(input.Attribution),
-		MaxZoom:     maxZoom,
-		Enabled:     input.Enabled,
-		IsDefault:   input.IsDefault,
+		Name:            name,
+		URLTemplate:     urlTemplate,
+		URLTemplateHash: mapTileSourceHash(urlTemplate),
+		Attribution:     strings.TrimSpace(input.Attribution),
+		MaxZoom:         maxZoom,
+		Enabled:         input.Enabled,
+		IsDefault:       input.IsDefault,
 	}, nil
 }
 

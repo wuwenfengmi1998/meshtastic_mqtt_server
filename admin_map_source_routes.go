@@ -155,5 +155,9 @@ func mapTileSourceDTO(row mapTileSourceRecord) gin.H {
 }
 
 func publicMapTileSourceDTO(row mapTileSourceRecord) gin.H {
-	return gin.H{"id": row.ID, "name": row.Name, "url_template": row.URLTemplate, "attribution": row.Attribution, "max_zoom": row.MaxZoom}
+	hash := row.URLTemplateHash
+	if hash == "" {
+		hash = mapTileSourceHash(row.URLTemplate)
+	}
+	return gin.H{"id": row.ID, "name": row.Name, "url_template": "/api/map/" + hash + "?x={x}&y={y}&z={z}", "attribution": row.Attribution, "max_zoom": row.MaxZoom}
 }
