@@ -26,6 +26,7 @@ const menuX = ref(0)
 const menuY = ref(0)
 const topThreshold = 8
 const bottomThreshold = 40
+const scrollOverflowAllowance = 1
 
 const groupedMessages = computed<GroupedTextMessage[]>(() => {
   const groups = new Map<string, GroupedTextMessage>()
@@ -102,25 +103,29 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-function handleScroll() {
-  closeMessageMenu()
-  const el = panelRef.value
+function loadOlderFromCurrentScroll(el: HTMLElement) {
   if (
-    !el ||
     props.loadingOlder ||
     !props.hasMoreMessages ||
-    props.messages.length === 0 ||
+    groupedMessages.value.length === 0 ||
     restoreScrollHeight != null
   ) {
     return
   }
 
-  if (el.scrollTop <= topThreshold) {
-    restoreScrollHeight = el.scrollHeight
-    restoreScrollTop = el.scrollTop
-    restoreMessageCount = props.messages.length
-    emit('load-older')
+  restoreScrollHeight = el.scrollHeight
+  restoreScrollTop = el.scrollTop
+  restoreMessageCount = groupedMessages.value.length
+  emit('load-older')
+}
+
+function handleScroll() {
+  closeMessageMenu()
+  const el = panelRef.value
+  if (!el || el.scrollTop > topThreshold) {
+    return
   }
+  loadOlderFromCurrentScroll(el)
 }
 
 onBeforeUpdate(() => {
@@ -138,6 +143,9 @@ onMounted(async () => {
   if (el) {
     el.scrollTop = el.scrollHeight
     didInitialScroll = true
+    if (el.scrollHeight <= el.clientHeight + scrollOverflowAllowance) {
+      loadOlderFromCurrentScroll(el)
+    }
   }
 })
 
@@ -153,7 +161,7 @@ onUpdated(() => {
   }
 
   if (restoreScrollHeight != null) {
-    if (props.messages.length > restoreMessageCount) {
+    if (groupedMessages.value.length > restoreMessageCount) {
       el.scrollTop = el.scrollHeight - restoreScrollHeight + restoreScrollTop
       clearRestoreState()
       return
@@ -166,6 +174,10 @@ onUpdated(() => {
   if (!didInitialScroll || shouldStickToBottom) {
     el.scrollTop = el.scrollHeight
     didInitialScroll = true
+  }
+
+  if (el.scrollHeight <= el.clientHeight + scrollOverflowAllowance) {
+    loadOlderFromCurrentScroll(el)
   }
 })
 </script>

@@ -24,6 +24,7 @@ const chatHasMore = ref(true)
 const error = ref('')
 const chatPageSize = 20
 const chatHistoryRef = ref<HTMLElement | null>(null)
+const scrollOverflowAllowance = 1
 type GroupedTextMessage = TextMessage & { mergedCount: number; mergedMessages: TextMessage[] }
 type PendingDeleteAction =
   | { kind: 'delete-message'; message: GroupedTextMessage }
@@ -186,30 +187,46 @@ async function loadInitialMessages() {
   const el = chatHistoryRef.value
   if (el) {
     el.scrollTop = el.scrollHeight
+    await loadMoreUntilScrollable(el)
   }
 }
 
 async function loadOlderMessages() {
+  const el = chatHistoryRef.value
+  await loadOlderMessagesFromCurrentScroll(el)
+}
+
+async function loadOlderMessagesFromCurrentScroll(el: HTMLElement | null) {
   if (chatLoadingOlder.value || !chatHasMore.value) {
     return
   }
 
-  const el = chatHistoryRef.value
   const previousScrollHeight = el?.scrollHeight ?? 0
   const previousScrollTop = el?.scrollTop ?? 0
+  const previousGroupedMessageCount = groupedMessages.value.length
   chatLoadingOlder.value = true
   try {
     const response = await getTextMessages(chatPageSize, messages.value.length, props.nodeId)
     messages.value = mergeMessages(messages.value, toChronological(response.items))
     chatHasMore.value = response.items.length === chatPageSize
     await nextTick()
-    if (el) {
+    if (el && groupedMessages.value.length > previousGroupedMessageCount) {
       el.scrollTop = el.scrollHeight - previousScrollHeight + previousScrollTop
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
     chatLoadingOlder.value = false
+  }
+}
+
+async function loadMoreUntilScrollable(el: HTMLElement) {
+  while (chatHasMore.value && el.scrollHeight <= el.clientHeight + scrollOverflowAllowance) {
+    const previousGroupedMessageCount = groupedMessages.value.length
+    await loadOlderMessagesFromCurrentScroll(el)
+    if (groupedMessages.value.length <= previousGroupedMessageCount) {
+      break
+    }
   }
 }
 
