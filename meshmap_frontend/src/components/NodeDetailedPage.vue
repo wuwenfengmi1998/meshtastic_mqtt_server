@@ -270,11 +270,17 @@ async function loadTrajectoryRange() {
   }
 }
 
-function applyTodayTrajectory() {
-  const today = toDateInputValue()
-  trajectoryStartDate.value = today
-  trajectoryEndDate.value = today
+function applyRecentTrajectory(days: number) {
+  const end = new Date()
+  const start = new Date()
+  start.setDate(end.getDate() - days + 1)
+  trajectoryStartDate.value = toDateInputValue(start)
+  trajectoryEndDate.value = toDateInputValue(end)
   loadTrajectoryRange()
+}
+
+function applyTodayTrajectory() {
+  applyRecentTrajectory(1)
 }
 
 async function loadInitialMessages() {
@@ -639,6 +645,8 @@ onBeforeUnmount(() => {
             {{ trajectoryLoading ? '查询中...' : '查询轨迹' }}
           </button>
           <button type="button" :disabled="trajectoryLoading" @click="applyTodayTrajectory">今天</button>
+          <button type="button" :disabled="trajectoryLoading" @click="applyRecentTrajectory(3)">最近三天</button>
+          <button type="button" :disabled="trajectoryLoading" @click="applyRecentTrajectory(7)">最近七天</button>
         </div>
         <p v-if="trajectoryError" class="error trajectory-status">{{ trajectoryError }}</p>
         <p v-else-if="trajectoryTruncated" class="trajectory-status">轨迹点较多，仅显示前 {{ maxTrajectoryPoints }} 条，请缩小日期范围。</p>
