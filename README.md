@@ -2,7 +2,7 @@
 
 Meshtastic MQTT Server 是一个面向 Meshtastic MQTT 数据的本地服务：内置 MQTT broker，接收并校验 Meshtastic MQTT payload，同时提供 Web 管理与地图前端，用于查看节点、消息、位置、遥测、转发状态和管理配置。
 
-本文档重点说明部署与运行方式，不展开代码实现细节。
+![mainpage](doc/main_page.png)
 
 ## 后端功能
 
