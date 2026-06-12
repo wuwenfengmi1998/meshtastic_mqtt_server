@@ -240,7 +240,7 @@ onBeforeUnmount(() => {
     <div class="direct-header">
       <div>
         <p class="eyebrow">Direct Bot Chat</p>
-        <h2>机器人私聊</h2>
+        <h2>机器人私聊（功能未完成）</h2>
       </div>
       <div class="direct-actions">
         <a class="admin-button secondary" href="/admin/bot">返回频道聊天</a>
