@@ -129,6 +129,33 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 		total, err := store.CountBotMessages(opts)
 		writeListResponseWithTotal(c, rows, opts.listOptions, total, err, botMessageDTO)
 	})
+	r.GET("/bot/direct-messages", func(c *gin.Context) {
+		opts, ok := parseListOptions(c)
+		if !ok {
+			return
+		}
+		botID, err := strconv.ParseUint(c.Query("bot_id"), 10, 64)
+		if err != nil || botID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bot id"})
+			return
+		}
+		bot, err := store.GetBotNode(botID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bot node not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		target, err := strconv.ParseInt(c.Query("target_node_num"), 10, 64)
+		if err != nil || target <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid target node num"})
+			return
+		}
+		rows, err := store.ListBotDirectTextMessages(bot.NodeNum, target, opts)
+		writeListResponse(c, rows, opts, err, textMessageDTO)
+	})
 	r.POST("/bot/messages", func(c *gin.Context) {
 		if sender == nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "bot sender is not configured"})

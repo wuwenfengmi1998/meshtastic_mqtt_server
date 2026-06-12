@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { adminLogout, createNodeBlockingRule, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReportViewport, getNodeInfo, getPositions, getTextMessages } from './api'
 import AdminBlockingManagement from './components/AdminBlockingManagement.vue'
 import AdminBot from './components/AdminBot.vue'
+import AdminBotDirect from './components/AdminBotDirect.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
 import AdminDiscardDetails from './components/AdminDiscardDetails.vue'
 import AdminHelpEdit from './components/AdminHelpEdit.vue'
@@ -25,6 +26,7 @@ const adminPath = currentPath
 const isAdminPage = adminPath.startsWith('/admin')
 const isMqttForwardAdminPage = adminPath === '/admin/mqtt_forward' || adminPath === '/admin/mqtt_forward/'
 const isBotAdminPage = adminPath === '/admin/bot' || adminPath === '/admin/bot/'
+const isBotDirectAdminPage = adminPath === '/admin/bot/direct' || adminPath === '/admin/bot/direct/'
 const detailMatch = currentPath.match(/^\/detailed\/(.+)$/)
 const detailedNodeId = detailMatch ? decodeURIComponent(detailMatch[1]) : ''
 const isDetailedPage = !!detailedNodeId
@@ -514,6 +516,7 @@ onBeforeUnmount(() => {
             <a href="/admin/blocking_management" :class="{ active: adminPath === '/admin/blocking_management' }">屏蔽管理</a>
             <a href="/admin/mqtt_forward/" :class="{ active: isMqttForwardAdminPage }">MQTT转发</a>
             <a href="/admin/bot" :class="{ active: isBotAdminPage }">机器人</a>
+            <a href="/admin/bot/direct" :class="{ active: isBotDirectAdminPage }">机器人私聊</a>
             <a href="/admin/map_source" :class="{ active: adminPath === '/admin/map_source' }">地图图源</a>
             <a href="/admin/help_edit" :class="{ active: adminPath === '/admin/help_edit' }">帮助编辑</a>
             <a href="/admin/log/login" :class="{ active: adminPath === '/admin/log/login' }">登录日志</a>
@@ -555,6 +558,7 @@ onBeforeUnmount(() => {
         <AdminBlockingManagement v-else-if="adminPath === '/admin/blocking_management'" />
         <AdminMqttForward v-else-if="isMqttForwardAdminPage" />
         <AdminBot v-else-if="isBotAdminPage" />
+        <AdminBotDirect v-else-if="isBotDirectAdminPage" />
         <AdminMapSource v-else-if="adminPath === '/admin/map_source'" />
         <AdminHelpEdit v-else-if="adminPath === '/admin/help_edit'" />
         <AdminLoginLogs v-else-if="adminPath === '/admin/log/login'" />

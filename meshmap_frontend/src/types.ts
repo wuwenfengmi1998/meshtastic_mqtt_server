@@ -143,6 +143,7 @@ export interface TextMessage {
   packet_id: number | null
   text: string | null
   topic: string
+  channel_id: string | null
   created_at: string
   mqtt_remote_host: string | null
   content_json: string

@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { broadcastBotNodeInfo, createBotNode, deleteBotNode, getBotMessages, getBotNodes, getNodeInfo, regenerateBotNodeKeys, sendBotMessage, updateBotNode } from '../api'
-import type { BotMessage, BotMessageStatus, BotMessageType, BotNode, BotNodePayload, NodeInfo } from '../types'
+import { computed, nextTick, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, watch } from 'vue'
+import { broadcastBotNodeInfo, createBotNode, deleteBotNode, getBotNodes, getNodeInfo, getTextMessages, regenerateBotNodeKeys, sendBotMessage, updateBotNode } from '../api'
+import type { BotMessageType, BotNode, BotNodePayload, NodeInfo, TextMessage } from '../types'
 
 const botPageSize = 100
-const messagePageSize = 100
+const chatPageSize = 30
 const maxTextBytes = 200
+const topThreshold = 8
+const bottomThreshold = 40
+const scrollOverflowAllowance = 1
 
 const bots = ref<BotNode[]>([])
-const messages = ref<BotMessage[]>([])
+const chatMessages = ref<TextMessage[]>([])
 const targets = ref<NodeInfo[]>([])
 const selectedBotId = ref<number | null>(null)
 const loading = ref(false)
-const messageLoading = ref(false)
+const chatLoadingOlder = ref(false)
+const chatHasMore = ref(true)
+const chatInitialized = ref(false)
 const saving = ref(false)
 const sending = ref(false)
 const broadcastingNodeInfo = ref(false)
@@ -20,6 +25,7 @@ const regeneratingKeys = ref(false)
 const error = ref('')
 const message = ref('')
 const targetQuery = ref('')
+const chatPanelRef = ref<HTMLElement | null>(null)
 
 const newBot = ref({ node_num: '', long_name: '', short_name: '', default_channel_id: 'LongFast', topic_prefix: 'msh/CN', psk: 'AQ==', nodeinfo_broadcast_enabled: true, nodeinfo_broadcast_interval_seconds: '3600', enabled: true })
 const edits = ref<Record<number, { node_num: string; long_name: string; short_name: string; default_channel_id: string; topic_prefix: string; psk: string; nodeinfo_broadcast_enabled: boolean; nodeinfo_broadcast_interval_seconds: string; enabled: boolean }>>({})
@@ -27,9 +33,30 @@ const sendForm = ref<{ message_type: BotMessageType; channel_id: string; to_node
 
 const selectedBot = computed(() => bots.value.find((bot) => bot.id === selectedBotId.value) ?? null)
 const enabledBots = computed(() => bots.value.filter((bot) => bot.enabled).length)
+const currentChannelID = computed(() => sendForm.value.channel_id.trim() || selectedBot.value?.default_channel_id || '')
 const sendTextBytes = computed(() => new TextEncoder().encode(sendForm.value.text).length)
 const isTextTooLong = computed(() => sendTextBytes.value > maxTextBytes)
-const recentMessages = computed(() => [...messages.value].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)))
+const nodesById = computed(() => {
+  const map = new Map<string, NodeInfo>()
+  for (const node of targets.value) {
+    map.set(node.node_id, node)
+  }
+  return Object.fromEntries(map)
+})
+const groupedChatMessages = computed(() => {
+  const groups = new Map<string, TextMessage & { mergedCount: number; mergedMessages: TextMessage[] }>()
+  for (const item of chatMessages.value) {
+    const key = `${item.packet_id ?? ''}\n${item.text ?? ''}`
+    const group = groups.get(key)
+    if (group) {
+      group.mergedCount += 1
+      group.mergedMessages.push(item)
+    } else {
+      groups.set(key, { ...item, mergedCount: 1, mergedMessages: [item] })
+    }
+  }
+  return Array.from(groups.values())
+})
 const targetOptions = computed(() => {
   const query = targetQuery.value.trim().toLowerCase()
   return targets.value
@@ -44,13 +71,30 @@ const targetOptions = computed(() => {
 })
 const canSend = computed(() => {
   if (!selectedBot.value || sending.value || isTextTooLong.value || !sendForm.value.text.trim()) return false
+  if (!currentChannelID.value) return false
   if (sendForm.value.message_type === 'direct' && !sendForm.value.to_node_id) return false
   return true
 })
 
+let shouldStickToBottom = true
+let didInitialScroll = false
+let restoreScrollHeight: number | null = null
+let restoreScrollTop = 0
+let restoreMessageCount = 0
+let chatRefreshTimer: number | undefined
+
 watch(selectedBot, (bot) => {
   if (bot) {
     sendForm.value.channel_id = bot.default_channel_id
+    resetChatState()
+    loadInitialChatMessages()
+  }
+})
+
+watch(currentChannelID, () => {
+  if (selectedBot.value) {
+    resetChatState()
+    loadInitialChatMessages()
   }
 })
 
@@ -84,6 +128,42 @@ function resetEdits() {
   }]))
 }
 
+function resetChatState() {
+  chatMessages.value = []
+  chatHasMore.value = true
+  chatInitialized.value = false
+  didInitialScroll = false
+  restoreScrollHeight = null
+  restoreScrollTop = 0
+  restoreMessageCount = 0
+}
+
+function toChronological(items: TextMessage[]) {
+  return [...items].reverse()
+}
+
+function compareMessages(a: TextMessage, b: TextMessage) {
+  const timeDiff = Date.parse(a.created_at) - Date.parse(b.created_at)
+  return timeDiff !== 0 ? timeDiff : a.id - b.id
+}
+
+function mergeMessages(existing: TextMessage[], incoming: TextMessage[]) {
+  const byId = new Map<number, TextMessage>()
+  for (const item of existing) byId.set(item.id, item)
+  for (const item of incoming) byId.set(item.id, item)
+  return Array.from(byId.values()).sort(compareMessages)
+}
+
+function isNearBottom(el: HTMLElement) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= bottomThreshold
+}
+
+function clearRestoreState() {
+  restoreScrollHeight = null
+  restoreScrollTop = 0
+  restoreMessageCount = 0
+}
+
 async function refreshBots() {
   loading.value = true
   error.value = ''
@@ -105,20 +185,42 @@ async function refreshBots() {
   }
 }
 
-async function refreshMessages() {
-  if (!selectedBotId.value) {
-    messages.value = []
-    return
-  }
-  messageLoading.value = true
+async function loadInitialChatMessages() {
+  if (!currentChannelID.value) return
+  chatLoadingOlder.value = true
   try {
-    const response = await getBotMessages(selectedBotId.value, messagePageSize, 0)
-    messages.value = response.items
+    const response = await getTextMessages(chatPageSize, 0, { channelId: currentChannelID.value })
+    chatMessages.value = toChronological(response.items)
+    chatHasMore.value = response.items.length === chatPageSize
+    chatInitialized.value = true
+    await nextTick()
+    const el = chatPanelRef.value
+    if (el) el.scrollTop = el.scrollHeight
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
-    messageLoading.value = false
+    chatLoadingOlder.value = false
   }
+}
+
+async function loadOlderChatMessages() {
+  if (chatLoadingOlder.value || !chatHasMore.value || !currentChannelID.value) return
+  chatLoadingOlder.value = true
+  try {
+    const response = await getTextMessages(chatPageSize, chatMessages.value.length, { channelId: currentChannelID.value })
+    chatMessages.value = mergeMessages(chatMessages.value, toChronological(response.items))
+    chatHasMore.value = response.items.length === chatPageSize
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    chatLoadingOlder.value = false
+  }
+}
+
+async function pollLatestChatMessages() {
+  if (!currentChannelID.value) return
+  const response = await getTextMessages(chatPageSize, 0, { channelId: currentChannelID.value })
+  chatMessages.value = mergeMessages(chatMessages.value, toChronological(response.items))
 }
 
 async function refreshTargets() {
@@ -133,7 +235,6 @@ async function refreshTargets() {
 function selectBot(bot: BotNode) {
   selectedBotId.value = bot.id
   sendForm.value.channel_id = bot.default_channel_id
-  refreshMessages()
 }
 
 function applyBotUpdate(bot: BotNode) {
@@ -186,7 +287,7 @@ async function removeBot(bot: BotNode) {
     await deleteBotNode(bot.id)
     if (selectedBotId.value === bot.id) {
       selectedBotId.value = null
-      messages.value = []
+      resetChatState()
     }
     await refreshBots()
   } catch (err) {
@@ -251,7 +352,7 @@ async function sendMessage() {
     const response = await sendBotMessage({
       bot_id: selectedBot.value.id,
       message_type: sendForm.value.message_type,
-      channel_id: sendForm.value.channel_id || selectedBot.value.default_channel_id,
+      channel_id: currentChannelID.value,
       to_node_id: sendForm.value.message_type === 'direct' ? sendForm.value.to_node_id : undefined,
       text: sendForm.value.text,
     })
@@ -261,7 +362,7 @@ async function sendMessage() {
       message.value = '消息已发送'
       sendForm.value.text = ''
     }
-    await refreshMessages()
+    await pollLatestChatMessages()
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -269,22 +370,70 @@ async function sendMessage() {
   }
 }
 
+function handleChatScroll() {
+  const el = chatPanelRef.value
+  if (!el || el.scrollTop > topThreshold) return
+  if (restoreScrollHeight == null) {
+    restoreScrollHeight = el.scrollHeight
+    restoreScrollTop = el.scrollTop
+    restoreMessageCount = groupedChatMessages.value.length
+  }
+  loadOlderChatMessages()
+}
+
+function senderName(item: TextMessage) {
+  if (item.from_id === selectedBot.value?.node_id) return selectedBot.value.long_name
+  const node = nodesById.value[item.from_id]
+  return node?.long_name || node?.short_name || item.from_id
+}
+
+function isOwnMessage(item: TextMessage) {
+  return item.from_id === selectedBot.value?.node_id
+}
+
 function formatTime(value: string | null) {
   return value ? new Date(value).toLocaleString() : '-'
 }
 
-function statusText(status: BotMessageStatus) {
-  return status === 'published' ? '已发送' : status === 'failed' ? '失败' : '等待中'
-}
+onBeforeUpdate(() => {
+  const el = chatPanelRef.value
+  if (el) shouldStickToBottom = isNearBottom(el)
+})
 
-function targetLabel(item: BotMessage) {
-  if (item.message_type === 'channel') return '频道广播'
-  return item.to_node_id ? `私聊 ${item.to_node_id}` : '定向消息'
-}
+onUpdated(() => {
+  const el = chatPanelRef.value
+  if (!el) return
+  if (restoreScrollHeight != null) {
+    if (groupedChatMessages.value.length > restoreMessageCount) {
+      el.scrollTop = el.scrollHeight - restoreScrollHeight + restoreScrollTop
+      clearRestoreState()
+      return
+    }
+    if (!chatLoadingOlder.value) clearRestoreState()
+  }
+  if (!didInitialScroll || shouldStickToBottom) {
+    el.scrollTop = el.scrollHeight
+    didInitialScroll = true
+  }
+  if (chatInitialized.value && el.scrollHeight <= el.clientHeight + scrollOverflowAllowance) {
+    handleChatScroll()
+  }
+})
 
 onMounted(() => {
   refreshBots()
   refreshTargets()
+  chatRefreshTimer = window.setInterval(() => {
+    if (selectedBot.value && currentChannelID.value) {
+      pollLatestChatMessages()
+    }
+  }, 5000)
+})
+
+onBeforeUnmount(() => {
+  if (chatRefreshTimer !== undefined) {
+    window.clearInterval(chatRefreshTimer)
+  }
 })
 </script>
 
@@ -394,64 +543,58 @@ onMounted(() => {
             </div>
           </section>
 
-          <section class="panel send-panel">
-            <div class="section-title">
+          <section class="panel bot-chat-panel">
+            <div class="bot-chat-header">
               <div>
-                <p class="eyebrow">Compose</p>
-                <h3>发送消息</h3>
+                <p class="eyebrow">Channel Chat</p>
+                <h3>{{ currentChannelID || '未选择频道' }}</h3>
               </div>
+              <button class="admin-button secondary" @click="pollLatestChatMessages" :disabled="chatLoadingOlder">刷新聊天</button>
             </div>
-            <div class="segmented-control">
-              <button :class="{ active: sendForm.message_type === 'channel' }" @click="sendForm.message_type = 'channel'">频道广播</button>
-              <button :class="{ active: sendForm.message_type === 'direct' }" @click="sendForm.message_type = 'direct'">定向消息</button>
-            </div>
-            <div class="send-grid">
-              <label>频道 ID<input v-model="sendForm.channel_id" /></label>
-              <label v-if="sendForm.message_type === 'direct'">搜索目标<input v-model="targetQuery" placeholder="节点名 / !nodeid / node_num" /></label>
-              <label v-if="sendForm.message_type === 'direct'" class="wide">目标节点
-                <select v-model="sendForm.to_node_id">
-                  <option value="">选择目标节点</option>
-                  <option v-for="node in targetOptions" :key="node.node_id" :value="node.node_id">
-                    {{ node.long_name || node.short_name || node.node_id }} · {{ node.node_id }} · {{ node.node_num }}
-                  </option>
-                </select>
-              </label>
-              <label class="wide">消息内容
-                <textarea v-model="sendForm.text" rows="4" placeholder="输入要发送的文本，真实设备是否接受定向消息取决于固件兼容性。"></textarea>
-              </label>
-            </div>
-            <div class="send-actions">
-              <span class="hint" :class="{ warn: isTextTooLong }">{{ sendTextBytes }} / {{ maxTextBytes }} bytes</span>
-              <button class="admin-button send-button" @click="sendMessage" :disabled="!canSend">{{ sending ? '发送中...' : '发送消息' }}</button>
-            </div>
-          </section>
 
-          <section class="panel history-panel">
-            <div class="history-header">
-              <div>
-                <p class="eyebrow">History</p>
-                <h3>发送历史</h3>
-              </div>
-              <button class="admin-button secondary" @click="refreshMessages" :disabled="messageLoading">{{ messageLoading ? '刷新中...' : '刷新历史' }}</button>
-            </div>
-            <div class="message-list">
-              <div v-if="recentMessages.length === 0" class="empty-state">暂无发送记录</div>
-              <article v-for="item in recentMessages" :key="item.id" class="message-card" :class="item.status">
-                <div class="message-head">
-                  <div>
-                    <span class="message-target">{{ targetLabel(item) }}</span>
-                    <span class="message-time">{{ formatTime(item.created_at) }}</span>
+            <div ref="chatPanelRef" class="bot-chat-list" @scroll.passive="handleChatScroll">
+              <div v-if="chatLoadingOlder" class="chat-loading">正在加载更早消息...</div>
+              <div v-else-if="!chatHasMore && chatMessages.length > 0" class="chat-end">没有更多历史消息</div>
+              <div v-if="groupedChatMessages.length === 0" class="empty-state">当前频道暂无聊天消息</div>
+              <div v-for="item in groupedChatMessages" :key="item.id" class="chat-bubble-row" :class="{ own: isOwnMessage(item) }">
+                <div class="chat-bubble">
+                  <div class="bubble-meta">
+                    <strong>{{ senderName(item) }}</strong>
+                    <small>{{ formatTime(item.created_at) }}</small>
                   </div>
-                  <span class="status-badge" :class="item.status">{{ statusText(item.status) }}</span>
+                  <div class="bubble-text">
+                    {{ item.text || '[binary]' }}
+                    <span v-if="item.mergedCount > 1" class="message-merge-count">x{{ item.mergedCount }}</span>
+                  </div>
+                  <div class="bubble-topic">{{ item.topic }}</div>
                 </div>
-                <p class="message-text">{{ item.text }}</p>
-                <div class="message-meta">
-                  <span>{{ item.channel_id }}</span>
-                  <span>#{{ item.packet_id }}</span>
-                  <span>{{ item.encrypted ? 'AES-CTR' : '明文' }}</span>
-                </div>
-                <p v-if="item.error" class="message-error">{{ item.error }}</p>
-              </article>
+              </div>
+            </div>
+
+            <div class="bot-chat-composer">
+              <!-- <div class="segmented-control">
+                <button :class="{ active: sendForm.message_type === 'channel' }" @click="sendForm.message_type = 'channel'">频道广播</button>
+                <a class="direct-chat-link" href="/admin/bot/direct">打开私聊窗口</a>
+              </div> -->
+              <div class="composer-grid">
+                <label>频道 ID<input v-model="sendForm.channel_id" /></label>
+                <label v-if="sendForm.message_type === 'direct'">搜索目标<input v-model="targetQuery" placeholder="节点名 / !nodeid / node_num" /></label>
+                <label v-if="sendForm.message_type === 'direct'" class="wide">目标节点
+                  <select v-model="sendForm.to_node_id">
+                    <option value="">选择目标节点</option>
+                    <option v-for="node in targetOptions" :key="node.node_id" :value="node.node_id">
+                      {{ node.long_name || node.short_name || node.node_id }} · {{ node.node_id }} · {{ node.node_num }}
+                    </option>
+                  </select>
+                </label>
+                <label class="wide">消息内容
+                  <textarea v-model="sendForm.text" rows="3" placeholder="输入要发送的文本，Enter 换行。"></textarea>
+                </label>
+              </div>
+              <div class="send-actions">
+                <span class="hint" :class="{ warn: isTextTooLong }">{{ sendTextBytes }} / {{ maxTextBytes }} bytes</span>
+                <button class="admin-button send-button" @click="sendMessage" :disabled="!canSend">{{ sending ? '发送中...' : '发送消息' }}</button>
+              </div>
             </div>
           </section>
         </template>
@@ -464,7 +607,7 @@ onMounted(() => {
 <style scoped>
 .admin-bot-page { display: grid; gap: 12px; }
 .bot-hero, .selected-summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 16px; }
-.bot-hero-actions, .row-actions, .history-header, .send-actions, .section-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.bot-hero-actions, .row-actions, .send-actions, .section-title, .bot-chat-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .hint { color: #64748b; font-size: 13px; }
 .hint.warn { color: #b91c1c; font-weight: 800; }
 .bot-layout { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 12px; align-items: start; }
@@ -504,29 +647,28 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-c
 .summary-grid small { color: #64748b; font-size: 12px; }
 .stat-chip { display: inline-flex; align-items: center; color: #334155; font-size: 13px; font-weight: 800; background: #e2e8f0; }
 .stat-chip.ok { color: #166534; background: #dcfce7; }
-.send-panel, .history-panel { padding: 16px; display: grid; gap: 14px; }
+.bot-chat-panel { display: grid; grid-template-rows: auto minmax(320px, 1fr) auto; min-height: 680px; overflow: hidden; }
+.bot-chat-header { padding: 14px 16px; border-bottom: 1px solid #e2e8f0; }
+.bot-chat-list { min-height: 0; max-height: 520px; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%); }
+.chat-loading, .chat-end { align-self: center; border-radius: 999px; padding: 6px 10px; color: #64748b; font-size: 12px; background: #e2e8f0; }
+.chat-bubble-row { display: flex; justify-content: flex-start; }
+.chat-bubble-row.own { justify-content: flex-end; }
+.chat-bubble { max-width: min(680px, 78%); border: 1px solid #e2e8f0; border-radius: 16px 16px 16px 4px; padding: 10px 12px; background: #fff; box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06); }
+.chat-bubble-row.own .chat-bubble { border-color: #bfdbfe; border-radius: 16px 16px 4px 16px; background: #dbeafe; }
+.bubble-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #334155; font-size: 12px; }
+.bubble-meta small, .bubble-topic { color: #64748b; }
+.bubble-text { margin-top: 6px; color: #0f172a; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.bubble-topic { margin-top: 6px; font-size: 11px; word-break: break-all; }
+.message-merge-count { display: inline-flex; margin-left: 6px; border-radius: 999px; padding: 1px 6px; color: #1d4ed8; background: #bfdbfe; font-size: 12px; font-weight: 800; }
+.bot-chat-composer { display: grid; gap: 12px; border-top: 1px solid #e2e8f0; padding: 14px 16px; background: #fff; }
 .segmented-control { display: inline-flex; width: fit-content; border: 1px solid #cbd5e1; border-radius: 999px; padding: 3px; background: #f8fafc; }
-.segmented-control button { border: 0; border-radius: 999px; padding: 8px 13px; color: #475569; font-weight: 800; background: transparent; }
+.segmented-control button, .segmented-control .direct-chat-link { border: 0; border-radius: 999px; padding: 8px 13px; color: #475569; font-weight: 800; text-decoration: none; background: transparent; }
 .segmented-control button.active { color: #fff; background: #2563eb; }
-.send-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 12px; }
-.send-grid .wide { grid-column: 1 / -1; }
+.composer-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 12px; }
+.composer-grid .wide { grid-column: 1 / -1; }
 .send-button { min-width: 120px; }
 .admin-button.secondary { color: #334155; background: #e2e8f0; }
 .admin-button.danger { background: #dc2626; }
-.message-list { display: grid; gap: 10px; max-height: 520px; overflow: auto; padding-right: 4px; }
-.message-card { border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px; background: #fff; }
-.message-card.published { border-color: #bbf7d0; }
-.message-card.failed { border-color: #fecaca; background: #fff7f7; }
-.message-head { display: flex; justify-content: space-between; gap: 10px; }
-.message-target { display: block; color: #0f172a; font-weight: 900; }
-.message-time, .message-meta { color: #64748b; font-size: 12px; }
-.message-text { margin: 10px 0; color: #0f172a; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
-.message-meta { display: flex; flex-wrap: wrap; gap: 8px; }
-.status-badge { border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 900; white-space: nowrap; }
-.status-badge.published { color: #166534; background: #dcfce7; }
-.status-badge.failed { color: #991b1b; background: #fee2e2; }
-.status-badge.pending { color: #92400e; background: #fef3c7; }
-.message-error { margin: 10px 0 0; border-radius: 10px; padding: 8px 10px; color: #991b1b; background: #fee2e2; }
 .empty-state { color: #64748b; padding: 16px; border: 1px dashed #cbd5e1; border-radius: 14px; text-align: center; background: #f8fafc; }
 .empty-state.large { min-height: 260px; display: grid; place-items: center; }
 @media (max-width: 1100px) {
@@ -535,7 +677,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-c
 }
 @media (max-width: 700px) {
   .bot-hero, .selected-summary { align-items: stretch; flex-direction: column; }
-  .send-grid, .summary-grid { grid-template-columns: 1fr; }
+  .composer-grid, .summary-grid { grid-template-columns: 1fr; }
   .bot-hero-actions { justify-content: flex-start; flex-wrap: wrap; }
+  .chat-bubble { max-width: 92%; }
 }
 </style>

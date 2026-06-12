@@ -63,6 +63,7 @@ async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
 
 type ListQueryOptions = {
   nodeId?: string
+  channelId?: string
   since?: string
   until?: string
 }
@@ -72,6 +73,9 @@ function listPath(path: string, limit: number, offset: number, nodeIdOrOptions: 
   const options = typeof nodeIdOrOptions === 'string' ? { nodeId: nodeIdOrOptions } : nodeIdOrOptions
   if (options.nodeId) {
     params.set('node_id', options.nodeId)
+  }
+  if (options.channelId) {
+    params.set('channel_id', options.channelId)
   }
   if (options.since) {
     params.set('since', options.since)
@@ -157,8 +161,8 @@ export function getEnabledMapSources(): Promise<PublicMapTileSourcesResponse> {
   return getJSON<PublicMapTileSourcesResponse>('/api/map-source/enabled')
 }
 
-export function getTextMessages(limit = 100, offset = 0, nodeId = ''): Promise<ListResponse<TextMessage>> {
-  return getJSON<ListResponse<TextMessage>>(listPath('/api/text-messages', limit, offset, nodeId))
+export function getTextMessages(limit = 100, offset = 0, nodeIdOrOptions: string | ListQueryOptions = ''): Promise<ListResponse<TextMessage>> {
+  return getJSON<ListResponse<TextMessage>>(listPath('/api/text-messages', limit, offset, nodeIdOrOptions))
 }
 
 export function deleteTextMessage(id: number): Promise<{ status: string }> {
@@ -371,6 +375,14 @@ export function getBotMessages(botId = 0, limit = 100, offset = 0): Promise<List
     params.set('bot_id', String(botId))
   }
   return getJSON<ListResponse<BotMessage>>(`/api/admin/bot/messages?${params.toString()}`)
+}
+
+export function getBotDirectTextMessages(botId: number, targetNodeNum: number, limit = 100, offset = 0, channelId = ''): Promise<ListResponse<TextMessage>> {
+  const params = new URLSearchParams({ bot_id: String(botId), target_node_num: String(targetNodeNum), limit: String(limit), offset: String(offset) })
+  if (channelId) {
+    params.set('channel_id', channelId)
+  }
+  return getJSON<ListResponse<TextMessage>>(`/api/admin/bot/direct-messages?${params.toString()}`)
 }
 
 export function sendBotMessage(payload: BotSendMessagePayload): Promise<BotMessageMutationResponse> {

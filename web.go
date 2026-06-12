@@ -421,6 +421,7 @@ func parseListOptions(c *gin.Context) (listOptions, bool) {
 	if nodeID == "" {
 		nodeID = c.Query("from")
 	}
+	channelID := c.Query("channel_id")
 	var since, until *time.Time
 	if value := c.Query("since"); value != "" {
 		parsed, err := time.Parse(time.RFC3339, value)
@@ -438,7 +439,7 @@ func parseListOptions(c *gin.Context) (listOptions, bool) {
 		}
 		until = &parsed
 	}
-	return normalizeListOptions(listOptions{Limit: limit, Offset: offset, NodeID: nodeID, Since: since, Until: until}), true
+	return normalizeListOptions(listOptions{Limit: limit, Offset: offset, NodeID: nodeID, ChannelID: channelID, Since: since, Until: until}), true
 }
 
 func parseMapReportListOptions(c *gin.Context) (listOptions, bool) {
@@ -599,7 +600,7 @@ func mapReportClusterDTO(row mapReportClusterRecord) gin.H {
 }
 
 func textMessageDTO(row textMessageRecord) gin.H {
-	return gin.H{"id": row.ID, "from_id": row.FromID, "from_num": row.FromNum, "packet_id": ptrInt64(row.PacketID), "text": ptrString(row.Text), "topic": row.Topic, "created_at": row.CreatedAt, "mqtt_remote_host": ptrString(row.MQTTRemoteHost), "content_json": row.ContentJSON}
+	return gin.H{"id": row.ID, "from_id": row.FromID, "from_num": row.FromNum, "packet_id": ptrInt64(row.PacketID), "text": ptrString(row.Text), "topic": row.Topic, "channel_id": ptrString(row.ChannelID), "created_at": row.CreatedAt, "mqtt_remote_host": ptrString(row.MQTTRemoteHost), "content_json": row.ContentJSON}
 }
 
 func discardDetailsDTO(row discardDetailsRecord) gin.H {
