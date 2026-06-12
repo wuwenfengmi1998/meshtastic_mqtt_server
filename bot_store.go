@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/ecdh"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -15,23 +17,28 @@ import (
 )
 
 const (
-	botDefaultTopicPrefix     = "msh/2/e"
-	botMessageTypeChannel     = "channel"
-	botMessageTypeDirect      = "direct"
-	botMessageStatusPending   = "pending"
-	botMessageStatusPublished = "published"
-	botMessageStatusFailed    = "failed"
+	botDefaultTopicPrefix              = "msh/CN"
+	botDefaultPSK                      = "AQ=="
+	botDefaultNodeInfoBroadcastSeconds = int64(3600)
+	botMessageTypeChannel              = "channel"
+	botMessageTypeDirect               = "direct"
+	botMessageStatusPending            = "pending"
+	botMessageStatusPublished          = "published"
+	botMessageStatusFailed             = "failed"
 )
 
 var errBotNodeAlreadyExists = errors.New("bot node already exists")
 
 type botNodeInput struct {
-	NodeNum          *int64
-	LongName         string
-	ShortName        string
-	Enabled          bool
-	DefaultChannelID string
-	TopicPrefix      string
+	NodeNum                          *int64
+	LongName                         string
+	ShortName                        string
+	Enabled                          bool
+	DefaultChannelID                 string
+	TopicPrefix                      string
+	PSK                              string
+	NodeInfoBroadcastEnabled         bool
+	NodeInfoBroadcastIntervalSeconds int64
 }
 
 type botMessageListOptions struct {
@@ -76,6 +83,9 @@ func (s *store) CreateBotNode(input botNodeInput) (*botNodeRecord, error) {
 	if err := s.ensureBotNodeDoesNotConflictWithNodeInfo(row.NodeNum); err != nil {
 		return nil, err
 	}
+	if err := populateBotNodeKeys(row); err != nil {
+		return nil, err
+	}
 	if err := s.db.Create(row).Error; err != nil {
 		return nil, err
 	}
@@ -100,14 +110,17 @@ func (s *store) UpdateBotNode(id uint64, input botNodeInput) (*botNodeRecord, er
 		return nil, err
 	}
 	updates := map[string]any{
-		"node_id":            row.NodeID,
-		"node_num":           row.NodeNum,
-		"long_name":          row.LongName,
-		"short_name":         row.ShortName,
-		"enabled":            row.Enabled,
-		"default_channel_id": row.DefaultChannelID,
-		"topic_prefix":       row.TopicPrefix,
-		"updated_at":         time.Now(),
+		"node_id":                             row.NodeID,
+		"node_num":                            row.NodeNum,
+		"long_name":                           row.LongName,
+		"short_name":                          row.ShortName,
+		"enabled":                             row.Enabled,
+		"default_channel_id":                  row.DefaultChannelID,
+		"topic_prefix":                        row.TopicPrefix,
+		"psk":                                 row.PSK,
+		"nodeinfo_broadcast_enabled":          row.NodeInfoBroadcastEnabled,
+		"nodeinfo_broadcast_interval_seconds": row.NodeInfoBroadcastIntervalSeconds,
+		"updated_at":                          time.Now(),
 	}
 	if err := s.db.Model(&botNodeRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, err
@@ -140,6 +153,35 @@ func (s *store) UpdateBotMessageStatus(id uint64, status, errText string, publis
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+func (s *store) UpdateBotNodeInfoBroadcastAt(id uint64, t time.Time) error {
+	result := s.db.Model(&botNodeRecord{}).Where("id = ?", id).Updates(map[string]any{"last_nodeinfo_broadcast_at": &t, "updated_at": time.Now()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (s *store) RegenerateBotNodeKeys(id uint64) (*botNodeRecord, error) {
+	if id == 0 {
+		return nil, fmt.Errorf("bot node id is required")
+	}
+	row, err := s.GetBotNode(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := populateBotNodeKeys(row); err != nil {
+		return nil, err
+	}
+	updates := map[string]any{"public_key": row.PublicKey, "private_key": row.PrivateKey, "updated_at": time.Now()}
+	if err := s.db.Model(&botNodeRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+	return s.GetBotNode(id)
 }
 
 func (s *store) ListBotMessages(opts botMessageListOptions) ([]botMessageRecord, error) {
@@ -182,6 +224,13 @@ func (s *store) normalizedBotNodeRecord(input botNodeInput) (*botNodeRecord, err
 	longName := strings.TrimSpace(input.LongName)
 	shortName := strings.TrimSpace(input.ShortName)
 	channelID := strings.TrimSpace(input.DefaultChannelID)
+	psk := strings.TrimSpace(input.PSK)
+	if psk == "" {
+		psk = botDefaultPSK
+	}
+	if _, err := mqtpp.ExpandPSK(psk); err != nil {
+		return nil, err
+	}
 	topicPrefix := strings.Trim(strings.TrimSpace(input.TopicPrefix), "/")
 	if topicPrefix == "" {
 		topicPrefix = botDefaultTopicPrefix
@@ -201,6 +250,13 @@ func (s *store) normalizedBotNodeRecord(input botNodeInput) (*botNodeRecord, err
 	if channelID == "" {
 		return nil, fmt.Errorf("default channel id is required")
 	}
+	interval := input.NodeInfoBroadcastIntervalSeconds
+	if interval <= 0 {
+		interval = botDefaultNodeInfoBroadcastSeconds
+	}
+	if interval < 60 {
+		return nil, fmt.Errorf("nodeinfo broadcast interval must be at least 60 seconds")
+	}
 	var nodeNum int64
 	if input.NodeNum == nil || *input.NodeNum == 0 {
 		generated, err := s.generateBotNodeNum()
@@ -214,7 +270,28 @@ func (s *store) normalizedBotNodeRecord(input botNodeInput) (*botNodeRecord, err
 	if err := validateBotNodeNum(nodeNum); err != nil {
 		return nil, err
 	}
-	return &botNodeRecord{NodeID: mqtpp.NodeNumToID(uint32(nodeNum)), NodeNum: nodeNum, LongName: longName, ShortName: shortName, Enabled: input.Enabled, DefaultChannelID: channelID, TopicPrefix: topicPrefix}, nil
+	return &botNodeRecord{NodeID: mqtpp.NodeNumToID(uint32(nodeNum)), NodeNum: nodeNum, LongName: longName, ShortName: shortName, Enabled: input.Enabled, DefaultChannelID: channelID, TopicPrefix: topicPrefix, PSK: psk, NodeInfoBroadcastEnabled: input.NodeInfoBroadcastEnabled, NodeInfoBroadcastIntervalSeconds: interval}, nil
+}
+
+func populateBotNodeKeys(row *botNodeRecord) error {
+	privateKey, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return err
+	}
+	row.PrivateKey = base64.StdEncoding.EncodeToString(privateKey.Bytes())
+	row.PublicKey = base64.StdEncoding.EncodeToString(privateKey.PublicKey().Bytes())
+	return nil
+}
+
+func decodeBotPublicKey(row botNodeRecord) ([]byte, error) {
+	if strings.TrimSpace(row.PublicKey) == "" {
+		return nil, nil
+	}
+	key, err := base64.StdEncoding.DecodeString(row.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bot public key: %w", err)
+	}
+	return key, nil
 }
 
 func validateBotNodeNum(nodeNum int64) error {

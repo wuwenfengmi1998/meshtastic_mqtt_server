@@ -11,16 +11,31 @@ import (
 
 const NodeNumBroadcast uint32 = 0xffffffff
 
-type TextMessageBuildOptions struct {
+type PacketBuildOptions struct {
 	FromNodeNum uint32
 	ToNodeNum   uint32
 	PacketID    uint32
 	ChannelID   string
 	GatewayID   string
-	Text        string
 	PSK         []byte
 	Encrypt     bool
 	ViaMQTT     bool
+}
+
+type TextMessageBuildOptions struct {
+	PacketBuildOptions
+	Text string
+}
+
+type NodeInfoBuildOptions struct {
+	PacketBuildOptions
+	NodeID     string
+	LongName   string
+	ShortName  string
+	HWModel    uint32
+	Role       uint32
+	IsLicensed bool
+	PublicKey  []byte
 }
 
 func BuildTextMessageServiceEnvelope(opts TextMessageBuildOptions) ([]byte, error) {
@@ -44,7 +59,26 @@ func BuildTextMessageServiceEnvelope(opts TextMessageBuildOptions) ([]byte, erro
 	}
 
 	data := buildDataPacket(textMessageApp, []byte(opts.Text))
-	packet, err := buildMeshPacket(opts, data)
+	packet, err := buildMeshPacket(opts.PacketBuildOptions, data)
+	if err != nil {
+		return nil, err
+	}
+	return buildServiceEnvelope(packet, opts.ChannelID, opts.GatewayID), nil
+}
+
+func BuildNodeInfoServiceEnvelope(opts NodeInfoBuildOptions) ([]byte, error) {
+	if opts.NodeID == "" {
+		opts.NodeID = NodeNumToID(opts.FromNodeNum)
+	}
+	if strings.TrimSpace(opts.LongName) == "" {
+		return nil, fmt.Errorf("long name is required")
+	}
+	if strings.TrimSpace(opts.ShortName) == "" {
+		return nil, fmt.Errorf("short name is required")
+	}
+	user := buildUserPacket(opts)
+	data := buildDataPacket(nodeInfoApp, user)
+	packet, err := buildMeshPacket(opts.PacketBuildOptions, data)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +114,46 @@ func buildDataPacket(portnum uint32, payload []byte) []byte {
 	return out
 }
 
-func buildMeshPacket(opts TextMessageBuildOptions, data []byte) ([]byte, error) {
+func buildUserPacket(opts NodeInfoBuildOptions) []byte {
+	var out []byte
+	out = protowire.AppendTag(out, 1, protowire.BytesType)
+	out = protowire.AppendBytes(out, []byte(opts.NodeID))
+	out = protowire.AppendTag(out, 2, protowire.BytesType)
+	out = protowire.AppendBytes(out, []byte(opts.LongName))
+	out = protowire.AppendTag(out, 3, protowire.BytesType)
+	out = protowire.AppendBytes(out, []byte(opts.ShortName))
+	if opts.HWModel != 0 {
+		out = protowire.AppendTag(out, 5, protowire.VarintType)
+		out = protowire.AppendVarint(out, uint64(opts.HWModel))
+	}
+	out = protowire.AppendTag(out, 6, protowire.VarintType)
+	if opts.IsLicensed {
+		out = protowire.AppendVarint(out, 1)
+	} else {
+		out = protowire.AppendVarint(out, 0)
+	}
+	out = protowire.AppendTag(out, 7, protowire.VarintType)
+	out = protowire.AppendVarint(out, uint64(opts.Role))
+	if len(opts.PublicKey) > 0 {
+		out = protowire.AppendTag(out, 8, protowire.BytesType)
+		out = protowire.AppendBytes(out, opts.PublicKey)
+	}
+	return out
+}
+
+func buildMeshPacket(opts PacketBuildOptions, data []byte) ([]byte, error) {
+	if opts.FromNodeNum == 0 {
+		return nil, fmt.Errorf("from node number is required")
+	}
+	if opts.PacketID == 0 {
+		return nil, fmt.Errorf("packet id is required")
+	}
+	if opts.ChannelID == "" {
+		return nil, fmt.Errorf("channel id is required")
+	}
+	if strings.TrimSpace(opts.GatewayID) == "" {
+		opts.GatewayID = NodeNumToID(opts.FromNodeNum)
+	}
 	var out []byte
 	out = protowire.AppendTag(out, 1, protowire.Fixed32Type)
 	out = protowire.AppendFixed32(out, opts.FromNodeNum)
@@ -89,7 +162,7 @@ func buildMeshPacket(opts TextMessageBuildOptions, data []byte) ([]byte, error) 
 
 	if opts.Encrypt {
 		if len(opts.PSK) == 0 {
-			return nil, fmt.Errorf("psk is required for encrypted text message")
+			return nil, fmt.Errorf("psk is required for encrypted packet")
 		}
 		ciphertext, err := cryptAESCTR(opts.PSK, opts.FromNodeNum, opts.PacketID, data)
 		if err != nil {

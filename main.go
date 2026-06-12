@@ -226,6 +226,9 @@ func run(cfg *config) error {
 		return err
 	}
 	botSender := newBotService(store, server, cfg.key)
+	botCtx, stopBotBroadcaster := context.WithCancel(context.Background())
+	defer stopBotBroadcaster()
+	botSender.StartNodeInfoBroadcaster(botCtx)
 	forwardManager := newMQTTForwardManager(store)
 	if err := forwardManager.StartFromStore(); err != nil {
 		server.Close()

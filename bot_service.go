@@ -28,6 +28,7 @@ type botSendTextRequest struct {
 
 type botTextSender interface {
 	SendText(ctx context.Context, req botSendTextRequest) (*botMessageRecord, error)
+	PublishNodeInfoByID(ctx context.Context, id uint64) (*botNodeRecord, error)
 }
 
 type botService struct {
@@ -38,6 +39,13 @@ type botService struct {
 
 func newBotService(store *store, server *mqtt.Server, key []byte) *botService {
 	return &botService{store: store, server: server, key: key}
+}
+
+func (s *botService) StartNodeInfoBroadcaster(ctx context.Context) {
+	if s == nil || s.store == nil || s.server == nil {
+		return
+	}
+	go s.runNodeInfoBroadcaster(ctx)
 }
 
 func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMessageRecord, error) {
@@ -80,22 +88,32 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 	if err != nil {
 		return nil, err
 	}
+	psk := strings.TrimSpace(bot.PSK)
+	if psk == "" {
+		psk = botDefaultPSK
+	}
+	key, err := mqtpp.ExpandPSK(psk)
+	if err != nil {
+		return nil, err
+	}
 	fromNodeNum := uint32(bot.NodeNum)
 	raw, err := mqtpp.BuildTextMessageServiceEnvelope(mqtpp.TextMessageBuildOptions{
-		FromNodeNum: fromNodeNum,
-		ToNodeNum:   uint32(toNodeNum),
-		PacketID:    packetID,
-		ChannelID:   channelID,
-		GatewayID:   bot.NodeID,
-		Text:        text,
-		PSK:         s.key,
-		Encrypt:     true,
-		ViaMQTT:     true,
+		PacketBuildOptions: mqtpp.PacketBuildOptions{
+			FromNodeNum: fromNodeNum,
+			ToNodeNum:   uint32(toNodeNum),
+			PacketID:    packetID,
+			ChannelID:   channelID,
+			GatewayID:   bot.NodeID,
+			PSK:         key,
+			Encrypt:     true,
+			ViaMQTT:     true,
+		},
+		Text: text,
 	})
 	if err != nil {
 		return nil, err
 	}
-	topic := strings.Trim(bot.TopicPrefix, "/") + "/" + channelID + "/" + bot.NodeID
+	topic := botMQTTTopic(bot.TopicPrefix, channelID, bot.NodeID)
 	row := &botMessageRecord{
 		BotID:       bot.ID,
 		BotNodeID:   bot.NodeID,
@@ -137,6 +155,124 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 	return row, nil
 }
 
+func (s *botService) runNodeInfoBroadcaster(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	s.broadcastDueNodeInfo(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.broadcastDueNodeInfo(ctx)
+		}
+	}
+}
+
+func (s *botService) broadcastDueNodeInfo(ctx context.Context) {
+	rows, err := s.store.ListBotNodes(listOptions{Limit: 500})
+	if err != nil {
+		printJSON(map[string]any{"event": "bot_nodeinfo_broadcast_failed", "error": err.Error()})
+		return
+	}
+	now := time.Now()
+	for _, bot := range rows {
+		if ctx.Err() != nil {
+			return
+		}
+		if !bot.Enabled || !bot.NodeInfoBroadcastEnabled {
+			continue
+		}
+		interval := time.Duration(bot.NodeInfoBroadcastIntervalSeconds) * time.Second
+		if interval <= 0 {
+			interval = time.Duration(botDefaultNodeInfoBroadcastSeconds) * time.Second
+		}
+		if bot.LastNodeInfoBroadcastAt != nil && now.Sub(*bot.LastNodeInfoBroadcastAt) < interval {
+			continue
+		}
+		if err := s.PublishNodeInfo(ctx, bot); err != nil {
+			printJSON(map[string]any{"event": "bot_nodeinfo_broadcast_failed", "bot_id": bot.ID, "node_id": bot.NodeID, "error": err.Error()})
+		}
+	}
+}
+
+func (s *botService) PublishNodeInfoByID(ctx context.Context, id uint64) (*botNodeRecord, error) {
+	if s == nil || s.store == nil {
+		return nil, fmt.Errorf("bot service is not configured")
+	}
+	bot, err := s.store.GetBotNode(id)
+	if err != nil {
+		return nil, err
+	}
+	if !bot.Enabled {
+		return nil, fmt.Errorf("bot node is disabled")
+	}
+	if err := s.PublishNodeInfo(ctx, *bot); err != nil {
+		return nil, err
+	}
+	updated, err := s.store.GetBotNode(id)
+	if err != nil {
+		return bot, nil
+	}
+	return updated, nil
+}
+
+func (s *botService) PublishNodeInfo(_ context.Context, bot botNodeRecord) error {
+	if s == nil || s.server == nil {
+		return fmt.Errorf("mqtt server is not configured")
+	}
+	if strings.TrimSpace(bot.PublicKey) == "" && s.store != nil {
+		updated, err := s.store.RegenerateBotNodeKeys(bot.ID)
+		if err != nil {
+			return err
+		}
+		bot = *updated
+	}
+	psk := strings.TrimSpace(bot.PSK)
+	if psk == "" {
+		psk = botDefaultPSK
+	}
+	key, err := mqtpp.ExpandPSK(psk)
+	if err != nil {
+		return err
+	}
+	packetID, err := randomPacketID()
+	if err != nil {
+		return err
+	}
+	publicKey, err := decodeBotPublicKey(bot)
+	if err != nil {
+		return err
+	}
+	raw, err := mqtpp.BuildNodeInfoServiceEnvelope(mqtpp.NodeInfoBuildOptions{
+		PacketBuildOptions: mqtpp.PacketBuildOptions{
+			FromNodeNum: uint32(bot.NodeNum),
+			ToNodeNum:   mqtpp.NodeNumBroadcast,
+			PacketID:    packetID,
+			ChannelID:   bot.DefaultChannelID,
+			GatewayID:   bot.NodeID,
+			PSK:         key,
+			Encrypt:     true,
+			ViaMQTT:     true,
+		},
+		NodeID:     bot.NodeID,
+		LongName:   bot.LongName,
+		ShortName:  bot.ShortName,
+		HWModel:    255,
+		Role:       0,
+		IsLicensed: false,
+		PublicKey:  publicKey,
+	})
+	if err != nil {
+		return err
+	}
+	topic := botMQTTTopic(bot.TopicPrefix, bot.DefaultChannelID, bot.NodeID)
+	if err := s.server.Publish(topic, raw, false, 0); err != nil {
+		return err
+	}
+	return s.store.UpdateBotNodeInfoBroadcastAt(bot.ID, time.Now())
+}
+
 func normalizeBotMessageType(value string) (string, error) {
 	switch strings.TrimSpace(value) {
 	case "", botMessageTypeChannel:
@@ -172,6 +308,17 @@ func botMessageTarget(messageType string, req botSendTextRequest) (int64, *strin
 	}
 	normalized := mqtpp.NodeNumToID(nodeNum)
 	return int64(nodeNum), &normalized, nil
+}
+
+func botMQTTTopic(topicPrefix, channelID, nodeID string) string {
+	prefix := strings.Trim(strings.TrimSpace(topicPrefix), "/")
+	if prefix == "" {
+		prefix = botDefaultTopicPrefix
+	}
+	if strings.HasSuffix(prefix, "/2/e") {
+		return prefix + "/" + channelID + "/" + nodeID
+	}
+	return prefix + "/2/e/" + channelID + "/" + nodeID
 }
 
 func randomPacketID() (uint32, error) {

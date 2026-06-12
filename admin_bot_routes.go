@@ -10,12 +10,15 @@ import (
 )
 
 type botNodeRequest struct {
-	NodeNum          *int64 `json:"node_num"`
-	LongName         string `json:"long_name"`
-	ShortName        string `json:"short_name"`
-	Enabled          bool   `json:"enabled"`
-	DefaultChannelID string `json:"default_channel_id"`
-	TopicPrefix      string `json:"topic_prefix"`
+	NodeNum                          *int64 `json:"node_num"`
+	LongName                         string `json:"long_name"`
+	ShortName                        string `json:"short_name"`
+	Enabled                          bool   `json:"enabled"`
+	DefaultChannelID                 string `json:"default_channel_id"`
+	TopicPrefix                      string `json:"topic_prefix"`
+	PSK                              string `json:"psk"`
+	NodeInfoBroadcastEnabled         bool   `json:"nodeinfo_broadcast_enabled"`
+	NodeInfoBroadcastIntervalSeconds int64  `json:"nodeinfo_broadcast_interval_seconds"`
 }
 
 type botSendMessageRequest struct {
@@ -77,6 +80,42 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	r.POST("/bot/nodes/:id/keys/regenerate", func(c *gin.Context) {
+		id, ok := parseBotID(c, "invalid bot node id")
+		if !ok {
+			return
+		}
+		row, err := store.RegenerateBotNodeKeys(id)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bot node not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"item": botNodeDTO(*row)})
+	})
+	r.POST("/bot/nodes/:id/nodeinfo", func(c *gin.Context) {
+		if sender == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "bot sender is not configured"})
+			return
+		}
+		id, ok := parseBotID(c, "invalid bot node id")
+		if !ok {
+			return
+		}
+		row, err := sender.PublishNodeInfoByID(c.Request.Context(), id)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bot node not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"item": botNodeDTO(*row)})
+	})
 	r.GET("/bot/messages", func(c *gin.Context) {
 		opts, ok := parseBotMessageListOptions(c)
 		if !ok {
@@ -120,7 +159,7 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 }
 
 func botNodeInputFromRequest(req botNodeRequest) botNodeInput {
-	return botNodeInput{NodeNum: req.NodeNum, LongName: req.LongName, ShortName: req.ShortName, Enabled: req.Enabled, DefaultChannelID: req.DefaultChannelID, TopicPrefix: req.TopicPrefix}
+	return botNodeInput{NodeNum: req.NodeNum, LongName: req.LongName, ShortName: req.ShortName, Enabled: req.Enabled, DefaultChannelID: req.DefaultChannelID, TopicPrefix: req.TopicPrefix, PSK: req.PSK, NodeInfoBroadcastEnabled: req.NodeInfoBroadcastEnabled, NodeInfoBroadcastIntervalSeconds: req.NodeInfoBroadcastIntervalSeconds}
 }
 
 func parseBotID(c *gin.Context, message string) (uint64, bool) {
@@ -166,7 +205,7 @@ func writeBotNodeMutationResponse(c *gin.Context, status int, row *botNodeRecord
 }
 
 func botNodeDTO(row botNodeRecord) gin.H {
-	return gin.H{"id": row.ID, "node_id": row.NodeID, "node_num": row.NodeNum, "long_name": row.LongName, "short_name": row.ShortName, "enabled": row.Enabled, "default_channel_id": row.DefaultChannelID, "topic_prefix": row.TopicPrefix, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
+	return gin.H{"id": row.ID, "node_id": row.NodeID, "node_num": row.NodeNum, "long_name": row.LongName, "short_name": row.ShortName, "enabled": row.Enabled, "default_channel_id": row.DefaultChannelID, "topic_prefix": row.TopicPrefix, "psk": row.PSK, "public_key": row.PublicKey, "private_key_set": row.PrivateKey != "", "nodeinfo_broadcast_enabled": row.NodeInfoBroadcastEnabled, "nodeinfo_broadcast_interval_seconds": row.NodeInfoBroadcastIntervalSeconds, "last_nodeinfo_broadcast_at": row.LastNodeInfoBroadcastAt, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
 }
 
 func botMessageDTO(row botMessageRecord) gin.H {

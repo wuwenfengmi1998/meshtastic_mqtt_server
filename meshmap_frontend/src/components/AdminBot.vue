@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { createBotNode, deleteBotNode, getBotMessages, getBotNodes, getNodeInfo, sendBotMessage, updateBotNode } from '../api'
+import { broadcastBotNodeInfo, createBotNode, deleteBotNode, getBotMessages, getBotNodes, getNodeInfo, regenerateBotNodeKeys, sendBotMessage, updateBotNode } from '../api'
 import type { BotMessage, BotMessageStatus, BotMessageType, BotNode, BotNodePayload, NodeInfo } from '../types'
 
 const botPageSize = 100
@@ -15,12 +15,14 @@ const loading = ref(false)
 const messageLoading = ref(false)
 const saving = ref(false)
 const sending = ref(false)
+const broadcastingNodeInfo = ref(false)
+const regeneratingKeys = ref(false)
 const error = ref('')
 const message = ref('')
 const targetQuery = ref('')
 
-const newBot = ref({ node_num: '', long_name: '', short_name: '', default_channel_id: 'LongFast', enabled: true })
-const edits = ref<Record<number, { node_num: string; long_name: string; short_name: string; default_channel_id: string; topic_prefix: string; enabled: boolean }>>({})
+const newBot = ref({ node_num: '', long_name: '', short_name: '', default_channel_id: 'LongFast', topic_prefix: 'msh/CN', psk: 'AQ==', nodeinfo_broadcast_enabled: true, nodeinfo_broadcast_interval_seconds: '3600', enabled: true })
+const edits = ref<Record<number, { node_num: string; long_name: string; short_name: string; default_channel_id: string; topic_prefix: string; psk: string; nodeinfo_broadcast_enabled: boolean; nodeinfo_broadcast_interval_seconds: string; enabled: boolean }>>({})
 const sendForm = ref<{ message_type: BotMessageType; channel_id: string; to_node_id: string; text: string }>({ message_type: 'channel', channel_id: 'LongFast', to_node_id: '', text: '' })
 
 const selectedBot = computed(() => bots.value.find((bot) => bot.id === selectedBotId.value) ?? null)
@@ -52,14 +54,18 @@ watch(selectedBot, (bot) => {
   }
 })
 
-function botPayload(form: { node_num: string; long_name: string; short_name: string; default_channel_id: string; topic_prefix?: string; enabled: boolean }): BotNodePayload {
+function botPayload(form: { node_num: string; long_name: string; short_name: string; default_channel_id: string; topic_prefix?: string; psk?: string; nodeinfo_broadcast_enabled?: boolean; nodeinfo_broadcast_interval_seconds?: string | number; enabled: boolean }): BotNodePayload {
   const nodeNumText = form.node_num.trim()
+  const interval = Number(form.nodeinfo_broadcast_interval_seconds || 3600)
   return {
     node_num: nodeNumText ? Number(nodeNumText) : null,
     long_name: form.long_name.trim(),
     short_name: form.short_name.trim(),
     default_channel_id: form.default_channel_id.trim(),
-    topic_prefix: form.topic_prefix?.trim() || 'msh/2/e',
+    topic_prefix: form.topic_prefix?.trim() || 'msh/CN',
+    psk: form.psk?.trim() || 'AQ==',
+    nodeinfo_broadcast_enabled: form.nodeinfo_broadcast_enabled ?? true,
+    nodeinfo_broadcast_interval_seconds: Number.isFinite(interval) && interval > 0 ? interval : 3600,
     enabled: form.enabled,
   }
 }
@@ -71,6 +77,9 @@ function resetEdits() {
     short_name: bot.short_name,
     default_channel_id: bot.default_channel_id,
     topic_prefix: bot.topic_prefix,
+    psk: bot.psk || 'AQ==',
+    nodeinfo_broadcast_enabled: bot.nodeinfo_broadcast_enabled,
+    nodeinfo_broadcast_interval_seconds: String(bot.nodeinfo_broadcast_interval_seconds || 3600),
     enabled: bot.enabled,
   }]))
 }
@@ -127,13 +136,22 @@ function selectBot(bot: BotNode) {
   refreshMessages()
 }
 
+function applyBotUpdate(bot: BotNode) {
+  const idx = bots.value.findIndex((item) => item.id === bot.id)
+  if (idx >= 0) {
+    bots.value.splice(idx, 1, bot)
+  }
+  resetEdits()
+  selectedBotId.value = bot.id
+}
+
 async function createBot() {
   saving.value = true
   error.value = ''
   message.value = ''
   try {
-    await createBotNode(botPayload({ ...newBot.value, topic_prefix: 'msh/2/e' }))
-    newBot.value = { node_num: '', long_name: '', short_name: '', default_channel_id: 'LongFast', enabled: true }
+    await createBotNode(botPayload(newBot.value))
+    newBot.value = { node_num: '', long_name: '', short_name: '', default_channel_id: 'LongFast', topic_prefix: 'msh/CN', psk: 'AQ==', nodeinfo_broadcast_enabled: true, nodeinfo_broadcast_interval_seconds: '3600', enabled: true }
     message.value = '机器人已创建'
     await refreshBots()
   } catch (err) {
@@ -175,6 +193,45 @@ async function removeBot(bot: BotNode) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
     saving.value = false
+  }
+}
+
+async function broadcastNodeInfoNow() {
+  if (!selectedBot.value) {
+    error.value = '请先选择机器人'
+    return
+  }
+  broadcastingNodeInfo.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const response = await broadcastBotNodeInfo(selectedBot.value.id)
+    applyBotUpdate(response.item)
+    message.value = 'NodeInfo 已广播'
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    broadcastingNodeInfo.value = false
+  }
+}
+
+async function regenerateKeys() {
+  if (!selectedBot.value) {
+    error.value = '请先选择机器人'
+    return
+  }
+  if (!window.confirm('确定要重新生成该机器人的密钥吗？重新生成后，旧密钥将不能再用于 PKI 私聊。')) return
+  regeneratingKeys.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const response = await regenerateBotNodeKeys(selectedBot.value.id)
+    applyBotUpdate(response.item)
+    message.value = '机器人密钥已重新生成'
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    regeneratingKeys.value = false
   }
 }
 
@@ -262,6 +319,10 @@ onMounted(() => {
           <label>长名称<input v-model="newBot.long_name" placeholder="MQTT Bot" /></label>
           <label>短名称<input v-model="newBot.short_name" placeholder="BOT" /></label>
           <label>默认频道<input v-model="newBot.default_channel_id" placeholder="LongFast" /></label>
+          <label>MQTT 根地址 <small>最终发布到 根地址/2/e/频道/节点</small><input v-model="newBot.topic_prefix" placeholder="msh/CN" /></label>
+          <label>频道密钥 PSK <small>默认 AQ==</small><input v-model="newBot.psk" placeholder="AQ==" /></label>
+          <label>NodeInfo 间隔秒数<input v-model="newBot.nodeinfo_broadcast_interval_seconds" type="number" min="60" /></label>
+          <label class="inline"><input v-model="newBot.nodeinfo_broadcast_enabled" type="checkbox" /> 定期广播 NodeInfo</label>
           <label class="inline"><input v-model="newBot.enabled" type="checkbox" /> 启用</label>
           <button class="admin-button full" @click="createBot" :disabled="saving">创建机器人</button>
         </div>
@@ -290,7 +351,10 @@ onMounted(() => {
                 <label>长名称<input v-model="edits[bot.id].long_name" /></label>
                 <label>短名称<input v-model="edits[bot.id].short_name" /></label>
                 <label>默认频道<input v-model="edits[bot.id].default_channel_id" /></label>
-                <label>Topic 前缀<input v-model="edits[bot.id].topic_prefix" /></label>
+                <label>MQTT 根地址<input v-model="edits[bot.id].topic_prefix" placeholder="msh/CN" /></label>
+                <label>频道密钥 PSK<input v-model="edits[bot.id].psk" placeholder="AQ==" /></label>
+                <label>NodeInfo 间隔秒数<input v-model="edits[bot.id].nodeinfo_broadcast_interval_seconds" type="number" min="60" /></label>
+                <label class="inline"><input v-model="edits[bot.id].nodeinfo_broadcast_enabled" type="checkbox" /> 定期广播 NodeInfo</label>
                 <label class="inline"><input v-model="edits[bot.id].enabled" type="checkbox" /> 启用</label>
                 <div class="row-actions">
                   <button class="admin-button" @click="saveBot(bot)" :disabled="saving">保存</button>
@@ -309,10 +373,23 @@ onMounted(() => {
               <p class="eyebrow">Selected Bot</p>
               <h2>{{ selectedBot.long_name }} <small>{{ selectedBot.short_name }}</small></h2>
             </div>
+            <div class="summary-actions">
+              <button class="admin-button secondary" @click="regenerateKeys" :disabled="regeneratingKeys">
+                {{ regeneratingKeys ? '生成中...' : '重新生成密钥' }}
+              </button>
+              <button class="admin-button secondary" @click="broadcastNodeInfoNow" :disabled="broadcastingNodeInfo || !selectedBot.enabled">
+                {{ broadcastingNodeInfo ? '广播中...' : '立即广播 NodeInfo' }}
+              </button>
+            </div>
             <div class="summary-grid">
               <span><strong>{{ selectedBot.node_id }}</strong><small>Node ID</small></span>
               <span><strong>{{ selectedBot.node_num }}</strong><small>Node Num</small></span>
               <span><strong>{{ selectedBot.default_channel_id }}</strong><small>默认频道</small></span>
+              <span><strong>{{ selectedBot.topic_prefix || 'msh/CN' }}</strong><small>MQTT 根地址</small></span>
+              <span><strong>{{ selectedBot.psk || 'AQ==' }}</strong><small>频道 PSK</small></span>
+              <span><strong>{{ selectedBot.private_key_set ? '已生成' : '未生成' }}</strong><small>机器人密钥</small></span>
+              <span class="public-key"><strong>{{ selectedBot.public_key || '-' }}</strong><small>Public Key</small></span>
+              <span><strong>{{ selectedBot.nodeinfo_broadcast_enabled ? `${selectedBot.nodeinfo_broadcast_interval_seconds}s` : '关闭' }}</strong><small>NodeInfo 广播</small></span>
               <span><strong>{{ selectedBot.enabled ? '启用' : '停用' }}</strong><small>状态</small></span>
             </div>
           </section>
@@ -386,7 +463,7 @@ onMounted(() => {
 
 <style scoped>
 .admin-bot-page { display: grid; gap: 12px; }
-.bot-hero, .selected-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; }
+.bot-hero, .selected-summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 16px; }
 .bot-hero-actions, .row-actions, .history-header, .send-actions, .section-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .hint { color: #64748b; font-size: 13px; }
 .hint.warn { color: #b91c1c; font-weight: 800; }
@@ -418,9 +495,12 @@ input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-c
 .bot-details summary { color: #2563eb; font-size: 13px; font-weight: 800; cursor: pointer; }
 .bot-edit { margin-top: 10px; }
 .selected-summary small { color: #64748b; font-size: 14px; }
-.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(110px, 1fr)); gap: 8px; min-width: min(620px, 100%); }
+.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(110px, 1fr)); gap: 8px; flex: 1 1 100%; min-width: min(620px, 100%); }
+.summary-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .summary-grid span, .stat-chip { display: grid; gap: 3px; border-radius: 12px; padding: 10px 12px; background: #f8fafc; }
 .summary-grid strong { color: #0f172a; }
+.summary-grid .public-key { grid-column: span 2; }
+.summary-grid .public-key strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
 .summary-grid small { color: #64748b; font-size: 12px; }
 .stat-chip { display: inline-flex; align-items: center; color: #334155; font-size: 13px; font-weight: 800; background: #e2e8f0; }
 .stat-chip.ok { color: #166534; background: #dcfce7; }

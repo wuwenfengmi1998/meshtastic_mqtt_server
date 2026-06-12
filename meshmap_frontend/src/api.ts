@@ -357,6 +357,14 @@ export function deleteBotNode(id: number): Promise<{ status: string }> {
   return deleteJSON<{ status: string }>(`/api/admin/bot/nodes/${id}`)
 }
 
+export function broadcastBotNodeInfo(id: number): Promise<BotNodeMutationResponse> {
+  return postJSON<BotNodeMutationResponse>(`/api/admin/bot/nodes/${id}/nodeinfo`)
+}
+
+export function regenerateBotNodeKeys(id: number): Promise<BotNodeMutationResponse> {
+  return postJSON<BotNodeMutationResponse>(`/api/admin/bot/nodes/${id}/keys/regenerate`)
+}
+
 export function getBotMessages(botId = 0, limit = 100, offset = 0): Promise<ListResponse<BotMessage>> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   if (botId > 0) {

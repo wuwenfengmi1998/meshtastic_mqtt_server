@@ -238,17 +238,23 @@ func (mqttForwardTopicRecord) TableName() string {
 }
 
 type botNodeRecord struct {
-	ID               uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	NodeID           string    `gorm:"column:node_id;not null;uniqueIndex"`
-	NodeNum          int64     `gorm:"column:node_num;not null;uniqueIndex"`
-	LongName         string    `gorm:"column:long_name;not null"`
-	ShortName        string    `gorm:"column:short_name;not null"`
-	Enabled          bool      `gorm:"column:enabled;not null;index"`
-	DefaultChannelID string    `gorm:"column:default_channel_id;not null;index"`
-	TopicPrefix      string    `gorm:"column:topic_prefix;not null"`
-	LastPacketID     int64     `gorm:"column:last_packet_id;not null"`
-	CreatedAt        time.Time `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt        time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+	ID                               uint64     `gorm:"column:id;primaryKey;autoIncrement"`
+	NodeID                           string     `gorm:"column:node_id;not null;uniqueIndex"`
+	NodeNum                          int64      `gorm:"column:node_num;not null;uniqueIndex"`
+	LongName                         string     `gorm:"column:long_name;not null"`
+	ShortName                        string     `gorm:"column:short_name;not null"`
+	Enabled                          bool       `gorm:"column:enabled;not null;index"`
+	DefaultChannelID                 string     `gorm:"column:default_channel_id;not null;index"`
+	TopicPrefix                      string     `gorm:"column:topic_prefix;not null"`
+	PSK                              string     `gorm:"column:psk;not null;size:64"`
+	PublicKey                        string     `gorm:"column:public_key;type:text"`
+	PrivateKey                       string     `gorm:"column:private_key;type:text"`
+	NodeInfoBroadcastEnabled         bool       `gorm:"column:nodeinfo_broadcast_enabled;not null;index"`
+	NodeInfoBroadcastIntervalSeconds int64      `gorm:"column:nodeinfo_broadcast_interval_seconds;not null"`
+	LastNodeInfoBroadcastAt          *time.Time `gorm:"column:last_nodeinfo_broadcast_at;index"`
+	LastPacketID                     int64      `gorm:"column:last_packet_id;not null"`
+	CreatedAt                        time.Time  `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt                        time.Time  `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
 func (botNodeRecord) TableName() string {
@@ -510,11 +516,55 @@ func (s *store) migrate() error {
 				return err
 			}
 		}
+		if err := migrateBotNodePSK(tx, migrator, s.driver); err != nil {
+			return err
+		}
 		if err := migrateMapTileSourceHash(tx, migrator, s.driver); err != nil {
 			return err
 		}
 		return (&store{db: tx, driver: s.driver}).EnsureDefaultMapTileSource()
 	})
+}
+
+func migrateBotNodePSK(tx *gorm.DB, migrator gorm.Migrator, driver string) error {
+	if !migrator.HasTable(&botNodeRecord{}) {
+		return nil
+	}
+	if !migrator.HasColumn(&botNodeRecord{}, "PSK") {
+		if driver == databaseDriverSQLite {
+			if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN psk TEXT NOT NULL DEFAULT 'AQ=='").Error; err != nil {
+				return fmt.Errorf("migrate bot_nodes psk column: %w", err)
+			}
+		} else if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN psk VARCHAR(64) NOT NULL DEFAULT 'AQ=='").Error; err != nil {
+			return fmt.Errorf("migrate bot_nodes psk column: %w", err)
+		}
+	}
+	if !migrator.HasColumn(&botNodeRecord{}, "PublicKey") {
+		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN public_key text").Error; err != nil {
+			return fmt.Errorf("migrate bot_nodes public_key column: %w", err)
+		}
+	}
+	if !migrator.HasColumn(&botNodeRecord{}, "PrivateKey") {
+		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN private_key text").Error; err != nil {
+			return fmt.Errorf("migrate bot_nodes private_key column: %w", err)
+		}
+	}
+	if !migrator.HasColumn(&botNodeRecord{}, "NodeInfoBroadcastEnabled") {
+		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN nodeinfo_broadcast_enabled numeric NOT NULL DEFAULT true").Error; err != nil {
+			return fmt.Errorf("migrate bot_nodes nodeinfo_broadcast_enabled column: %w", err)
+		}
+	}
+	if !migrator.HasColumn(&botNodeRecord{}, "NodeInfoBroadcastIntervalSeconds") {
+		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN nodeinfo_broadcast_interval_seconds bigint NOT NULL DEFAULT 3600").Error; err != nil {
+			return fmt.Errorf("migrate bot_nodes nodeinfo_broadcast_interval_seconds column: %w", err)
+		}
+	}
+	if !migrator.HasColumn(&botNodeRecord{}, "LastNodeInfoBroadcastAt") {
+		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN last_nodeinfo_broadcast_at datetime NULL").Error; err != nil {
+			return fmt.Errorf("migrate bot_nodes last_nodeinfo_broadcast_at column: %w", err)
+		}
+	}
+	return nil
 }
 
 func migrateMapTileSourceHash(tx *gorm.DB, migrator gorm.Migrator, driver string) error {

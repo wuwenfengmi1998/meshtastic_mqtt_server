@@ -452,6 +452,12 @@ export interface BotNode {
   enabled: boolean
   default_channel_id: string
   topic_prefix: string
+  psk: string
+  public_key: string
+  private_key_set: boolean
+  nodeinfo_broadcast_enabled: boolean
+  nodeinfo_broadcast_interval_seconds: number
+  last_nodeinfo_broadcast_at: string | null
   created_at: string
   updated_at: string
 }
@@ -463,6 +469,9 @@ export interface BotNodePayload {
   enabled: boolean
   default_channel_id: string
   topic_prefix?: string
+  psk?: string
+  nodeinfo_broadcast_enabled?: boolean
+  nodeinfo_broadcast_interval_seconds?: number
 }
 
 export interface BotNodeMutationResponse {
