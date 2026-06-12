@@ -24,6 +24,9 @@ import type {
   ListResponse,
   MapBoundsQuery,
   MapReport,
+  MapTileSource,
+  MapTileSourcePayload,
+  MapTileSourceResponse,
   MapViewportResponse,
   MQTTForwarder,
   MQTTForwarderPayload,
@@ -35,6 +38,8 @@ import type {
   NodeBlockingRulePayload,
   NodeInfo,
   PositionRecord,
+  PublicMapTileSourceResponse,
+  PublicMapTileSourcesResponse,
   TelemetryRecord,
   TextMessage,
 } from './types'
@@ -56,10 +61,23 @@ async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
-function listPath(path: string, limit: number, offset: number, nodeId = ''): string {
+type ListQueryOptions = {
+  nodeId?: string
+  since?: string
+  until?: string
+}
+
+function listPath(path: string, limit: number, offset: number, nodeIdOrOptions: string | ListQueryOptions = ''): string {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
-  if (nodeId) {
-    params.set('node_id', nodeId)
+  const options = typeof nodeIdOrOptions === 'string' ? { nodeId: nodeIdOrOptions } : nodeIdOrOptions
+  if (options.nodeId) {
+    params.set('node_id', options.nodeId)
+  }
+  if (options.since) {
+    params.set('since', options.since)
+  }
+  if (options.until) {
+    params.set('until', options.until)
   }
   return `${path}?${params.toString()}`
 }
@@ -131,6 +149,14 @@ export function getMapReportViewport(bounds: MapBoundsQuery, zoom: number, limit
   return getJSON<MapViewportResponse>(`/api/map-reports/viewport?${params.toString()}`)
 }
 
+export function getDefaultMapSource(): Promise<PublicMapTileSourceResponse> {
+  return getJSON<PublicMapTileSourceResponse>('/api/map-source/default')
+}
+
+export function getEnabledMapSources(): Promise<PublicMapTileSourcesResponse> {
+  return getJSON<PublicMapTileSourcesResponse>('/api/map-source/enabled')
+}
+
 export function getTextMessages(limit = 100, offset = 0, nodeId = ''): Promise<ListResponse<TextMessage>> {
   return getJSON<ListResponse<TextMessage>>(listPath('/api/text-messages', limit, offset, nodeId))
 }
@@ -143,8 +169,8 @@ export function deleteNode(nodeId: string): Promise<{ status: string }> {
   return deleteJSON<{ status: string }>(`/api/admin/nodes/${encodeURIComponent(nodeId)}`)
 }
 
-export function getPositions(limit = 500, offset = 0, nodeId = ''): Promise<ListResponse<PositionRecord>> {
-  return getJSON<ListResponse<PositionRecord>>(listPath('/api/positions', limit, offset, nodeId))
+export function getPositions(limit = 500, offset = 0, nodeIdOrOptions: string | ListQueryOptions = ''): Promise<ListResponse<PositionRecord>> {
+  return getJSON<ListResponse<PositionRecord>>(listPath('/api/positions', limit, offset, nodeIdOrOptions))
 }
 
 export function getDiscardDetails(limit = 100, offset = 0): Promise<ListResponse<DiscardDetails>> {
@@ -205,6 +231,26 @@ export function updateAdminUserPassword(id: number, password: string): Promise<A
 
 export function getAdminLoginLogs(limit = 100, offset = 0): Promise<AdminLoginLogsResponse> {
   return getJSON<AdminLoginLogsResponse>(`/api/admin/log/login?limit=${limit}&offset=${offset}`)
+}
+
+export function getAdminMapSources(limit = 100, offset = 0): Promise<ListResponse<MapTileSource>> {
+  return getJSON<ListResponse<MapTileSource>>(listPath('/api/admin/map-source', limit, offset))
+}
+
+export function createAdminMapSource(payload: MapTileSourcePayload): Promise<MapTileSourceResponse> {
+  return postJSON<MapTileSourceResponse>('/api/admin/map-source', payload)
+}
+
+export function updateAdminMapSource(id: number, payload: MapTileSourcePayload): Promise<MapTileSourceResponse> {
+  return putJSON<MapTileSourceResponse>(`/api/admin/map-source/${id}`, payload)
+}
+
+export function deleteAdminMapSource(id: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/map-source/${id}`)
+}
+
+export function setDefaultAdminMapSource(id: number): Promise<MapTileSourceResponse> {
+  return postJSON<MapTileSourceResponse>(`/api/admin/map-source/${id}/default`)
 }
 
 export function getNodeBlockingRules(limit = 100, offset = 0): Promise<ListResponse<NodeBlockingRule>> {

@@ -51,12 +51,13 @@ type mysqlConfig struct {
 }
 
 type webConfig struct {
-	Enabled    bool           `yaml:"enabled"`
-	Host       string         `yaml:"host"`
-	Port       int            `yaml:"port"`
-	SocketPath string         `yaml:"socket_path"`
-	StaticDir  string         `yaml:"static_dir"`
-	Admin      webAdminConfig `yaml:"admin"`
+	Enabled         bool           `yaml:"enabled"`
+	Host            string         `yaml:"host"`
+	Port            int            `yaml:"port"`
+	SocketPath      string         `yaml:"socket_path"`
+	StaticDir       string         `yaml:"static_dir"`
+	MapTileCacheDir string         `yaml:"map_tile_cache_dir"`
+	Admin           webAdminConfig `yaml:"admin"`
 }
 
 type webAdminConfig struct {
@@ -104,12 +105,13 @@ type rawMySQLConfig struct {
 }
 
 type rawWebConfig struct {
-	Enabled    *bool              `yaml:"enabled"`
-	Host       *string            `yaml:"host"`
-	Port       *int               `yaml:"port"`
-	SocketPath *string            `yaml:"socket_path"`
-	StaticDir  *string            `yaml:"static_dir"`
-	Admin      *rawWebAdminConfig `yaml:"admin"`
+	Enabled         *bool              `yaml:"enabled"`
+	Host            *string            `yaml:"host"`
+	Port            *int               `yaml:"port"`
+	SocketPath      *string            `yaml:"socket_path"`
+	StaticDir       *string            `yaml:"static_dir"`
+	MapTileCacheDir *string            `yaml:"map_tile_cache_dir"`
+	Admin           *rawWebAdminConfig `yaml:"admin"`
 }
 
 type rawWebAdminConfig struct {
@@ -140,11 +142,12 @@ func defaultConfig() *config {
 			MySQL:  mysqlConfig{DSN: ""},
 		},
 		Web: webConfig{
-			Enabled:    true,
-			Host:       "0.0.0.0",
-			Port:       8080,
-			SocketPath: defaultWebSocketPath(),
-			StaticDir:  "./dist",
+			Enabled:         true,
+			Host:            "0.0.0.0",
+			Port:            8080,
+			SocketPath:      defaultWebSocketPath(),
+			StaticDir:       "./dist",
+			MapTileCacheDir: defaultMapTileCacheDir(),
 			Admin: webAdminConfig{
 				Username:      "admin",
 				Password:      "admin",
@@ -174,6 +177,17 @@ func defaultSQLitePath() string {
 
 func defaultWebSocketPath() string {
 	return defaultWebSocketPathForGOOS(runtime.GOOS)
+}
+
+func defaultMapTileCacheDir() string {
+	return defaultMapTileCacheDirForGOOS(runtime.GOOS)
+}
+
+func defaultMapTileCacheDirForGOOS(goos string) string {
+	if goos == "windows" {
+		return filepath.Join(".", "win", "srv", "mesh_mqtt_go")
+	}
+	return filepath.Join(string(filepath.Separator), "srv", "mesh_mqtt_go")
 }
 
 func defaultWebSocketPathForGOOS(goos string) string {
@@ -342,6 +356,11 @@ func normalizeConfig(raw rawConfig) (*config, bool) {
 		} else {
 			cfg.Web.StaticDir = *raw.Web.StaticDir
 		}
+		if raw.Web.MapTileCacheDir == nil {
+			changed = true
+		} else {
+			cfg.Web.MapTileCacheDir = *raw.Web.MapTileCacheDir
+		}
 		if raw.Web.Admin == nil {
 			changed = true
 		} else {
@@ -393,6 +412,9 @@ func validateConfig(cfg *config) error {
 		}
 		if cfg.Web.StaticDir == "" {
 			return fmt.Errorf("web.static_dir is required when web is enabled")
+		}
+		if cfg.Web.MapTileCacheDir == "" {
+			return fmt.Errorf("web.map_tile_cache_dir is required when web is enabled")
 		}
 		if cfg.Web.Admin.Username == "" {
 			return fmt.Errorf("web.admin.username is required when web is enabled")

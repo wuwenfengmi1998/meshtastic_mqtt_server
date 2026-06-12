@@ -51,13 +51,13 @@ func newRouter(cfg webConfig, store *store, sessions *sessionManager, mqttStatus
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	api := r.Group("/api")
-	registerAPIRoutes(api, store)
+	registerAPIRoutes(api, store, cfg.MapTileCacheDir)
 	registerAdminRoutes(api.Group("/admin"), store, sessions, mqttStatus, blocking, forwarder, settings, botSender)
 	registerStaticRoutes(r, cfg.StaticDir)
 	return r
 }
 
-func registerAPIRoutes(r gin.IRouter, store *store) {
+func registerAPIRoutes(r gin.IRouter, store *store, mapTileCacheDir string) {
 	r.GET("/health", func(c *gin.Context) {
 		status := gin.H{"status": "ok", "database": "ok"}
 		if err := store.Ping(); err != nil {
@@ -72,6 +72,8 @@ func registerAPIRoutes(r gin.IRouter, store *store) {
 	registerNodeInfoRoutes(r, store, "/nodeinfo")
 	registerNodeInfoRoutes(r, store, "/nodes")
 	registerMapReportRoutes(r, store)
+	registerMapSourceRoutes(r, store)
+	registerMapTileProxyRoutes(r, store, mapTileCacheDir)
 	registerHelpRoutes(r, store)
 	r.GET("/text-messages", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
@@ -186,6 +188,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 	registerAdminBlockingRoutes(protected, store, blocking)
 	registerAdminMQTTForwardRoutes(protected, store, forwarder)
 	registerAdminRuntimeSettingsRoutes(protected, store, settings)
+	registerAdminMapSourceRoutes(protected, store)
 	registerAdminHelpRoutes(protected, store)
 	registerAdminBotRoutes(protected, store, botSender)
 	protected.GET("/me", func(c *gin.Context) {

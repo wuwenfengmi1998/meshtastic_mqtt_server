@@ -76,6 +76,44 @@ export interface MapBoundsChangePayload {
   zoom: number
 }
 
+export interface PublicMapTileSource {
+  id: number
+  name: string
+  url_template: string
+  attribution: string
+  max_zoom: number
+}
+
+export interface MapTileSource extends PublicMapTileSource {
+  enabled: boolean
+  is_default: boolean
+  proxy_enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface MapTileSourcePayload {
+  name: string
+  url_template: string
+  attribution: string
+  max_zoom: number
+  enabled: boolean
+  is_default: boolean
+  proxy_enabled: boolean
+}
+
+export interface MapTileSourceResponse {
+  item: MapTileSource
+}
+
+export interface PublicMapTileSourceResponse {
+  item: PublicMapTileSource
+}
+
+export interface PublicMapTileSourcesResponse {
+  items: PublicMapTileSource[]
+}
+
 export interface MapViewportPoint extends MapReport {
   type: 'point'
 }

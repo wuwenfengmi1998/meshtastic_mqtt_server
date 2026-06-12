@@ -15,7 +15,7 @@ func TestOpenStoreCreatesTables(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	for _, table := range []string{"users", "login_log", "runtime_settings", "discard_details", "node_blocking", "ip_blocking", "forbidden_word_blocking", "nodeinfo", "map_report", "text_message", "position", "telemetry", "routing", "traceroute"} {
+	for _, table := range []string{"users", "login_log", "runtime_settings", "map_tile_sources", "discard_details", "node_blocking", "ip_blocking", "forbidden_word_blocking", "nodeinfo", "map_report", "text_message", "position", "telemetry", "routing", "traceroute"} {
 		var name string
 		if err := rawTestDB(t, st).QueryRow("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&name); err != nil {
 			t.Fatalf("%s table missing: %v", table, err)

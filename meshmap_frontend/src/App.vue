@@ -8,6 +8,7 @@ import AdminDiscardDetails from './components/AdminDiscardDetails.vue'
 import AdminHelpEdit from './components/AdminHelpEdit.vue'
 import AdminLogin from './components/AdminLogin.vue'
 import AdminLoginLogs from './components/AdminLoginLogs.vue'
+import AdminMapSource from './components/AdminMapSource.vue'
 import AdminMqttForward from './components/AdminMqttForward.vue'
 import AdminUsers from './components/AdminUsers.vue'
 import ChatPanel from './components/ChatPanel.vue'
@@ -16,7 +17,8 @@ import HelpPage from './components/HelpPage.vue'
 import MeshMap from './components/MeshMap.vue'
 import NodeDetailedPage from './components/NodeDetailedPage.vue'
 import NodeListPanel from './components/NodeListPanel.vue'
-import type { AdminUser, HealthStatus, MapBoundsChangePayload, MapBoundsQuery, MapRenderable, MapViewportItem, NodeInfo, NodeInfoById, PositionRecord, TextMessage } from './types'
+import { fallbackMapSource, loadEnabledMapSources } from './mapSource'
+import type { AdminUser, HealthStatus, MapBoundsChangePayload, MapBoundsQuery, MapRenderable, MapViewportItem, NodeInfo, NodeInfoById, PositionRecord, PublicMapTileSource, TextMessage } from './types'
 
 const currentPath = window.location.pathname
 const adminPath = currentPath
@@ -52,6 +54,8 @@ const currentMapBounds = ref<MapBoundsQuery | null>(null)
 const currentMapZoom = ref(2)
 const mapReportsLoading = ref(false)
 const mapReportTotal = ref(0)
+const mapSources = ref<PublicMapTileSource[]>([fallbackMapSource])
+const mapSource = ref<PublicMapTileSource>(fallbackMapSource)
 const pendingDeleteAction = ref<PendingDeleteAction | null>(null)
 type DeletableTextMessage = TextMessage & { mergedCount?: number; mergedMessages?: TextMessage[] }
 type NodeActionRequest = { nodeId: string; nodeNum: number | null; message?: DeletableTextMessage }
@@ -294,6 +298,19 @@ async function refresh(showLoading = true) {
   }
 }
 
+async function loadMapSource() {
+  const sources = await loadEnabledMapSources()
+  mapSources.value = sources
+  mapSource.value = sources[0] ?? fallbackMapSource
+}
+
+function selectMapSource(sourceId: number) {
+  const source = mapSources.value.find((item) => item.id === sourceId)
+  if (source) {
+    mapSource.value = source
+  }
+}
+
 async function checkAdminSession() {
   adminChecking.value = true
   try {
@@ -465,6 +482,7 @@ onMounted(() => {
   if (isDetailedPage || isHelpPage) {
     return
   }
+  loadMapSource()
   refresh()
   refreshTimer = window.setInterval(() => refresh(false), 5000)
 })
@@ -496,6 +514,7 @@ onBeforeUnmount(() => {
             <a href="/admin/blocking_management" :class="{ active: adminPath === '/admin/blocking_management' }">屏蔽管理</a>
             <a href="/admin/mqtt_forward/" :class="{ active: isMqttForwardAdminPage }">MQTT转发</a>
             <a href="/admin/bot" :class="{ active: isBotAdminPage }">机器人</a>
+            <a href="/admin/map_source" :class="{ active: adminPath === '/admin/map_source' }">地图图源</a>
             <a href="/admin/help_edit" :class="{ active: adminPath === '/admin/help_edit' }">帮助编辑</a>
             <a href="/admin/log/login" :class="{ active: adminPath === '/admin/log/login' }">登录日志</a>
             <a href="/admin/discard_details" :class="{ active: adminPath === '/admin/discard_details' }">丢弃数据</a>
@@ -536,6 +555,7 @@ onBeforeUnmount(() => {
         <AdminBlockingManagement v-else-if="adminPath === '/admin/blocking_management'" />
         <AdminMqttForward v-else-if="isMqttForwardAdminPage" />
         <AdminBot v-else-if="isBotAdminPage" />
+        <AdminMapSource v-else-if="adminPath === '/admin/map_source'" />
         <AdminHelpEdit v-else-if="adminPath === '/admin/help_edit'" />
         <AdminLoginLogs v-else-if="adminPath === '/admin/log/login'" />
         <AdminDiscardDetails v-else-if="adminPath === '/admin/discard_details'" />
@@ -574,6 +594,9 @@ onBeforeUnmount(() => {
           :is-admin="!!adminUser"
           :auto-fit="false"
           :loading="mapReportsLoading"
+          :map-source="mapSource"
+          :map-sources="mapSources"
+          @map-source-change="selectMapSource"
           @bounds-change="handleMapBoundsChange"
           @select-node="selectedNodeId = $event"
           @clear-node="selectedNodeId = null"

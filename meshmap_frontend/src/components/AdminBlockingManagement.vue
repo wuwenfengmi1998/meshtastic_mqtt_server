@@ -418,7 +418,7 @@ onMounted(() => {
           <h2>屏蔽管理</h2>
         </div>
       </div>
-      <p class="empty">管理节点、IP/CIDR、违禁词三类屏蔽规则。当前页面只维护规则，不改变 MQTT 转发行为。</p>
+      <p class="empty">管理节点、IP/CIDR、违禁词三类屏蔽规则。</p>
     </div>
 
     <div class="panel admin-status-panel">

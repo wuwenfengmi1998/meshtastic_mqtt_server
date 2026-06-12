@@ -190,10 +190,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  border: 1px solid rgba(37, 99, 235, 0.14);
-  background:
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.16), transparent 32%),
-    linear-gradient(135deg, #ffffff 0%, #f8fbff 52%, #eef6ff 100%);
+  border: 1px solid var(--color-border);
+  background: linear-gradient(135deg, var(--color-surface) 0%, var(--color-surface-soft) 100%);
 }
 
 .control-header {
@@ -210,19 +208,19 @@ onBeforeUnmount(() => {
 .control-badge {
   display: inline-flex;
   align-items: center;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border);
   border-radius: 999px;
   padding: 6px 12px;
-  color: #475569;
+  color: var(--color-muted);
   font-size: 12px;
   font-weight: 800;
-  background: rgba(255, 255, 255, 0.8);
+  background: color-mix(in srgb, var(--color-surface) 84%, transparent);
 }
 
 .control-badge.active {
-  border-color: rgba(22, 163, 74, 0.32);
-  color: #15803d;
-  background: #dcfce7;
+  border-color: color-mix(in srgb, var(--color-success) 36%, white);
+  color: color-mix(in srgb, var(--color-success) 72%, var(--color-heading));
+  background: var(--color-success-soft);
 }
 
 .control-body {
@@ -235,10 +233,10 @@ onBeforeUnmount(() => {
 
 .control-copy,
 .switch-card {
-  border: 1px solid rgba(203, 213, 225, 0.78);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  box-shadow: var(--shadow-sm);
 }
 
 .control-copy {
@@ -247,13 +245,13 @@ onBeforeUnmount(() => {
 
 .control-copy h3 {
   margin: 0 0 0.45rem;
-  color: #0f172a;
+  color: var(--color-heading);
   font-size: 18px;
 }
 
 .control-copy p {
   margin: 0;
-  color: #64748b;
+  color: var(--color-muted);
   line-height: 1.7;
 }
 
@@ -269,20 +267,20 @@ onBeforeUnmount(() => {
   gap: 1rem;
   min-height: 108px;
   padding: 1rem;
-  color: #334155;
+  color: var(--color-text);
   cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
 }
 
 .switch-card:hover {
   transform: translateY(-1px);
-  border-color: rgba(37, 99, 235, 0.35);
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.09);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
 }
 
 .switch-card.enabled {
-  border-color: rgba(22, 163, 74, 0.35);
-  background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
+  border-color: color-mix(in srgb, var(--color-success) 42%, white);
+  background: var(--color-success-soft);
 }
 
 .switch-card.saving {
@@ -303,12 +301,12 @@ onBeforeUnmount(() => {
 }
 
 .switch-text strong {
-  color: #0f172a;
+  color: var(--color-heading);
   font-size: 15px;
 }
 
 .switch-text small {
-  color: #64748b;
+  color: var(--color-muted);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -319,9 +317,9 @@ onBeforeUnmount(() => {
   width: 54px;
   height: 30px;
   border-radius: 999px;
-  background: #cbd5e1;
-  box-shadow: inset 0 2px 4px rgba(15, 23, 42, 0.14);
-  transition: background 0.15s ease;
+  background: var(--color-border-strong);
+  box-shadow: inset 0 2px 4px rgba(47, 52, 50, 0.12);
+  transition: background-color 0.16s ease;
 }
 
 .switch-toggle::after {
@@ -333,12 +331,12 @@ onBeforeUnmount(() => {
   height: 22px;
   border-radius: 999px;
   background: #fff;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.24);
-  transition: transform 0.15s ease;
+  box-shadow: 0 4px 10px rgba(47, 52, 50, 0.18);
+  transition: transform 0.16s ease;
 }
 
 .switch-card.enabled .switch-toggle {
-  background: linear-gradient(135deg, #16a34a, #22c55e);
+  background: var(--color-success);
 }
 
 .switch-card.enabled .switch-toggle::after {

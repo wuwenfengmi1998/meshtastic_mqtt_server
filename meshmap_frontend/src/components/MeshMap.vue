@@ -2,7 +2,8 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { MapBoundsChangePayload, MapClusterNode, MapNode, MapRenderable } from '../types'
+import { fallbackMapSource } from '../mapSource'
+import type { MapBoundsChangePayload, MapClusterNode, MapNode, MapRenderable, PublicMapTileSource } from '../types'
 
 const props = withDefaults(defineProps<{
   items: MapRenderable[]
@@ -10,9 +11,13 @@ const props = withDefaults(defineProps<{
   isAdmin: boolean
   autoFit?: boolean
   loading?: boolean
+  mapSource?: PublicMapTileSource
+  mapSources?: PublicMapTileSource[]
 }>(), {
   autoFit: true,
   loading: false,
+  mapSource: () => fallbackMapSource,
+  mapSources: () => [fallbackMapSource],
 })
 
 const emit = defineEmits<{
@@ -21,6 +26,7 @@ const emit = defineEmits<{
   'delete-node': [nodeId: string]
   'delete-and-block-node': [payload: { nodeId: string; nodeNum: number | null }]
   'bounds-change': [payload: MapBoundsChangePayload]
+  'map-source-change': [sourceId: number]
 }>()
 
 const mapEl = ref<HTMLElement | null>(null)
@@ -29,8 +35,11 @@ const menuX = ref(0)
 const menuY = ref(0)
 const lastRaisedNodeId = ref<string | null>(null)
 let map: L.Map | null = null
+let tileLayer: L.TileLayer | null = null
 let markerLayer: L.LayerGroup | null = null
 const markersByKey = new Map<string, L.Marker>()
+const overlapShuffleOrders = new Map<string, string[]>()
+const shuffledSelectedNodeIds = new Set<string>()
 let hasFitBounds = false
 
 const minMapZoom = 3
@@ -55,15 +64,12 @@ onMounted(async () => {
     maxBoundsViscosity: 1.0,
     worldCopyJump: false,
   }).setView(defaultMapCenter, defaultMapZoom)
-  L.tileLayer('https://tile.openstreetmap.jp/{z}/{x}/{y}.png', {
-    minZoom: minMapZoom,
-    maxZoom: 19,
-    noWrap: true,
-    bounds: worldBounds,
-    attribution: '&copy; OpenStreetMap contributors',
-  }).addTo(map)
+  map.attributionControl.setPrefix(false)
+  applyTileLayer()
   map.on('click', () => {
     closeNodeMenu()
+    overlapShuffleOrders.clear()
+    shuffledSelectedNodeIds.clear()
     emit('clear-node')
   })
   map.on('moveend', emitBoundsChange)
@@ -77,8 +83,11 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
   map?.remove()
   map = null
+  tileLayer = null
   markerLayer = null
   markersByKey.clear()
+  overlapShuffleOrders.clear()
+  shuffledSelectedNodeIds.clear()
 })
 
 watch(
@@ -86,6 +95,32 @@ watch(
   () => renderMarkers(false),
   { deep: true },
 )
+
+watch(
+  () => props.mapSource,
+  () => applyTileLayer(),
+  { deep: true },
+)
+
+function selectMapSource(sourceId: number) {
+  emit('map-source-change', sourceId)
+}
+
+function applyTileLayer() {
+  if (!map) {
+    return
+  }
+  if (tileLayer) {
+    tileLayer.remove()
+  }
+  tileLayer = L.tileLayer(props.mapSource.url_template, {
+    minZoom: minMapZoom,
+    maxZoom: props.mapSource.max_zoom || fallbackMapSource.max_zoom,
+    noWrap: true,
+    bounds: worldBounds,
+    attribution: props.mapSource.attribution || fallbackMapSource.attribution,
+  }).addTo(map)
+}
 
 function closeNodeMenu() {
   menuNode.value = null
@@ -149,6 +184,7 @@ function renderMarkers(forceFit: boolean) {
   }
   const bounds = L.latLngBounds([])
   const visibleMarkerKeys = new Set<string>()
+  const overlapGroups = buildOverlapGroups(props.items)
 
   for (const item of props.items) {
     const markerKey = mapMarkerKey(item)
@@ -166,8 +202,14 @@ function renderMarkers(forceFit: boolean) {
     }
 
     const node = item
-    const selected = node.node_id === props.selectedNodeId
+    const rawSelected = node.node_id === props.selectedNodeId
+    const shuffledSelected = rawSelected && shuffledSelectedNodeIds.has(node.node_id)
+    const selected = rawSelected && !shuffledSelected
+    const overlapGroupKey = nodeOverlapGroupKey(node, overlapGroups)
+    const overlapGroup = overlapGroupKey ? overlapGroups.get(overlapGroupKey) : undefined
+    const overlapIndex = overlapGroup ? nodeOverlapIndex(node, overlapGroup) : 0
     const raised = selected || node.node_id === lastRaisedNodeId.value
+    const zIndexOffset = raised ? 1000 : overlapIndex
     const nodeIcon = L.divIcon({
       className: `node-marker${selected ? ' selected' : ''}`,
       html: `<span style="--node-color: ${nodeColor(node.node_id)}">${escapeHTML(node.label || 'N')}</span>`,
@@ -180,7 +222,7 @@ function renderMarkers(forceFit: boolean) {
       marker = L.marker([node.latitude, node.longitude], {
         icon: nodeIcon,
         title: node.label,
-        zIndexOffset: raised ? 1000 : 0,
+        zIndexOffset,
       })
       marker.bindPopup(buildNodePopupHTML(node), { maxWidth: 320, className: 'node-detail-popup' })
       marker.addTo(markerLayer)
@@ -188,7 +230,7 @@ function renderMarkers(forceFit: boolean) {
     } else {
       marker.setLatLng([node.latitude, node.longitude])
       marker.setIcon(nodeIcon)
-      marker.setZIndexOffset(raised ? 1000 : 0)
+      marker.setZIndexOffset(zIndexOffset)
       marker.options.title = node.label
       marker.getElement()?.setAttribute('title', node.label)
       const popup = marker.getPopup()
@@ -203,8 +245,18 @@ function renderMarkers(forceFit: boolean) {
     marker.off('contextmenu')
     marker.on('click', (event) => {
       L.DomEvent.stopPropagation(event)
-      lastRaisedNodeId.value = node.node_id
       closeNodeMenu()
+      if (node.node_id === props.selectedNodeId) {
+        if (moveSelectedNodeBehindOverlap(node, overlapGroups)) {
+          shuffledSelectedNodeIds.add(node.node_id)
+          marker?.closePopup()
+          emit('clear-node')
+          renderMarkers(false)
+        }
+        return
+      }
+      shuffledSelectedNodeIds.clear()
+      lastRaisedNodeId.value = node.node_id
       emit('select-node', node.node_id)
     })
     marker.on('contextmenu', (event) => openNodeMenu(node, event))
@@ -233,6 +285,126 @@ function mapMarkerKey(item: MapRenderable): string {
     return `cluster:${item.latitude}:${item.longitude}:${item.count}`
   }
   return `node:${item.node_id}`
+}
+
+function buildOverlapGroups(items: MapRenderable[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>()
+  if (!map) {
+    return groups
+  }
+
+  const capsules = items
+    .filter((item): item is MapNode => item.type !== 'cluster')
+    .map((node) => ({ node, bounds: nodeCapsuleBounds(node) }))
+  const visited = new Set<string>()
+
+  for (const capsule of capsules) {
+    if (visited.has(capsule.node.node_id)) {
+      continue
+    }
+
+    const stack = [capsule]
+    const group: string[] = []
+    visited.add(capsule.node.node_id)
+
+    while (stack.length > 0) {
+      const current = stack.pop()
+      if (!current) {
+        continue
+      }
+      group.push(current.node.node_id)
+
+      for (const candidate of capsules) {
+        if (visited.has(candidate.node.node_id)) {
+          continue
+        }
+        if (capsuleBoundsOverlap(current.bounds, candidate.bounds)) {
+          visited.add(candidate.node.node_id)
+          stack.push(candidate)
+        }
+      }
+    }
+
+    if (group.length >= 2) {
+      const key = overlapGroupKey(group)
+      const existingOrder = overlapShuffleOrders.get(key) ?? []
+      const activeIds = new Set(group)
+      const ordered = existingOrder.filter((nodeId) => activeIds.has(nodeId))
+      for (const nodeId of group) {
+        if (!ordered.includes(nodeId)) {
+          ordered.push(nodeId)
+        }
+      }
+      overlapShuffleOrders.set(key, ordered)
+      groups.set(key, ordered)
+    }
+  }
+
+  for (const key of overlapShuffleOrders.keys()) {
+    if (!groups.has(key)) {
+      overlapShuffleOrders.delete(key)
+    }
+  }
+
+  return groups
+}
+
+function nodeOverlapGroupKey(node: MapNode, overlapGroups: Map<string, string[]>): string | null {
+  for (const [key, nodeIds] of overlapGroups) {
+    if (nodeIds.includes(node.node_id)) {
+      return key
+    }
+  }
+  return null
+}
+
+function nodeOverlapIndex(node: MapNode, group: string[]): number {
+  const index = group.indexOf(node.node_id)
+  return index === -1 ? 0 : index
+}
+
+function moveSelectedNodeBehindOverlap(node: MapNode, overlapGroups: Map<string, string[]>): boolean {
+  const groupKey = nodeOverlapGroupKey(node, overlapGroups)
+  if (!groupKey) {
+    return false
+  }
+  const group = overlapGroups.get(groupKey)
+  if (!group || group.length < 2) {
+    return false
+  }
+
+  const nextOrder = [node.node_id, ...group.filter((nodeId) => nodeId !== node.node_id)]
+  overlapShuffleOrders.set(groupKey, nextOrder)
+  lastRaisedNodeId.value = null
+  return true
+}
+
+function overlapGroupKey(nodeIds: string[]): string {
+  return [...nodeIds].sort().join('|')
+}
+
+function nodeCapsuleBounds(node: MapNode): { left: number; right: number; top: number; bottom: number } {
+  const point = map!.latLngToLayerPoint([node.latitude, node.longitude])
+  const width = nodeCapsuleWidth(node)
+  const height = 22
+  return {
+    left: point.x - width / 2,
+    right: point.x + width / 2,
+    top: point.y - height / 2,
+    bottom: point.y + height / 2,
+  }
+}
+
+function nodeCapsuleWidth(node: MapNode): number {
+  const label = node.label || 'N'
+  return Math.max(34, Math.ceil(label.length * 6 + 10))
+}
+
+function capsuleBoundsOverlap(
+  left: { left: number; right: number; top: number; bottom: number },
+  right: { left: number; right: number; top: number; bottom: number },
+): boolean {
+  return left.left <= right.right && left.right >= right.left && left.top <= right.bottom && left.bottom >= right.top
 }
 
 function buildClusterMarker(cluster: MapClusterNode): L.Marker {
@@ -342,15 +514,15 @@ function nodeColor(nodeId: string): string {
   }
 
   const hueRanges = [
-    [35, 75],
-    [95, 165],
-    [185, 250],
-    [265, 315],
+    [42, 68],
+    [92, 136],
+    [188, 218],
+    [330, 354],
   ]
   const range = hueRanges[hash % hueRanges.length]
   const hue = range[0] + (hash % (range[1] - range[0]))
-  const saturation = 68 + (hash % 18)
-  const lightness = 32 + (hash % 10)
+  const saturation = 24 + (hash % 14)
+  const lightness = 42 + (hash % 12)
   return `hsl(${hue} ${saturation}% ${lightness}%)`
 }
 
@@ -371,6 +543,43 @@ function escapeHTML(value: string): string {
 <template>
   <section class="map-panel panel">
     <div ref="mapEl" class="map-container"></div>
+    <div
+      class="map-source-control"
+      @click.stop
+      @mousedown.stop
+      @dblclick.stop
+      @wheel.stop
+    >
+      <button class="map-source-icon" type="button" aria-label="切换地图图源">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+          <path d="M12 18.5l-3 -1.5l-6 3v-13l6 -3l6 3l6 -3v7.5" />
+          <path d="M9 4v13" />
+          <path d="M15 7v5.5" />
+          <path d="M21.121 20.121a3 3 0 1 0 -4.242 0c.418 .419 1.125 1.045 2.121 1.879c1.051 -.89 1.759 -1.516 2.121 -1.879" />
+          <path d="M19 18v.01" />
+        </svg>
+      </button>
+      <div class="map-source-popover">
+        <div class="map-source-drawer-header">
+          <span>地图图源</span>
+        </div>
+        <div v-if="mapSources.length > 1" class="map-source-options">
+          <button
+            v-for="source in mapSources"
+            :key="source.id"
+            class="map-source-option"
+            :class="{ active: source.id === mapSource.id }"
+            type="button"
+            @click="selectMapSource(source.id)"
+          >
+            <span class="map-source-option-name">{{ source.name }}</span>
+            <span v-if="source.id === mapSource.id" class="map-source-option-check">当前</span>
+          </button>
+        </div>
+        <span v-else class="map-source-control-pill">{{ mapSource.name }}</span>
+      </div>
+    </div>
     <!-- <div v-if="loading" class="map-empty">正在加载当前区域坐标...</div>
     <div v-else-if="items.length === 0" class="map-empty">暂无可显示坐标的节点</div> -->
     <div

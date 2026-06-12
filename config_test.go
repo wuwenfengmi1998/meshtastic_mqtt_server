@@ -44,6 +44,9 @@ func TestLoadConfigCreatesDefaultFile(t *testing.T) {
 	if cfg.Web.StaticDir != "./dist" {
 		t.Fatalf("web static dir = %q, want ./dist", cfg.Web.StaticDir)
 	}
+	if cfg.Web.MapTileCacheDir != defaultMapTileCacheDir() {
+		t.Fatalf("web map tile cache dir = %q, want %q", cfg.Web.MapTileCacheDir, defaultMapTileCacheDir())
+	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("default config was not written: %v", err)
 	}
@@ -80,7 +83,7 @@ func TestLoadConfigFillsMissingFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{"host:", "tls:", "enabled:", "cert_file:", "key_file:", "meshtastic:", "psk:", "database:", "driver:", "sqlite:", "mysql:", "dsn:", "web:", "port:", "socket_path:", "static_dir:"} {
+	for _, want := range []string{"host:", "tls:", "enabled:", "cert_file:", "key_file:", "meshtastic:", "psk:", "database:", "driver:", "sqlite:", "mysql:", "dsn:", "web:", "port:", "socket_path:", "static_dir:", "map_tile_cache_dir:"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("completed config missing %q in:\n%s", want, text)
 		}
@@ -151,6 +154,20 @@ func TestLoadConfigMalformedYAMLDoesNotOverwrite(t *testing.T) {
 	}
 	if string(data) != content {
 		t.Fatalf("malformed config was overwritten: %q", string(data))
+	}
+}
+
+func TestDefaultMapTileCacheDirForGOOS(t *testing.T) {
+	windowsPath := defaultMapTileCacheDirForGOOS("windows")
+	wantWindows := filepath.Join(".", "win", "srv", "mesh_mqtt_go")
+	if windowsPath != wantWindows {
+		t.Fatalf("windows map tile cache dir = %q, want %q", windowsPath, wantWindows)
+	}
+
+	linuxPath := defaultMapTileCacheDirForGOOS("linux")
+	wantLinux := filepath.Join(string(filepath.Separator), "srv", "mesh_mqtt_go")
+	if linuxPath != wantLinux {
+		t.Fatalf("linux map tile cache dir = %q, want %q", linuxPath, wantLinux)
 	}
 }
 
@@ -228,6 +245,7 @@ func TestValidateConfigWeb(t *testing.T) {
 	}
 
 	cfg = defaultConfig()
+	cfg.Web.SocketPath = filepath.Join(string(filepath.Separator), "tmp", "mesh_mqtt_go.sock")
 	cfg.Web.Port = 0
 	if err := validateConfig(cfg); err != nil {
 		t.Fatalf("web socket with invalid port error = %v, want nil", err)
@@ -244,6 +262,12 @@ func TestValidateConfigWeb(t *testing.T) {
 	cfg.Web.StaticDir = ""
 	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "web.static_dir") {
 		t.Fatalf("missing web static dir error = %v, want web.static_dir error", err)
+	}
+
+	cfg = defaultConfig()
+	cfg.Web.MapTileCacheDir = ""
+	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "web.map_tile_cache_dir") {
+		t.Fatalf("missing map tile cache dir error = %v, want web.map_tile_cache_dir error", err)
 	}
 
 	cfg = defaultConfig()
