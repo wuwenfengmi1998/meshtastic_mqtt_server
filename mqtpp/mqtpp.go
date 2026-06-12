@@ -944,6 +944,11 @@ func channelHash(channelName string, key []byte) byte {
 
 // decryptAESCTR 按 Meshtastic nonce 规则使用 AES-CTR 解密 payload。
 func decryptAESCTR(key []byte, fromNum, packetID uint32, ciphertext []byte) ([]byte, error) {
+	return cryptAESCTR(key, fromNum, packetID, ciphertext)
+}
+
+// cryptAESCTR 按 Meshtastic nonce 规则执行 AES-CTR；CTR 加密和解密是同一个 XOR 流操作。
+func cryptAESCTR(key []byte, fromNum, packetID uint32, input []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
@@ -951,9 +956,9 @@ func decryptAESCTR(key []byte, fromNum, packetID uint32, ciphertext []byte) ([]b
 	nonce := make([]byte, aes.BlockSize)
 	binary.LittleEndian.PutUint64(nonce[0:8], uint64(packetID))
 	binary.LittleEndian.PutUint32(nonce[8:12], fromNum)
-	plaintext := make([]byte, len(ciphertext))
-	cipher.NewCTR(block, nonce).XORKeyStream(plaintext, ciphertext)
-	return plaintext, nil
+	output := make([]byte, len(input))
+	cipher.NewCTR(block, nonce).XORKeyStream(output, input)
+	return output, nil
 }
 
 // enumName 把已知枚举值转换成名称，未知值保留为数字。

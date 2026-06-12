@@ -219,6 +219,49 @@ func (mqttForwardTopicRecord) TableName() string {
 	return "mqtt_forward_topics"
 }
 
+type botNodeRecord struct {
+	ID               uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	NodeID           string    `gorm:"column:node_id;not null;uniqueIndex"`
+	NodeNum          int64     `gorm:"column:node_num;not null;uniqueIndex"`
+	LongName         string    `gorm:"column:long_name;not null"`
+	ShortName        string    `gorm:"column:short_name;not null"`
+	Enabled          bool      `gorm:"column:enabled;not null;index"`
+	DefaultChannelID string    `gorm:"column:default_channel_id;not null;index"`
+	TopicPrefix      string    `gorm:"column:topic_prefix;not null"`
+	LastPacketID     int64     `gorm:"column:last_packet_id;not null"`
+	CreatedAt        time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt        time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (botNodeRecord) TableName() string {
+	return "bot_nodes"
+}
+
+type botMessageRecord struct {
+	ID          uint64     `gorm:"column:id;primaryKey;autoIncrement"`
+	BotID       uint64     `gorm:"column:bot_id;not null;index:idx_bot_message_bot_created_at,priority:1"`
+	BotNodeID   string     `gorm:"column:bot_node_id;not null;index"`
+	BotNodeNum  int64      `gorm:"column:bot_node_num;not null;index"`
+	MessageType string     `gorm:"column:message_type;not null;index"`
+	ChannelID   string     `gorm:"column:channel_id;not null;index"`
+	ToNodeID    *string    `gorm:"column:to_node_id;index"`
+	ToNodeNum   *int64     `gorm:"column:to_node_num;index"`
+	Topic       string     `gorm:"column:topic;not null"`
+	PacketID    int64      `gorm:"column:packet_id;not null;index"`
+	Text        string     `gorm:"column:text;type:text;not null"`
+	PayloadLen  int64      `gorm:"column:payload_len;not null"`
+	Encrypted   bool       `gorm:"column:encrypted;not null;index"`
+	Status      string     `gorm:"column:status;not null;index"`
+	Error       string     `gorm:"column:error;type:text"`
+	PublishedAt *time.Time `gorm:"column:published_at;index"`
+	CreatedBy   string     `gorm:"column:created_by;index"`
+	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime;index:idx_bot_message_bot_created_at,priority:2"`
+}
+
+func (botMessageRecord) TableName() string {
+	return "bot_messages"
+}
+
 type nodeInfoRecord struct {
 	NodeID      string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum     int64     `gorm:"column:node_num;not null;index"`
@@ -421,6 +464,8 @@ func (s *store) migrate() error {
 			{label: "forbidden_word_blocking", model: &forbiddenWordBlockingRecord{}},
 			{label: "mqtt_forwarders", model: &mqttForwarderRecord{}},
 			{label: "mqtt_forward_topics", model: &mqttForwardTopicRecord{}},
+			{label: "bot_nodes", model: &botNodeRecord{}},
+			{label: "bot_messages", model: &botMessageRecord{}},
 			{label: "nodeinfo", model: &nodeInfoRecord{}},
 			{label: "map_report", model: &mapReportRecord{}},
 			{label: "text_message", model: &textMessageRecord{}},

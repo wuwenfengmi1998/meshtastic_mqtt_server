@@ -224,6 +224,7 @@ func run(cfg *config) error {
 	if err != nil {
 		return err
 	}
+	botSender := newBotService(store, server, cfg.key)
 	forwardManager := newMQTTForwardManager(store)
 	if err := forwardManager.StartFromStore(); err != nil {
 		server.Close()
@@ -239,7 +240,7 @@ func run(cfg *config) error {
 			return err
 		}
 		mqttStatus := mqttRuntimeStatus{server: server, address: mqttAddr, tls: cfg.MQTT.TLS.Enabled, stats: messageStats, dbQueue: dbQueue}
-		httpServer = newHTTPServer(cfg.Web, store, sessions, mqttStatus, blocking, forwardManager, settings)
+		httpServer = newHTTPServer(cfg.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender)
 		webAddress := httpServer.Addr
 		go func() {
 			if cfg.Web.SocketPath != "" {
@@ -281,7 +282,7 @@ func run(cfg *config) error {
 }
 
 func startMQTTServer(cfg *config, dbQueue *dbWriteQueue, stats *meshtasticMessageStats, blocking *blockingCache, settings *runtimeSettingsCache) (*mqtt.Server, string, error) {
-	server := mqtt.New(nil)
+	server := mqtt.New(&mqtt.Options{InlineClient: true})
 	if err := server.AddHook(new(auth.AllowHook), nil); err != nil {
 		return nil, "", err
 	}

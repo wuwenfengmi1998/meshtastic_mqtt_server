@@ -401,3 +401,67 @@ export interface MQTTForwardMutationResponse<T> {
 export interface MQTTForwardStatusResponse {
   items: MQTTForwardRuntimeStatus[]
 }
+
+export type BotMessageType = 'channel' | 'direct'
+export type BotMessageStatus = 'pending' | 'published' | 'failed'
+
+export interface BotNode {
+  id: number
+  node_id: string
+  node_num: number
+  long_name: string
+  short_name: string
+  enabled: boolean
+  default_channel_id: string
+  topic_prefix: string
+  created_at: string
+  updated_at: string
+}
+
+export interface BotNodePayload {
+  node_num?: number | null
+  long_name: string
+  short_name: string
+  enabled: boolean
+  default_channel_id: string
+  topic_prefix?: string
+}
+
+export interface BotNodeMutationResponse {
+  item: BotNode
+}
+
+export interface BotMessage {
+  id: number
+  bot_id: number
+  bot_node_id: string
+  bot_node_num: number
+  message_type: BotMessageType
+  channel_id: string
+  to_node_id: string | null
+  to_node_num: number | null
+  topic: string
+  packet_id: number
+  text: string
+  payload_len: number
+  encrypted: boolean
+  status: BotMessageStatus
+  error: string
+  published_at: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface BotSendMessagePayload {
+  bot_id: number
+  message_type: BotMessageType
+  channel_id: string
+  to_node_id?: string
+  to_node_num?: number | null
+  text: string
+}
+
+export interface BotMessageMutationResponse {
+  item: BotMessage
+  error?: string
+}

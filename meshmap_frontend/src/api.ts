@@ -6,6 +6,12 @@ import type {
   AdminRuntimeSettingsPayload,
   AdminRuntimeSettingsResponse,
   AdminUsersResponse,
+  BotMessage,
+  BotMessageMutationResponse,
+  BotNode,
+  BotNodeMutationResponse,
+  BotNodePayload,
+  BotSendMessagePayload,
   BlockingRuleResponse,
   DiscardDetails,
   ForbiddenWordBlockingRule,
@@ -287,4 +293,32 @@ export function deleteMQTTForwardTopic(id: number): Promise<{ status: string }> 
 
 export function getMQTTForwardStatus(): Promise<MQTTForwardStatusResponse> {
   return getJSON<MQTTForwardStatusResponse>('/api/admin/mqtt-forward/status')
+}
+
+export function getBotNodes(limit = 100, offset = 0): Promise<ListResponse<BotNode>> {
+  return getJSON<ListResponse<BotNode>>(listPath('/api/admin/bot/nodes', limit, offset))
+}
+
+export function createBotNode(payload: BotNodePayload): Promise<BotNodeMutationResponse> {
+  return postJSON<BotNodeMutationResponse>('/api/admin/bot/nodes', payload)
+}
+
+export function updateBotNode(id: number, payload: BotNodePayload): Promise<BotNodeMutationResponse> {
+  return putJSON<BotNodeMutationResponse>(`/api/admin/bot/nodes/${id}`, payload)
+}
+
+export function deleteBotNode(id: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/bot/nodes/${id}`)
+}
+
+export function getBotMessages(botId = 0, limit = 100, offset = 0): Promise<ListResponse<BotMessage>> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (botId > 0) {
+    params.set('bot_id', String(botId))
+  }
+  return getJSON<ListResponse<BotMessage>>(`/api/admin/bot/messages?${params.toString()}`)
+}
+
+export function sendBotMessage(payload: BotSendMessagePayload): Promise<BotMessageMutationResponse> {
+  return postJSON<BotMessageMutationResponse>('/api/admin/bot/messages', payload)
 }
