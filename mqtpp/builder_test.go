@@ -140,6 +140,33 @@ func TestBuildNodeInfoServiceEnvelopeRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBuildNodeInfoTruncatesNanopbStrings(t *testing.T) {
+	key, err := ExpandPSK("AQ==")
+	if err != nil {
+		t.Fatalf("ExpandPSK() error = %v", err)
+	}
+
+	raw, err := BuildNodeInfoServiceEnvelope(NodeInfoBuildOptions{
+		PacketBuildOptions: PacketBuildOptions{FromNodeNum: 0x12345678, ToNodeNum: NodeNumBroadcast, PacketID: 0x33333333, ChannelID: "LongFast", GatewayID: "!12345678", PSK: key, Encrypt: true, ViaMQTT: true},
+		NodeID:             "!12345678",
+		LongName:           "这是一个非常非常非常非常长的机器人节点名称",
+		ShortName:          "机器人",
+	})
+	if err != nil {
+		t.Fatalf("BuildNodeInfoServiceEnvelope() error = %v", err)
+	}
+	valid, _, record := MQTTPP("msh/2/e/LongFast/!12345678", raw, key, Options{})
+	if !valid {
+		t.Fatalf("MQTTPP() valid = false, record = %#v", record)
+	}
+	if len([]byte(record["long_name"].(string))) > 40 {
+		t.Fatalf("long_name byte length = %d", len([]byte(record["long_name"].(string))))
+	}
+	if len([]byte(record["short_name"].(string))) > 5 {
+		t.Fatalf("short_name byte length = %d", len([]byte(record["short_name"].(string))))
+	}
+}
+
 func TestParseNodeID(t *testing.T) {
 	num, err := ParseNodeID("!1234abcd")
 	if err != nil {

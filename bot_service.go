@@ -270,6 +270,14 @@ func (s *botService) PublishNodeInfo(_ context.Context, bot botNodeRecord) error
 	if err := s.server.Publish(topic, raw, false, 0); err != nil {
 		return err
 	}
+	if s.store != nil {
+		valid, _, record := mqtpp.MQTTPP(topic, raw, key, mqtpp.Options{AllowEncryptedForwarding: true})
+		if valid && record["type"] == "nodeinfo" {
+			if err := s.store.UpsertNodeInfo(record); err != nil {
+				return err
+			}
+		}
+	}
 	return s.store.UpdateBotNodeInfoBroadcastAt(bot.ID, time.Now())
 }
 

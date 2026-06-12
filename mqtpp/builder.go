@@ -70,11 +70,17 @@ func BuildNodeInfoServiceEnvelope(opts NodeInfoBuildOptions) ([]byte, error) {
 	if opts.NodeID == "" {
 		opts.NodeID = NodeNumToID(opts.FromNodeNum)
 	}
-	if strings.TrimSpace(opts.LongName) == "" {
+	opts.NodeID = truncateUTF8Bytes(opts.NodeID, 16)
+	opts.LongName = truncateUTF8Bytes(strings.TrimSpace(opts.LongName), 40)
+	opts.ShortName = truncateUTF8Bytes(strings.TrimSpace(opts.ShortName), 5)
+	if opts.LongName == "" {
 		return nil, fmt.Errorf("long name is required")
 	}
-	if strings.TrimSpace(opts.ShortName) == "" {
+	if opts.ShortName == "" {
 		return nil, fmt.Errorf("short name is required")
+	}
+	if len(opts.PublicKey) > 32 {
+		opts.PublicKey = opts.PublicKey[:32]
 	}
 	user := buildUserPacket(opts)
 	data := buildDataPacket(nodeInfoApp, user)
@@ -87,6 +93,21 @@ func BuildNodeInfoServiceEnvelope(opts NodeInfoBuildOptions) ([]byte, error) {
 
 func NodeNumToID(nodeNum uint32) string {
 	return nodeNumToID(nodeNum)
+}
+
+func truncateUTF8Bytes(value string, maxBytes int) string {
+	if maxBytes <= 0 || len(value) <= maxBytes {
+		return value
+	}
+	out := make([]byte, 0, maxBytes)
+	for _, r := range value {
+		part := string(r)
+		if len(out)+len(part) > maxBytes {
+			break
+		}
+		out = append(out, part...)
+	}
+	return string(out)
 }
 
 func ParseNodeID(nodeID string) (uint32, error) {
