@@ -38,6 +38,13 @@ type NodeInfoBuildOptions struct {
 	PublicKey  []byte
 }
 
+// AckBuildOptions 描述构造一个 Routing-NONE ACK（PSK 频道路径）所需字段。
+// RequestID 是被 ACK 原始包的 packet_id（写入 Data.request_id, tag 6）。
+type AckBuildOptions struct {
+	PacketBuildOptions
+	RequestID uint32
+}
+
 func BuildTextMessageServiceEnvelope(opts TextMessageBuildOptions) ([]byte, error) {
 	if opts.FromNodeNum == 0 {
 		return nil, fmt.Errorf("from node number is required")
@@ -89,6 +96,47 @@ func BuildNodeInfoServiceEnvelope(opts NodeInfoBuildOptions) ([]byte, error) {
 		return nil, err
 	}
 	return buildServiceEnvelope(packet, opts.ChannelID, opts.GatewayID), nil
+}
+
+// BuildAckServiceEnvelope 构造一个 PSK 频道上的 Routing ACK（error_reason=NONE）。
+// 与固件 MeshModule::allocAckNak/Router::sendAckNak 行为对齐：
+//   - portnum = ROUTING_APP(5)
+//   - Data.request_id = 原始包 ID
+//   - Routing.which_variant = error_reason，error_reason = NONE(0)
+//
+// 用 PacketBuildOptions 中 ChannelID + PSK 加密；调用方负责把 ToNodeNum 设为原 from。
+func BuildAckServiceEnvelope(opts AckBuildOptions) ([]byte, error) {
+	if opts.RequestID == 0 {
+		return nil, fmt.Errorf("ack request_id is required")
+	}
+	if opts.ChannelID == "" {
+		return nil, fmt.Errorf("channel id is required")
+	}
+	data := buildAckDataPacket(opts.RequestID)
+	packet, err := buildMeshPacket(opts.PacketBuildOptions, data)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(opts.GatewayID) == "" {
+		opts.GatewayID = NodeNumToID(opts.FromNodeNum)
+	}
+	return buildServiceEnvelope(packet, opts.ChannelID, opts.GatewayID), nil
+}
+
+// buildAckDataPacket 构造 Data { portnum=ROUTING_APP, payload=Routing{error_reason=NONE}, request_id=req }。
+func buildAckDataPacket(requestID uint32) []byte {
+	// Routing payload: oneof variant=error_reason(tag 3), value=NONE(0) → 0x18 0x00
+	routing := protowire.AppendTag(nil, 3, protowire.VarintType)
+	routing = protowire.AppendVarint(routing, 0)
+
+	var out []byte
+	out = protowire.AppendTag(out, 1, protowire.VarintType)
+	out = protowire.AppendVarint(out, uint64(routingApp))
+	out = protowire.AppendTag(out, 2, protowire.BytesType)
+	out = protowire.AppendBytes(out, routing)
+	out = protowire.AppendTag(out, 6, protowire.Fixed32Type)
+	out = protowire.AppendFixed32(out, requestID)
+	return out
 }
 
 func NodeNumToID(nodeNum uint32) string {

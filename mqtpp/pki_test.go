@@ -207,3 +207,67 @@ func TestMQTTPPDecryptsPKIWithResolver(t *testing.T) {
 		t.Fatalf("pki_encrypted = %v", record["pki_encrypted"])
 	}
 }
+
+func TestBuildPKIAckRoundTrip(t *testing.T) {
+	curve := ecdh.X25519()
+	botPriv, _ := curve.GenerateKey(rand.Reader)
+	devicePriv, _ := curve.GenerateKey(rand.Reader)
+
+	const fromNum uint32 = 0x0000beef // bot
+	const toNum uint32 = 0xfeed0000   // 原 device
+	const ackPacketID uint32 = 0xaaaa5555
+	const requestID uint32 = 0xdeadbeef
+
+	raw, err := BuildPKIAckServiceEnvelope(PKIAckBuildOptions{
+		FromNodeNum:   fromNum,
+		ToNodeNum:     toNum,
+		PacketID:      ackPacketID,
+		RequestID:     requestID,
+		GatewayID:     NodeNumToID(fromNum),
+		ViaMQTT:       true,
+		SenderPrivate: botPriv.Bytes(),
+		RecipientPub:  devicePriv.PublicKey().Bytes(),
+		SenderPublic:  botPriv.PublicKey().Bytes(),
+	})
+	if err != nil {
+		t.Fatalf("BuildPKIAckServiceEnvelope: %v", err)
+	}
+
+	// 设备侧解密
+	env, err := parseServiceEnvelope(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if env.ChannelID != PKIChannelID {
+		t.Fatalf("channel_id = %q", env.ChannelID)
+	}
+	pkt := env.Packet
+	if !pkt.PKIEncrypted || pkt.From != fromNum || pkt.To != toNum || pkt.ID != ackPacketID {
+		t.Fatalf("ack header mismatch: %+v", pkt)
+	}
+	encryptedLen := len(pkt.Encrypted) - pkcOverhead
+	cipher := pkt.Encrypted[:encryptedLen]
+	auth := pkt.Encrypted[encryptedLen : encryptedLen+8]
+	extraNonce := binary.LittleEndian.Uint32(pkt.Encrypted[encryptedLen+8:])
+	sharedKey, err := pkiSharedKey(devicePriv.Bytes(), botPriv.PublicKey().Bytes())
+	if err != nil {
+		t.Fatalf("shared: %v", err)
+	}
+	plain, err := aesCCMDecrypt(sharedKey, pkiNonce(ackPacketID, fromNum, extraNonce), cipher, auth)
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	data, err := parseDataPacket(plain)
+	if err != nil {
+		t.Fatalf("data: %v", err)
+	}
+	if data.Portnum != routingApp {
+		t.Fatalf("portnum = %d, want ROUTING_APP(%d)", data.Portnum, routingApp)
+	}
+
+	// Routing payload 解析: 期望 oneof error_reason=NONE(0)，即 wire 字节 0x18 0x00
+	wantRouting := []byte{0x18, 0x00}
+	if !bytes.Equal(data.Payload, wantRouting) {
+		t.Fatalf("routing payload = % x, want % x", data.Payload, wantRouting)
+	}
+}

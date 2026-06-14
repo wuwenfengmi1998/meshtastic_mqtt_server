@@ -52,6 +52,162 @@ func (s *botService) StartNodeInfoBroadcaster(ctx context.Context) {
 	go s.runNodeInfoBroadcaster(ctx)
 }
 
+// MaybeAutoAck 在收到一个发往本地 bot 的 want_ack 包时，回送一个 Routing-NONE ACK。
+//
+// 与固件 ReliableRouter::sniffReceived 行为对齐：
+//   - PKI 加密包（pki_encrypted=true）用 X25519+AES-CCM 加密 ACK，channel_id="PKI"
+//   - 其它情况用原 channel + bot PSK 加密
+//
+// 解析失败、目标不是受管 bot、或缺少必要的密钥时，安静返回不报错——这条路径只是“尽力”。
+func (s *botService) MaybeAutoAck(record map[string]any) {
+	if s == nil || s.store == nil || s.server == nil || record == nil {
+		return
+	}
+	wantAck, _ := record["want_ack"].(bool)
+	if !wantAck {
+		return
+	}
+	toNum, ok := uint32FromRecord(record["packet_to_num"])
+	if !ok || toNum == 0 || toNum == mqtpp.NodeNumBroadcast {
+		return
+	}
+	fromNum, ok := uint32FromRecord(record["packet_from_num"])
+	if !ok || fromNum == 0 {
+		return
+	}
+	requestID, ok := uint32FromRecord(record["packet_id"])
+	if !ok || requestID == 0 {
+		return
+	}
+	bot, err := s.store.GetBotNodeByNodeNum(int64(toNum))
+	if err != nil || bot == nil || !bot.Enabled {
+		return
+	}
+	pkiEncrypted, _ := record["pki_encrypted"].(bool)
+	channelID, _ := record["channel_id"].(string)
+
+	ackPacketID, err := randomPacketID()
+	if err != nil {
+		return
+	}
+	topic := botMQTTTopic(bot.TopicPrefix, fallbackChannelID(channelID, pkiEncrypted, bot.DefaultChannelID), bot.NodeID)
+
+	var raw []byte
+	if pkiEncrypted {
+		raw, err = s.buildPKIAck(bot, fromNum, ackPacketID, requestID)
+		if err == nil {
+			topic = botMQTTTopic(bot.TopicPrefix, mqtpp.PKIChannelID, bot.NodeID)
+		}
+	} else {
+		raw, err = s.buildPSKAck(bot, fromNum, ackPacketID, requestID, channelID)
+	}
+	if err != nil || raw == nil {
+		printJSON(map[string]any{"event": "bot_auto_ack_skipped", "bot_node_id": bot.NodeID, "to": fromNum, "request_id": requestID, "error": errString(err)})
+		return
+	}
+	if err := s.server.Publish(topic, raw, false, 0); err != nil {
+		printJSON(map[string]any{"event": "bot_auto_ack_publish_failed", "bot_node_id": bot.NodeID, "topic": topic, "error": err.Error()})
+	}
+}
+
+func (s *botService) buildPKIAck(bot *botNodeRecord, toNum, ackPacketID, requestID uint32) ([]byte, error) {
+	privateKeyB64 := strings.TrimSpace(bot.PrivateKey)
+	if privateKeyB64 == "" {
+		return nil, fmt.Errorf("bot has no private key")
+	}
+	privateKey, err := base64.StdEncoding.DecodeString(privateKeyB64)
+	if err != nil {
+		return nil, err
+	}
+	senderPublic, err := decodeBotPublicKey(*bot)
+	if err != nil {
+		return nil, err
+	}
+	recipientPublic, ok := lookupNodeInfoPublicKey(s.store, toNum)
+	if !ok {
+		return nil, fmt.Errorf("recipient %s has no public key on file", mqtpp.NodeNumToID(toNum))
+	}
+	return mqtpp.BuildPKIAckServiceEnvelope(mqtpp.PKIAckBuildOptions{
+		FromNodeNum:   uint32(bot.NodeNum),
+		ToNodeNum:     toNum,
+		PacketID:      ackPacketID,
+		RequestID:     requestID,
+		GatewayID:     bot.NodeID,
+		ViaMQTT:       true,
+		SenderPrivate: privateKey,
+		RecipientPub:  recipientPublic,
+		SenderPublic:  senderPublic,
+	})
+}
+
+func (s *botService) buildPSKAck(bot *botNodeRecord, toNum, ackPacketID, requestID uint32, channelID string) ([]byte, error) {
+	channel := fallbackChannelID(channelID, false, bot.DefaultChannelID)
+	if channel == "" || channel == mqtpp.PKIChannelID {
+		return nil, fmt.Errorf("no channel id available for psk ack")
+	}
+	psk := strings.TrimSpace(bot.PSK)
+	if psk == "" {
+		psk = botDefaultPSK
+	}
+	key, err := mqtpp.ExpandPSK(psk)
+	if err != nil {
+		return nil, err
+	}
+	return mqtpp.BuildAckServiceEnvelope(mqtpp.AckBuildOptions{
+		PacketBuildOptions: mqtpp.PacketBuildOptions{
+			FromNodeNum: uint32(bot.NodeNum),
+			ToNodeNum:   toNum,
+			PacketID:    ackPacketID,
+			ChannelID:   channel,
+			GatewayID:   bot.NodeID,
+			PSK:         key,
+			Encrypt:     true,
+			ViaMQTT:     true,
+		},
+		RequestID: requestID,
+	})
+}
+
+func fallbackChannelID(channelID string, pkiEncrypted bool, defaultChannelID string) string {
+	channelID = strings.TrimSpace(channelID)
+	if pkiEncrypted {
+		return mqtpp.PKIChannelID
+	}
+	if channelID != "" && channelID != mqtpp.PKIChannelID {
+		return channelID
+	}
+	return defaultChannelID
+}
+
+func uint32FromRecord(value any) (uint32, bool) {
+	switch v := value.(type) {
+	case uint32:
+		return v, true
+	case int:
+		if v >= 0 {
+			return uint32(v), true
+		}
+	case int64:
+		if v >= 0 {
+			return uint32(v), true
+		}
+	case uint64:
+		return uint32(v), true
+	case float64:
+		if v >= 0 {
+			return uint32(v), true
+		}
+	}
+	return 0, false
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
 func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMessageRecord, error) {
 	if s == nil || s.store == nil {
 		return nil, fmt.Errorf("bot service is not configured")

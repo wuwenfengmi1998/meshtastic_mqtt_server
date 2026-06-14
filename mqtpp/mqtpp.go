@@ -53,6 +53,7 @@ type meshPacket struct {
 	Decoded        *dataPacket
 	Encrypted      []byte
 	ID             uint32
+	WantAck        bool
 	ViaMQTT        bool
 	PKIEncrypted   bool
 	PayloadVariant string
@@ -258,6 +259,10 @@ func parseMeshPacket(payload []byte) (*meshPacket, error) {
 		case 6:
 			if v, ok := value.(uint32); ok && typ == protowire.Fixed32Type {
 				packet.ID = v
+			}
+		case 10:
+			if v, ok := value.(uint64); ok && typ == protowire.VarintType {
+				packet.WantAck = v != 0
 			}
 		case 14:
 			if v, ok := value.(uint64); ok && typ == protowire.VarintType {
@@ -684,6 +689,7 @@ func describePacket(topic string, env *serviceEnvelope, key []byte, opts Options
 		"packet_to_num":   packet.To,
 		"packet_id":       packet.ID,
 		"payload_variant": packet.PayloadVariant,
+		"want_ack":        packet.WantAck,
 		"via_mqtt":        packet.ViaMQTT,
 		"pki_encrypted":   packet.PKIEncrypted,
 	}

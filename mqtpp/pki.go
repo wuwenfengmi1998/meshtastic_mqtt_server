@@ -94,7 +94,66 @@ func BuildPKITextMessageServiceEnvelope(opts PKITextMessageBuildOptions) ([]byte
 	return buildServiceEnvelope(packet, PKIChannelID, opts.GatewayID), nil
 }
 
-// pkiSharedKey 用 X25519 计算共享密钥，再做一次 SHA-256（与固件一致）。
+// PKIAckBuildOptions 描述构造一个 PKI 加密的 Routing-NONE ACK 所需字段。
+type PKIAckBuildOptions struct {
+	FromNodeNum   uint32 // 我们（机器人）的节点号
+	ToNodeNum     uint32 // 原发送者
+	PacketID      uint32 // 新生成的 ACK 自身的 packet id
+	RequestID     uint32 // 被 ACK 的原始包 packet id
+	GatewayID     string
+	ViaMQTT       bool
+	SenderPrivate []byte
+	RecipientPub  []byte
+	SenderPublic  []byte
+}
+
+// BuildPKIAckServiceEnvelope 构造一条 PKI 加密的 Routing-NONE ACK，与固件
+// MeshModule::allocAckNak + Router::perhapsEncode (PKI 分支) 行为对齐。
+func BuildPKIAckServiceEnvelope(opts PKIAckBuildOptions) ([]byte, error) {
+	if opts.FromNodeNum == 0 {
+		return nil, fmt.Errorf("from node number is required")
+	}
+	if opts.ToNodeNum == 0 || opts.ToNodeNum == NodeNumBroadcast {
+		return nil, fmt.Errorf("pki ack requires a non-broadcast destination")
+	}
+	if opts.PacketID == 0 {
+		return nil, fmt.Errorf("packet id is required")
+	}
+	if opts.RequestID == 0 {
+		return nil, fmt.Errorf("request id is required")
+	}
+	if len(opts.SenderPrivate) != 32 || len(opts.RecipientPub) != 32 {
+		return nil, fmt.Errorf("pki keys must be 32 bytes each")
+	}
+	if strings.TrimSpace(opts.GatewayID) == "" {
+		opts.GatewayID = NodeNumToID(opts.FromNodeNum)
+	}
+
+	plaintext := buildAckDataPacket(opts.RequestID)
+
+	sharedKey, err := pkiSharedKey(opts.SenderPrivate, opts.RecipientPub)
+	if err != nil {
+		return nil, err
+	}
+	var extraNonceBuf [4]byte
+	if _, err := rand.Read(extraNonceBuf[:]); err != nil {
+		return nil, err
+	}
+	extraNonce := binary.LittleEndian.Uint32(extraNonceBuf[:])
+	ciphertext, auth, err := aesCCMEncrypt(sharedKey, pkiNonce(opts.PacketID, opts.FromNodeNum, extraNonce), plaintext)
+	if err != nil {
+		return nil, err
+	}
+	encrypted := make([]byte, 0, len(ciphertext)+pkcOverhead)
+	encrypted = append(encrypted, ciphertext...)
+	encrypted = append(encrypted, auth...)
+	encrypted = append(encrypted, extraNonceBuf[:]...)
+
+	packet := buildPKIMeshPacket(opts.FromNodeNum, opts.ToNodeNum, opts.PacketID, opts.ViaMQTT, encrypted, opts.SenderPublic)
+	return buildServiceEnvelope(packet, PKIChannelID, opts.GatewayID), nil
+}
+
+
 func pkiSharedKey(privateKey, publicKey []byte) ([]byte, error) {
 	curve := ecdh.X25519()
 	priv, err := curve.NewPrivateKey(privateKey)

@@ -167,6 +167,40 @@ func TestBuildNodeInfoTruncatesNanopbStrings(t *testing.T) {
 	}
 }
 
+func TestBuildAckServiceEnvelopeRoundTrip(t *testing.T) {
+	key, err := ExpandPSK("AQ==")
+	if err != nil {
+		t.Fatalf("ExpandPSK: %v", err)
+	}
+	const requestID uint32 = 0xabcd1234
+	raw, err := BuildAckServiceEnvelope(AckBuildOptions{
+		PacketBuildOptions: PacketBuildOptions{
+			FromNodeNum: 0x10101010,
+			ToNodeNum:   0x20202020,
+			PacketID:    0x30303030,
+			ChannelID:   "LongFast",
+			GatewayID:   "!10101010",
+			PSK:         key,
+			Encrypt:     true,
+			ViaMQTT:     true,
+		},
+		RequestID: requestID,
+	})
+	if err != nil {
+		t.Fatalf("BuildAckServiceEnvelope: %v", err)
+	}
+	valid, _, record := MQTTPP("msh/2/e/LongFast/!10101010", raw, key, Options{})
+	if !valid {
+		t.Fatalf("MQTTPP not valid: %#v", record)
+	}
+	if record["portnum"] != "ROUTING_APP" {
+		t.Fatalf("portnum = %v", record["portnum"])
+	}
+	if record["type"] != "routing" {
+		t.Fatalf("type = %v", record["type"])
+	}
+}
+
 func TestParseNodeID(t *testing.T) {
 	num, err := ParseNodeID("!1234abcd")
 	if err != nil {
