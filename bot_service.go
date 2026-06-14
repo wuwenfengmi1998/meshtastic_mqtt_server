@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +15,7 @@ import (
 	"meshtastic_mqtt_server/mqtpp"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
+	"gorm.io/gorm"
 )
 
 const botMaxTextBytes = 200
@@ -73,13 +77,6 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 	if len([]byte(text)) > botMaxTextBytes {
 		return nil, fmt.Errorf("text is too long, max %d bytes", botMaxTextBytes)
 	}
-	channelID := strings.TrimSpace(req.ChannelID)
-	if channelID == "" {
-		channelID = bot.DefaultChannelID
-	}
-	if channelID == "" {
-		return nil, fmt.Errorf("channel id is required")
-	}
 	toNodeNum, toNodeID, err := botMessageTarget(messageType, req)
 	if err != nil {
 		return nil, err
@@ -87,6 +84,20 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 	packetID, err := randomPacketID()
 	if err != nil {
 		return nil, err
+	}
+	fromNodeNum := uint32(bot.NodeNum)
+
+	// direct 私聊走 PKI；channel 群聊保留旧的 AES-CTR + PSK 路径
+	if messageType == botMessageTypeDirect {
+		return s.sendPKIDirect(bot, fromNodeNum, uint32(toNodeNum), toNodeID, packetID, text, req.CreatedBy)
+	}
+
+	channelID := strings.TrimSpace(req.ChannelID)
+	if channelID == "" {
+		channelID = bot.DefaultChannelID
+	}
+	if channelID == "" {
+		return nil, fmt.Errorf("channel id is required")
 	}
 	psk := strings.TrimSpace(bot.PSK)
 	if psk == "" {
@@ -96,7 +107,6 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 	if err != nil {
 		return nil, err
 	}
-	fromNodeNum := uint32(bot.NodeNum)
 	raw, err := mqtpp.BuildTextMessageServiceEnvelope(mqtpp.TextMessageBuildOptions{
 		PacketBuildOptions: mqtpp.PacketBuildOptions{
 			FromNodeNum: fromNodeNum,
@@ -121,7 +131,7 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 		MessageType: messageType,
 		ChannelID:   channelID,
 		ToNodeID:    toNodeID,
-		ToNodeNum:   int64PtrOrNil(toNodeNum, messageType == botMessageTypeDirect),
+		ToNodeNum:   int64PtrOrNil(toNodeNum, false),
 		Topic:       topic,
 		PacketID:    int64(packetID),
 		Text:        text,
@@ -130,6 +140,98 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 		Status:      botMessageStatusPending,
 		CreatedBy:   strings.TrimSpace(req.CreatedBy),
 	}
+	return s.persistAndPublish(row, topic, raw)
+}
+
+// sendPKIDirect 按固件 PKI 流程发送私聊：
+//   - 从 nodeinfo 中查目标节点的 X25519 公钥
+//   - 用 bot 自身私钥与对端公钥派生共享密钥，AES-CCM(M=8,L=2) 加密
+//   - ServiceEnvelope.channel_id = "PKI"，topic 也用 "PKI"
+func (s *botService) sendPKIDirect(bot *botNodeRecord, fromNodeNum, toNodeNum uint32, toNodeID *string, packetID uint32, text, createdBy string) (*botMessageRecord, error) {
+	if toNodeID == nil {
+		return nil, fmt.Errorf("target node id is required for pki direct message")
+	}
+	privateKeyB64 := strings.TrimSpace(bot.PrivateKey)
+	if privateKeyB64 == "" {
+		return nil, fmt.Errorf("bot has no private key, regenerate keys first")
+	}
+	privateKey, err := base64.StdEncoding.DecodeString(privateKeyB64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bot private key: %w", err)
+	}
+	senderPublic, err := decodeBotPublicKey(*bot)
+	if err != nil {
+		return nil, err
+	}
+	recipientPublic, err := s.lookupRecipientPublicKey(*toNodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	raw, err := mqtpp.BuildPKITextMessageServiceEnvelope(mqtpp.PKITextMessageBuildOptions{
+		FromNodeNum:   fromNodeNum,
+		ToNodeNum:     toNodeNum,
+		PacketID:      packetID,
+		GatewayID:     bot.NodeID,
+		ViaMQTT:       true,
+		SenderPrivate: privateKey,
+		RecipientPub:  recipientPublic,
+		SenderPublic:  senderPublic,
+		Text:          text,
+	})
+	if err != nil {
+		return nil, err
+	}
+	topic := botMQTTTopic(bot.TopicPrefix, mqtpp.PKIChannelID, bot.NodeID)
+	row := &botMessageRecord{
+		BotID:       bot.ID,
+		BotNodeID:   bot.NodeID,
+		BotNodeNum:  bot.NodeNum,
+		MessageType: botMessageTypeDirect,
+		ChannelID:   mqtpp.PKIChannelID,
+		ToNodeID:    toNodeID,
+		ToNodeNum:   int64PtrOrNil(int64(toNodeNum), true),
+		Topic:       topic,
+		PacketID:    int64(packetID),
+		Text:        text,
+		PayloadLen:  int64(len(raw)),
+		Encrypted:   true,
+		Status:      botMessageStatusPending,
+		CreatedBy:   strings.TrimSpace(createdBy),
+	}
+	return s.persistAndPublish(row, topic, raw)
+}
+
+// lookupRecipientPublicKey 从 nodeinfo 表中按 node_id 查询目标节点的 X25519 公钥（hex 编码）。
+func (s *botService) lookupRecipientPublicKey(nodeID string) ([]byte, error) {
+	node, err := s.store.GetNodeInfo(nodeID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("recipient node %s not found in nodeinfo, cannot send PKI message", nodeID)
+		}
+		return nil, err
+	}
+	if node.PublicKey == nil || strings.TrimSpace(*node.PublicKey) == "" {
+		return nil, fmt.Errorf("recipient node %s has no public key on file", nodeID)
+	}
+	keyHex := strings.TrimSpace(*node.PublicKey)
+	keyBytes, err := hex.DecodeString(keyHex)
+	if err != nil {
+		// 兼容历史上可能存储为 base64 的情况
+		if alt, altErr := base64.StdEncoding.DecodeString(keyHex); altErr == nil {
+			keyBytes = alt
+		} else {
+			return nil, fmt.Errorf("invalid recipient public key for %s: %w", nodeID, err)
+		}
+	}
+	if len(keyBytes) != 32 {
+		return nil, fmt.Errorf("recipient public key for %s has unexpected length %d", nodeID, len(keyBytes))
+	}
+	return keyBytes, nil
+}
+
+// persistAndPublish 把消息记录入库后发布到 MQTT，统一处理失败状态写回。
+func (s *botService) persistAndPublish(row *botMessageRecord, topic string, raw []byte) (*botMessageRecord, error) {
 	if err := s.store.InsertBotMessage(row); err != nil {
 		return nil, err
 	}

@@ -7,13 +7,14 @@ const chatPageSize = 30
 const maxTextBytes = 200
 const topThreshold = 8
 const bottomThreshold = 40
+// 私聊固定走 PKI，channel_id 与固件 ServiceEnvelope 保持一致
+const directChannelId = 'PKI'
 
 const bots = ref<BotNode[]>([])
 const targets = ref<NodeInfo[]>([])
 const messages = ref<TextMessage[]>([])
 const selectedBotId = ref<number | null>(null)
 const selectedTargetId = ref('')
-const channelId = ref('LongFast')
 const text = ref('')
 const loading = ref(false)
 const sending = ref(false)
@@ -33,7 +34,7 @@ let restoreMessageCount = 0
 const selectedBot = computed(() => bots.value.find((item) => item.id === selectedBotId.value) ?? null)
 const selectedTarget = computed(() => targets.value.find((item) => item.node_id === selectedTargetId.value) ?? null)
 const directTextBytes = computed(() => new TextEncoder().encode(text.value).length)
-const canSend = computed(() => !!selectedBot.value && !!selectedTarget.value && !!channelId.value.trim() && !!text.value.trim() && directTextBytes.value <= maxTextBytes && !sending.value)
+const canSend = computed(() => !!selectedBot.value && !!selectedTarget.value && !!text.value.trim() && directTextBytes.value <= maxTextBytes && !sending.value)
 const groupedMessages = computed(() => {
   const groups = new Map<string, TextMessage & { mergedCount: number; mergedMessages: TextMessage[] }>()
   for (const item of messages.value) {
@@ -49,18 +50,12 @@ const groupedMessages = computed(() => {
   return Array.from(groups.values())
 })
 
-watch(selectedBot, (bot) => {
-  if (bot) channelId.value = bot.default_channel_id
+watch(selectedBot, () => {
   resetChat()
   loadInitialMessages()
 })
 
 watch(selectedTargetId, () => {
-  resetChat()
-  loadInitialMessages()
-})
-
-watch(channelId, () => {
   resetChat()
   loadInitialMessages()
 })
@@ -110,7 +105,6 @@ async function refreshLists() {
     targets.value = nodeResponse.items
     if (!selectedBotId.value && bots.value.length > 0) {
       selectedBotId.value = bots.value[0].id
-      channelId.value = bots.value[0].default_channel_id
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
@@ -123,7 +117,7 @@ async function loadInitialMessages() {
   if (!selectedBot.value || !selectedTarget.value) return
   loadingOlder.value = true
   try {
-    const response = await getBotDirectTextMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, 0, channelId.value)
+    const response = await getBotDirectTextMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, 0, directChannelId)
     messages.value = toChronological(response.items)
     hasMore.value = response.items.length === chatPageSize
     initialized.value = true
@@ -141,7 +135,7 @@ async function loadOlderMessages() {
   if (!selectedBot.value || !selectedTarget.value || loadingOlder.value || !hasMore.value) return
   loadingOlder.value = true
   try {
-    const response = await getBotDirectTextMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, messages.value.length, channelId.value)
+    const response = await getBotDirectTextMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, messages.value.length, directChannelId)
     messages.value = mergeMessages(messages.value, toChronological(response.items))
     hasMore.value = response.items.length === chatPageSize
   } catch (err) {
@@ -153,7 +147,7 @@ async function loadOlderMessages() {
 
 async function pollLatestMessages() {
   if (!selectedBot.value || !selectedTarget.value) return
-  const response = await getBotDirectTextMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, 0, channelId.value)
+  const response = await getBotDirectTextMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, 0, directChannelId)
   messages.value = mergeMessages(messages.value, toChronological(response.items))
 }
 
@@ -163,7 +157,7 @@ async function sendDirectMessage() {
   error.value = ''
   notice.value = ''
   try {
-    const response = await sendBotMessage({ bot_id: selectedBot.value.id, message_type: 'direct', channel_id: channelId.value, to_node_id: selectedTarget.value.node_id, text: text.value })
+    const response = await sendBotMessage({ bot_id: selectedBot.value.id, message_type: 'direct', channel_id: directChannelId, to_node_id: selectedTarget.value.node_id, text: text.value })
     if (response.error) {
       error.value = response.error
     } else {
@@ -240,7 +234,7 @@ onBeforeUnmount(() => {
     <div class="direct-header">
       <div>
         <p class="eyebrow">Direct Bot Chat</p>
-        <h2>机器人私聊（功能未完成）</h2>
+        <h2>机器人私聊 <span class="pki-badge" title="使用 X25519 + AES-CCM 与目标节点端到端加密">PKI 加密</span></h2>
       </div>
       <div class="direct-actions">
         <a class="admin-button secondary" href="/admin/bot">返回频道聊天</a>
@@ -264,8 +258,9 @@ onBeforeUnmount(() => {
           <option v-for="node in targets" :key="node.node_id" :value="node.node_id">{{ node.long_name || node.short_name || node.node_id }} · {{ node.node_id }}</option>
         </select>
       </label>
-      <label>频道 ID<input v-model="channelId" /></label>
     </div>
+
+    <p class="direct-hint">私聊固定走 PKI（channel_id = "PKI"），需要目标节点已上报 NodeInfo 公钥才能加密。</p>
 
     <div ref="panelRef" class="direct-chat-list" @scroll.passive="handleScroll">
       <div v-if="loadingOlder" class="chat-loading">正在加载更早消息...</div>
@@ -293,7 +288,9 @@ onBeforeUnmount(() => {
 <style scoped>
 .direct-page { display: grid; gap: 12px; padding: 16px; }
 .direct-header, .direct-actions, .send-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.direct-selectors { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; }
+.direct-selectors { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; }
+.direct-hint { color: #475569; font-size: 12px; margin: 0; }
+.pki-badge { display: inline-flex; align-items: center; margin-left: 8px; border-radius: 999px; padding: 2px 10px; color: #1d4ed8; background: #dbeafe; font-size: 12px; font-weight: 700; vertical-align: middle; }
 label { display: grid; gap: 5px; color: #334155; font-size: 13px; font-weight: 800; }
 input, select, textarea { box-sizing: border-box; width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; padding: 9px 11px; color: #0f172a; font: inherit; background: #fff; }
 .direct-chat-list { min-height: 420px; max-height: 560px; overflow: auto; display: flex; flex-direction: column; gap: 10px; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px; background: linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%); }
