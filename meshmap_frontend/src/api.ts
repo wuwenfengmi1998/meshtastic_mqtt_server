@@ -43,7 +43,6 @@ import type {
   TelemetryRecord,
   TextMessage,
   BotDirectMessage,
-  BotDirectConversation,
   BotDirectConversationsResponse,
 } from './types'
 
