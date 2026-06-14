@@ -80,7 +80,7 @@ func (s *store) CreateBotNode(input botNodeInput) (*botNodeRecord, error) {
 	if err := s.ensureBotNodeUnique(0, row.NodeID, row.NodeNum); err != nil {
 		return nil, err
 	}
-	if err := s.ensureBotNodeDoesNotConflictWithNodeInfo(row.NodeNum); err != nil {
+	if err := s.ensureBotNodeDoesNotConflictWithNodeInfo(row.NodeNum, row.NodeID); err != nil {
 		return nil, err
 	}
 	if err := populateBotNodeKeys(row); err != nil {
@@ -96,7 +96,8 @@ func (s *store) UpdateBotNode(id uint64, input botNodeInput) (*botNodeRecord, er
 	if id == 0 {
 		return nil, fmt.Errorf("bot node id is required")
 	}
-	if _, err := s.GetBotNode(id); err != nil {
+	existing, err := s.GetBotNode(id)
+	if err != nil {
 		return nil, err
 	}
 	row, err := s.normalizedBotNodeRecord(input)
@@ -106,8 +107,13 @@ func (s *store) UpdateBotNode(id uint64, input botNodeInput) (*botNodeRecord, er
 	if err := s.ensureBotNodeUnique(id, row.NodeID, row.NodeNum); err != nil {
 		return nil, err
 	}
-	if err := s.ensureBotNodeDoesNotConflictWithNodeInfo(row.NodeNum); err != nil {
-		return nil, err
+	// 只有当 node_num 真的发生变化时，才需要校验和 nodeinfo 表的冲突。
+	// 否则机器人自己广播 NodeInfo 回写到 nodeinfo 表后，UpdateBotNode 会把这条
+	// 自己的记录当成外部节点冲突，导致 “already exists or conflicts” 报错。
+	if row.NodeNum != existing.NodeNum {
+		if err := s.ensureBotNodeDoesNotConflictWithNodeInfo(row.NodeNum, row.NodeID); err != nil {
+			return nil, err
+		}
 	}
 	updates := map[string]any{
 		"node_id":                             row.NodeID,
@@ -317,7 +323,7 @@ func (s *store) generateBotNodeNum() (int64, error) {
 			}
 			return 0, err
 		}
-		if err := s.ensureBotNodeDoesNotConflictWithNodeInfo(nodeNum); err != nil {
+		if err := s.ensureBotNodeDoesNotConflictWithNodeInfo(nodeNum, mqtpp.NodeNumToID(uint32(nodeNum))); err != nil {
 			if errors.Is(err, errBotNodeAlreadyExists) {
 				continue
 			}
@@ -344,9 +350,15 @@ func (s *store) ensureBotNodeUnique(id uint64, nodeID string, nodeNum int64) err
 	return err
 }
 
-func (s *store) ensureBotNodeDoesNotConflictWithNodeInfo(nodeNum int64) error {
+func (s *store) ensureBotNodeDoesNotConflictWithNodeInfo(nodeNum int64, selfNodeID string) error {
 	var existing nodeInfoRecord
-	err := s.db.Where("node_num = ?", nodeNum).Take(&existing).Error
+	q := s.db.Where("node_num = ?", nodeNum)
+	if selfNodeID != "" {
+		// 机器人自己广播 NodeInfo 后会以同样的 node_id/node_num 回写 nodeinfo；
+		// 把这条自身记录从冲突检测中排除，避免把自己当成外部节点。
+		q = q.Where("node_id <> ?", selfNodeID)
+	}
+	err := q.Take(&existing).Error
 	if err == nil {
 		return errBotNodeAlreadyExists
 	}

@@ -160,6 +160,69 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 		total, err := store.CountBotDirectMessagesByConversation(dmOpts)
 		writeListResponseWithTotal(c, rows, opts, total, err, botDirectMessageDTO)
 	})
+	// /bot/conversations 返回某个 bot 下所有会话的概要（最后一条消息 + 未读数），
+	// 给前端侧边栏渲染会话列表使用。
+	r.GET("/bot/conversations", func(c *gin.Context) {
+		opts, ok := parseListOptions(c)
+		if !ok {
+			return
+		}
+		botID, err := strconv.ParseUint(c.Query("bot_id"), 10, 64)
+		if err != nil || botID == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bot id"})
+			return
+		}
+		if _, err := store.GetBotNode(botID); errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bot node not found"})
+			return
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		rows, err := store.ListBotDirectConversations(botID, opts)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		unread, err := store.CountBotDirectUnread(botID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		items := make([]gin.H, 0, len(rows))
+		for _, row := range rows {
+			items = append(items, botDirectConversationDTO(row))
+		}
+		c.JSON(http.StatusOK, gin.H{"items": items, "limit": opts.Limit, "offset": opts.Offset, "unread_total": unread})
+	})
+	// /bot/direct-messages/read 把指定 (bot, peer) 下所有未读 inbound 消息标记为已读。
+	r.POST("/bot/direct-messages/read", func(c *gin.Context) {
+		var req struct {
+			BotID       uint64 `json:"bot_id"`
+			PeerNodeNum int64  `json:"peer_node_num"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid mark-read request"})
+			return
+		}
+		if req.BotID == 0 || req.PeerNodeNum == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "bot_id and peer_node_num are required"})
+			return
+		}
+		if _, err := store.GetBotNode(req.BotID); errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "bot node not found"})
+			return
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		updated, err := store.MarkBotDirectMessagesRead(req.BotID, req.PeerNodeNum)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"updated": updated})
+	})
 	r.POST("/bot/messages", func(c *gin.Context) {
 		if sender == nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "bot sender is not configured"})
@@ -265,6 +328,20 @@ func botDirectMessageDTO(row botDirectMessageRecord) gin.H {
 		"created_by":     row.CreatedBy,
 		"published_at":   row.PublishedAt,
 		"received_at":    row.ReceivedAt,
+		"read_at":        row.ReadAt,
 		"created_at":     row.CreatedAt,
+	}
+}
+
+func botDirectConversationDTO(row botDirectConversation) gin.H {
+	return gin.H{
+		"bot_id":          row.BotID,
+		"peer_node_id":    row.PeerNodeID,
+		"peer_node_num":   row.PeerNodeNum,
+		"last_message_at": row.LastMessageAt,
+		"last_text":       row.LastText,
+		"last_direction":  row.LastDirection,
+		"unread_count":    row.UnreadCount,
+		"total_count":     row.TotalCount,
 	}
 }

@@ -314,8 +314,11 @@ type botDirectMessageRecord struct {
 	CreatedBy     *string    `gorm:"column:created_by"`
 	PublishedAt   *time.Time `gorm:"column:published_at;index"`
 	ReceivedAt    *time.Time `gorm:"column:received_at;index"`
-	ContentJSON   *string    `gorm:"column:content_json;type:text"`
-	CreatedAt     time.Time  `gorm:"column:created_at;autoCreateTime;index:idx_bot_dm_bot_created_at,priority:2"`
+	// ReadAt 仅对 inbound 消息有意义：管理员在前端打开会话视为“已读”，会通过 read API 写入此字段。
+	// 出向消息默认在创建时就设置为已读，避免出现在未读统计里。
+	ReadAt      *time.Time `gorm:"column:read_at;index"`
+	ContentJSON *string    `gorm:"column:content_json;type:text"`
+	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime;index:idx_bot_dm_bot_created_at,priority:2"`
 }
 
 func (botDirectMessageRecord) TableName() string {
@@ -562,6 +565,9 @@ func (s *store) migrate() error {
 		if err := migrateBotNodePSK(tx, migrator, s.driver); err != nil {
 			return err
 		}
+		if err := migrateBotDirectMessages(tx, migrator); err != nil {
+			return err
+		}
 		if err := migrateMapTileSourceHash(tx, migrator, s.driver); err != nil {
 			return err
 		}
@@ -605,6 +611,29 @@ func migrateBotNodePSK(tx *gorm.DB, migrator gorm.Migrator, driver string) error
 	if !migrator.HasColumn(&botNodeRecord{}, "LastNodeInfoBroadcastAt") {
 		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN last_nodeinfo_broadcast_at datetime NULL").Error; err != nil {
 			return fmt.Errorf("migrate bot_nodes last_nodeinfo_broadcast_at column: %w", err)
+		}
+	}
+	return nil
+}
+
+func migrateBotDirectMessages(tx *gorm.DB, migrator gorm.Migrator) error {
+	if !migrator.HasTable(&botDirectMessageRecord{}) {
+		return nil
+	}
+	if !migrator.HasColumn(&botDirectMessageRecord{}, "ReadAt") {
+		if err := tx.Exec("ALTER TABLE bot_direct_messages ADD COLUMN read_at datetime").Error; err != nil {
+			return fmt.Errorf("migrate bot_direct_messages read_at column: %w", err)
+		}
+	}
+	// 历史 outbound 消息默认视为已读，避免出现在未读统计里。
+	if err := tx.Exec("UPDATE bot_direct_messages SET read_at = created_at WHERE direction = ? AND read_at IS NULL", botDirectMessageDirectionOutbound).Error; err != nil {
+		return fmt.Errorf("backfill bot_direct_messages outbound read_at: %w", err)
+	}
+	if !migrator.HasIndex(&botDirectMessageRecord{}, "idx_bot_direct_messages_read_at") {
+		// HasIndex 用 struct 字段名映射的索引名匹配，column 标签写的 read_at 不一定生成此名，
+		// 所以直接 IF NOT EXISTS 创建（SQLite + MySQL 都支持）。
+		if err := tx.Exec("CREATE INDEX IF NOT EXISTS idx_bot_direct_messages_read_at ON bot_direct_messages(read_at)").Error; err != nil {
+			return fmt.Errorf("migrate bot_direct_messages read_at index: %w", err)
 		}
 	}
 	return nil

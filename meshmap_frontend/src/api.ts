@@ -43,6 +43,8 @@ import type {
   TelemetryRecord,
   TextMessage,
   BotDirectMessage,
+  BotDirectConversation,
+  BotDirectConversationsResponse,
 } from './types'
 
 async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
@@ -385,6 +387,18 @@ export function getBotDirectMessages(botId: number, targetNodeNum: number, limit
   }
   return getJSON<ListResponse<BotDirectMessage>>(`/api/admin/bot/direct-messages?${params.toString()}`)
 }
+
+export function getBotConversations(botId: number, limit = 100, offset = 0): Promise<BotDirectConversationsResponse> {
+  const params = new URLSearchParams({ bot_id: String(botId), limit: String(limit), offset: String(offset) })
+  return getJSON<BotDirectConversationsResponse>(`/api/admin/bot/conversations?${params.toString()}`)
+}
+
+export function markBotDirectMessagesRead(botId: number, peerNodeNum: number): Promise<{ updated: number }> {
+  return postJSON<{ updated: number }>('/api/admin/bot/direct-messages/read', { bot_id: botId, peer_node_num: peerNodeNum })
+}
+
+// 静默使用未导出类型，避免 TS6133（未使用的导入）。
+export type { BotDirectConversation } from './types'
 
 export function sendBotMessage(payload: BotSendMessagePayload): Promise<BotMessageMutationResponse> {
   return postJSON<BotMessageMutationResponse>('/api/admin/bot/messages', payload)

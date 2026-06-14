@@ -395,6 +395,7 @@ func (s *botService) recordOutboundDirectMessage(bot *botNodeRecord, msg *botMes
 		id := msg.ID
 		botMessageID = &id
 	}
+	now := time.Now()
 	dm := &botDirectMessageRecord{
 		BotID:        bot.ID,
 		BotNodeID:    bot.NodeID,
@@ -414,6 +415,8 @@ func (s *botService) recordOutboundDirectMessage(bot *botNodeRecord, msg *botMes
 		BotMessageID: botMessageID,
 		CreatedBy:    createdByPtr,
 		PublishedAt:  msg.PublishedAt,
+		// 出向消息从产生那一刻起就视为“已读”，未读计数只关心 inbound。
+		ReadAt: &now,
 	}
 	if err := s.store.InsertBotDirectMessage(dm); err != nil {
 		printJSON(map[string]any{

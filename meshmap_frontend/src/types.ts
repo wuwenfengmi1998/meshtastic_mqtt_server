@@ -171,7 +171,27 @@ export interface BotDirectMessage {
   created_by: string | null
   published_at: string | null
   received_at: string | null
+  read_at: string | null
   created_at: string
+}
+
+// 会话摘要：每个 (bot, peer) 一条，给侧边栏使用。
+export interface BotDirectConversation {
+  bot_id: number
+  peer_node_id: string
+  peer_node_num: number
+  last_message_at: string
+  last_text: string
+  last_direction: 'inbound' | 'outbound' | string
+  unread_count: number
+  total_count: number
+}
+
+export interface BotDirectConversationsResponse {
+  items: BotDirectConversation[]
+  limit: number
+  offset: number
+  unread_total: number
 }
 
 export interface PositionRecord {
