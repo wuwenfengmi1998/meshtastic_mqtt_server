@@ -139,12 +139,10 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bot id"})
 			return
 		}
-		bot, err := store.GetBotNode(botID)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if _, err := store.GetBotNode(botID); errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "bot node not found"})
 			return
-		}
-		if err != nil {
+		} else if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -153,8 +151,14 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid target node num"})
 			return
 		}
-		rows, err := store.ListBotDirectTextMessages(bot.NodeNum, target, opts)
-		writeListResponse(c, rows, opts, err, textMessageDTO)
+		dmOpts := botDirectMessageListOptions{listOptions: opts, BotID: botID, PeerNodeNum: target, Direction: c.Query("direction")}
+		rows, err := store.ListBotDirectMessagesByConversation(dmOpts)
+		if err != nil {
+			writeListResponse(c, rows, opts, err, botDirectMessageDTO)
+			return
+		}
+		total, err := store.CountBotDirectMessagesByConversation(dmOpts)
+		writeListResponseWithTotal(c, rows, opts, total, err, botDirectMessageDTO)
 	})
 	r.POST("/bot/messages", func(c *gin.Context) {
 		if sender == nil {
@@ -237,4 +241,30 @@ func botNodeDTO(row botNodeRecord) gin.H {
 
 func botMessageDTO(row botMessageRecord) gin.H {
 	return gin.H{"id": row.ID, "bot_id": row.BotID, "bot_node_id": row.BotNodeID, "bot_node_num": row.BotNodeNum, "message_type": row.MessageType, "channel_id": row.ChannelID, "to_node_id": row.ToNodeID, "to_node_num": row.ToNodeNum, "topic": row.Topic, "packet_id": row.PacketID, "text": row.Text, "payload_len": row.PayloadLen, "encrypted": row.Encrypted, "status": row.Status, "error": row.Error, "published_at": row.PublishedAt, "created_by": row.CreatedBy, "created_at": row.CreatedAt}
+}
+
+func botDirectMessageDTO(row botDirectMessageRecord) gin.H {
+	return gin.H{
+		"id":             row.ID,
+		"bot_id":         row.BotID,
+		"bot_node_id":    row.BotNodeID,
+		"bot_node_num":   row.BotNodeNum,
+		"peer_node_id":   row.PeerNodeID,
+		"peer_node_num":  row.PeerNodeNum,
+		"direction":      row.Direction,
+		"topic":          row.Topic,
+		"packet_id":      row.PacketID,
+		"text":           row.Text,
+		"payload_len":    row.PayloadLen,
+		"pki_encrypted":  row.PKIEncrypted,
+		"want_ack":       row.WantAck,
+		"gateway_id":     row.GatewayID,
+		"status":         row.Status,
+		"error":          row.Error,
+		"bot_message_id": row.BotMessageID,
+		"created_by":     row.CreatedBy,
+		"published_at":   row.PublishedAt,
+		"received_at":    row.ReceivedAt,
+		"created_at":     row.CreatedAt,
+	}
 }

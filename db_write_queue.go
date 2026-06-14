@@ -43,6 +43,14 @@ func (q *dbWriteQueue) EnqueueRecord(record map[string]any, clientInfo mqttClien
 			return q.store.UpsertMapReport(record)
 		}})
 	case "text_message":
+		// 私聊（PKI 加密、发往受管 bot）单独走 bot_direct_messages 表，
+		// 不再写入 text_message 以避免和频道消息混在一起。
+		if isInboundBotDirectMessage(q.store, record) {
+			q.enqueue(dbWriteJob{typeName: "bot_direct_message_inbound", from: record["from"], run: func() error {
+				return insertInboundBotDirectMessage(q.store, record, clientInfo)
+			}})
+			return
+		}
 		q.enqueue(dbWriteJob{typeName: "text_message", from: record["from"], run: func() error {
 			return q.store.InsertTextMessage(record, clientInfo)
 		}})

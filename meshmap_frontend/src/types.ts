@@ -149,6 +149,31 @@ export interface TextMessage {
   content_json: string
 }
 
+// 机器人 PKI 私聊（bot_direct_messages 表）。direction 区分本地 bot 视角的进出方向。
+export interface BotDirectMessage {
+  id: number
+  bot_id: number
+  bot_node_id: string
+  bot_node_num: number
+  peer_node_id: string
+  peer_node_num: number
+  direction: 'inbound' | 'outbound'
+  topic: string
+  packet_id: number
+  text: string
+  payload_len: number
+  pki_encrypted: boolean
+  want_ack: boolean
+  gateway_id: string | null
+  status: string
+  error: string
+  bot_message_id: number | null
+  created_by: string | null
+  published_at: string | null
+  received_at: string | null
+  created_at: string
+}
+
 export interface PositionRecord {
   id: number
   from_id: string

@@ -1,18 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onBeforeUpdate, onMounted, onUpdated, ref, watch } from 'vue'
-import { getBotDirectTextMessages, getBotNodes, getNodeInfo, sendBotMessage } from '../api'
-import type { BotNode, NodeInfo, TextMessage } from '../types'
+import { getBotDirectMessages, getBotNodes, getNodeInfo, sendBotMessage } from '../api'
+import type { BotDirectMessage, BotNode, NodeInfo } from '../types'
 
 const chatPageSize = 30
 const maxTextBytes = 200
 const topThreshold = 8
 const bottomThreshold = 40
-// 私聊固定走 PKI，channel_id 与固件 ServiceEnvelope 保持一致
-const directChannelId = 'PKI'
 
 const bots = ref<BotNode[]>([])
 const targets = ref<NodeInfo[]>([])
-const messages = ref<TextMessage[]>([])
+const messages = ref<BotDirectMessage[]>([])
 const selectedBotId = ref<number | null>(null)
 const selectedTargetId = ref('')
 const text = ref('')
@@ -36,9 +34,10 @@ const selectedTarget = computed(() => targets.value.find((item) => item.node_id 
 const directTextBytes = computed(() => new TextEncoder().encode(text.value).length)
 const canSend = computed(() => !!selectedBot.value && !!selectedTarget.value && !!text.value.trim() && directTextBytes.value <= maxTextBytes && !sending.value)
 const groupedMessages = computed(() => {
-  const groups = new Map<string, TextMessage & { mergedCount: number; mergedMessages: TextMessage[] }>()
+  // 同一条 DM 在 inbound/outbound 两侧不会重复（来源是同一个表），但保留按 packet_id+text 合并的能力以容忍重复 publish。
+  const groups = new Map<string, BotDirectMessage & { mergedCount: number; mergedMessages: BotDirectMessage[] }>()
   for (const item of messages.value) {
-    const key = `${item.packet_id ?? ''}\n${item.text ?? ''}`
+    const key = `${item.direction}\n${item.packet_id ?? ''}\n${item.text ?? ''}`
     const group = groups.get(key)
     if (group) {
       group.mergedCount += 1
@@ -70,17 +69,17 @@ function resetChat() {
   restoreMessageCount = 0
 }
 
-function toChronological(items: TextMessage[]) {
+function toChronological(items: BotDirectMessage[]) {
   return [...items].reverse()
 }
 
-function compareMessages(a: TextMessage, b: TextMessage) {
+function compareMessages(a: BotDirectMessage, b: BotDirectMessage) {
   const timeDiff = Date.parse(a.created_at) - Date.parse(b.created_at)
   return timeDiff !== 0 ? timeDiff : a.id - b.id
 }
 
-function mergeMessages(existing: TextMessage[], incoming: TextMessage[]) {
-  const byId = new Map<number, TextMessage>()
+function mergeMessages(existing: BotDirectMessage[], incoming: BotDirectMessage[]) {
+  const byId = new Map<number, BotDirectMessage>()
   for (const item of existing) byId.set(item.id, item)
   for (const item of incoming) byId.set(item.id, item)
   return Array.from(byId.values()).sort(compareMessages)
@@ -117,7 +116,7 @@ async function loadInitialMessages() {
   if (!selectedBot.value || !selectedTarget.value) return
   loadingOlder.value = true
   try {
-    const response = await getBotDirectTextMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, 0, directChannelId)
+    const response = await getBotDirectMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, 0)
     messages.value = toChronological(response.items)
     hasMore.value = response.items.length === chatPageSize
     initialized.value = true
@@ -135,7 +134,7 @@ async function loadOlderMessages() {
   if (!selectedBot.value || !selectedTarget.value || loadingOlder.value || !hasMore.value) return
   loadingOlder.value = true
   try {
-    const response = await getBotDirectTextMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, messages.value.length, directChannelId)
+    const response = await getBotDirectMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, messages.value.length)
     messages.value = mergeMessages(messages.value, toChronological(response.items))
     hasMore.value = response.items.length === chatPageSize
   } catch (err) {
@@ -147,7 +146,7 @@ async function loadOlderMessages() {
 
 async function pollLatestMessages() {
   if (!selectedBot.value || !selectedTarget.value) return
-  const response = await getBotDirectTextMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, 0, directChannelId)
+  const response = await getBotDirectMessages(selectedBot.value.id, selectedTarget.value.node_num, chatPageSize, 0)
   messages.value = mergeMessages(messages.value, toChronological(response.items))
 }
 
@@ -157,7 +156,7 @@ async function sendDirectMessage() {
   error.value = ''
   notice.value = ''
   try {
-    const response = await sendBotMessage({ bot_id: selectedBot.value.id, message_type: 'direct', channel_id: directChannelId, to_node_id: selectedTarget.value.node_id, text: text.value })
+    const response = await sendBotMessage({ bot_id: selectedBot.value.id, message_type: 'direct', channel_id: 'PKI', to_node_id: selectedTarget.value.node_id, text: text.value })
     if (response.error) {
       error.value = response.error
     } else {
@@ -183,14 +182,20 @@ function handleScroll() {
   loadOlderMessages()
 }
 
-function isOwn(item: TextMessage) {
-  return item.from_id === selectedBot.value?.node_id
+function isOwn(item: BotDirectMessage) {
+  return item.direction === 'outbound'
 }
 
-function senderName(item: TextMessage) {
-  if (item.from_id === selectedBot.value?.node_id) return selectedBot.value?.long_name || item.from_id
-  if (item.from_id === selectedTarget.value?.node_id) return selectedTarget.value?.long_name || selectedTarget.value?.short_name || item.from_id
-  return item.from_id
+function senderName(item: BotDirectMessage) {
+  if (item.direction === 'outbound') return selectedBot.value?.long_name || item.bot_node_id
+  return selectedTarget.value?.long_name || selectedTarget.value?.short_name || item.peer_node_id
+}
+
+function statusLabel(item: BotDirectMessage) {
+  if (item.direction !== 'outbound') return ''
+  if (item.status === 'failed') return `发送失败${item.error ? '：' + item.error : ''}`
+  if (item.status === 'pending') return '发送中…'
+  return ''
 }
 
 function formatTime(value: string) {
@@ -270,6 +275,7 @@ onBeforeUnmount(() => {
         <div class="chat-bubble">
           <div class="bubble-meta"><strong>{{ senderName(item) }}</strong><small>{{ formatTime(item.created_at) }}</small></div>
           <div class="bubble-text">{{ item.text || '[binary]' }} <span v-if="item.mergedCount > 1" class="message-merge-count">x{{ item.mergedCount }}</span></div>
+          <div v-if="statusLabel(item)" class="bubble-status">{{ statusLabel(item) }}</div>
           <div class="bubble-topic">{{ item.topic }}</div>
         </div>
       </div>
@@ -303,6 +309,7 @@ input, select, textarea { box-sizing: border-box; width: 100%; border: 1px solid
 .bubble-meta small, .bubble-topic, .hint { color: #64748b; }
 .hint.warn { color: #b91c1c; font-weight: 800; }
 .bubble-text { margin-top: 6px; color: #0f172a; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.bubble-status { margin-top: 4px; color: #b91c1c; font-size: 11px; font-weight: 700; }
 .bubble-topic { margin-top: 6px; font-size: 11px; word-break: break-all; }
 .message-merge-count { display: inline-flex; margin-left: 6px; border-radius: 999px; padding: 1px 6px; color: #1d4ed8; background: #bfdbfe; font-size: 12px; font-weight: 800; }
 .direct-composer { display: grid; gap: 10px; }

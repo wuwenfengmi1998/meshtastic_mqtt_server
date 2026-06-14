@@ -286,6 +286,47 @@ func (botMessageRecord) TableName() string {
 	return "bot_messages"
 }
 
+// botDirectMessageRecord 专门保存机器人参与的 PKI 私聊（DM）。
+//
+// - 设计原因：text_message 表只存频道消息；DM 是端到端的，逻辑上属于 “一对会话”，需要按
+//   bot+对端聚合渲染，与 text_message 全表浏览的形态不一样。
+// - direction = "outbound" 表示 bot → device；"inbound" 表示 device → bot。
+// - 出向消息在发送时插入 status=pending，发送成功后更新为 published；入向消息默认直接
+//   published。两种方向都通过 bot_id/peer_node_num 索引快速回放会话。
+type botDirectMessageRecord struct {
+	ID            uint64     `gorm:"column:id;primaryKey;autoIncrement"`
+	BotID         uint64     `gorm:"column:bot_id;not null;index:idx_bot_dm_bot_peer,priority:1;index:idx_bot_dm_bot_created_at,priority:1"`
+	BotNodeID     string     `gorm:"column:bot_node_id;not null;index"`
+	BotNodeNum    int64      `gorm:"column:bot_node_num;not null;index"`
+	PeerNodeID    string     `gorm:"column:peer_node_id;not null;index:idx_bot_dm_bot_peer,priority:2"`
+	PeerNodeNum   int64      `gorm:"column:peer_node_num;not null;index"`
+	Direction     string     `gorm:"column:direction;not null;index"`
+	Topic         string     `gorm:"column:topic;not null"`
+	PacketID      int64      `gorm:"column:packet_id;not null;index"`
+	Text          string     `gorm:"column:text;type:text;not null"`
+	PayloadLen    int64      `gorm:"column:payload_len;not null"`
+	PKIEncrypted  bool       `gorm:"column:pki_encrypted;not null"`
+	WantAck       bool       `gorm:"column:want_ack;not null"`
+	GatewayID     *string    `gorm:"column:gateway_id"`
+	Status        string     `gorm:"column:status;not null;index"`
+	Error         string     `gorm:"column:error;type:text"`
+	BotMessageID  *uint64    `gorm:"column:bot_message_id;index"`
+	CreatedBy     *string    `gorm:"column:created_by"`
+	PublishedAt   *time.Time `gorm:"column:published_at;index"`
+	ReceivedAt    *time.Time `gorm:"column:received_at;index"`
+	ContentJSON   *string    `gorm:"column:content_json;type:text"`
+	CreatedAt     time.Time  `gorm:"column:created_at;autoCreateTime;index:idx_bot_dm_bot_created_at,priority:2"`
+}
+
+func (botDirectMessageRecord) TableName() string {
+	return "bot_direct_messages"
+}
+
+const (
+	botDirectMessageDirectionInbound  = "inbound"
+	botDirectMessageDirectionOutbound = "outbound"
+)
+
 type nodeInfoRecord struct {
 	NodeID      string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum     int64     `gorm:"column:node_num;not null;index"`
@@ -491,6 +532,7 @@ func (s *store) migrate() error {
 			{label: "mqtt_forward_topics", model: &mqttForwardTopicRecord{}},
 			{label: "bot_nodes", model: &botNodeRecord{}},
 			{label: "bot_messages", model: &botMessageRecord{}},
+			{label: "bot_direct_messages", model: &botDirectMessageRecord{}},
 			{label: "nodeinfo", model: &nodeInfoRecord{}},
 			{label: "map_report", model: &mapReportRecord{}},
 			{label: "text_message", model: &textMessageRecord{}},
@@ -511,6 +553,7 @@ func (s *store) migrate() error {
 			indexes []string
 		}{
 			{label: "text_message", model: &textMessageRecord{}, indexes: []string{"idx_text_message_from_num_created_at", "idx_text_message_created_at", "idx_text_message_packet_id"}},
+			{label: "bot_direct_messages", model: &botDirectMessageRecord{}, indexes: []string{"idx_bot_dm_bot_peer", "idx_bot_dm_bot_created_at"}},
 		} {
 			if err := createMissingIndexes(migrator, item.model, item.label, item.indexes); err != nil {
 				return err

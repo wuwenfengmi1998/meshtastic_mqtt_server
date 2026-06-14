@@ -265,27 +265,6 @@ func (s *store) ListTextMessages(opts listOptions) ([]textMessageRecord, error) 
 	return rows, s.listAppendRows(opts, &rows).Error
 }
 
-func (s *store) ListBotDirectTextMessages(botNodeNum, targetNodeNum int64, opts listOptions) ([]textMessageRecord, error) {
-	opts = normalizeListOptions(opts)
-	var rows []textMessageRecord
-	q := s.db.Model(&textMessageRecord{}).
-		Where("(from_num = ? AND packet_to_num = ?) OR (from_num = ? AND packet_to_num = ?)", botNodeNum, targetNodeNum, targetNodeNum, botNodeNum).
-		Order("created_at DESC").
-		Order("id DESC").
-		Limit(opts.Limit).
-		Offset(opts.Offset)
-	if opts.ChannelID != "" {
-		q = q.Where("channel_id = ?", opts.ChannelID)
-	}
-	if opts.Since != nil {
-		q = q.Where("created_at >= ?", *opts.Since)
-	}
-	if opts.Until != nil {
-		q = q.Where("created_at <= ?", *opts.Until)
-	}
-	return rows, q.Find(&rows).Error
-}
-
 func (s *store) ListDiscardDetails(opts listOptions) ([]discardDetailsRecord, error) {
 	opts = normalizeListOptions(opts)
 	var rows []discardDetailsRecord

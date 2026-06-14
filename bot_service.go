@@ -355,7 +355,75 @@ func (s *botService) sendPKIDirect(bot *botNodeRecord, fromNodeNum, toNodeNum ui
 		Status:      botMessageStatusPending,
 		CreatedBy:   strings.TrimSpace(createdBy),
 	}
-	return s.persistAndPublish(row, topic, raw)
+	result, err := s.persistAndPublish(row, topic, raw)
+	// 不论发送结果如何，都把 DM 镜像写入 bot_direct_messages 以驱动 /admin/bot/direct 渲染。
+	// 这里把发送结果（status/error/published_at）同步过去——成功时 status=published，
+	// 失败时 status=failed，前端就能看到本地视图与发送日志一致。
+	s.recordOutboundDirectMessage(bot, row, *toNodeID, toNodeNum, text, len(raw), err)
+	return result, err
+}
+
+// recordOutboundDirectMessage 把出向 PKI DM 写入 bot_direct_messages。失败仅打日志。
+func (s *botService) recordOutboundDirectMessage(bot *botNodeRecord, msg *botMessageRecord, peerNodeID string, peerNodeNum uint32, text string, payloadLen int, sendErr error) {
+	if s == nil || s.store == nil || msg == nil || bot == nil {
+		return
+	}
+	status := msg.Status
+	if status == "" {
+		if sendErr != nil {
+			status = botMessageStatusFailed
+		} else {
+			status = botMessageStatusPublished
+		}
+	}
+	errText := msg.Error
+	if errText == "" && sendErr != nil {
+		errText = sendErr.Error()
+	}
+	createdBy := strings.TrimSpace(msg.CreatedBy)
+	var createdByPtr *string
+	if createdBy != "" {
+		createdByPtr = &createdBy
+	}
+	gateway := strings.TrimSpace(bot.NodeID)
+	var gatewayPtr *string
+	if gateway != "" {
+		gatewayPtr = &gateway
+	}
+	var botMessageID *uint64
+	if msg.ID != 0 {
+		id := msg.ID
+		botMessageID = &id
+	}
+	dm := &botDirectMessageRecord{
+		BotID:        bot.ID,
+		BotNodeID:    bot.NodeID,
+		BotNodeNum:   bot.NodeNum,
+		PeerNodeID:   peerNodeID,
+		PeerNodeNum:  int64(peerNodeNum),
+		Direction:    botDirectMessageDirectionOutbound,
+		Topic:        msg.Topic,
+		PacketID:     msg.PacketID,
+		Text:         text,
+		PayloadLen:   int64(payloadLen),
+		PKIEncrypted: true,
+		WantAck:      false, // 我们当前发送的 DM 默认不显式请求 ack
+		GatewayID:    gatewayPtr,
+		Status:       status,
+		Error:        strings.TrimSpace(errText),
+		BotMessageID: botMessageID,
+		CreatedBy:    createdByPtr,
+		PublishedAt:  msg.PublishedAt,
+	}
+	if err := s.store.InsertBotDirectMessage(dm); err != nil {
+		printJSON(map[string]any{
+			"event":           "bot_direct_message_outbound_persist_failed",
+			"bot_node_id":     bot.NodeID,
+			"peer_node_id":    peerNodeID,
+			"bot_message_id":  msg.ID,
+			"error":           err.Error(),
+		})
+	}
 }
 
 // lookupRecipientPublicKey 从 nodeinfo 表中按 node_id 查询目标节点的 X25519 公钥（hex 编码）。

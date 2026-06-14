@@ -42,6 +42,7 @@ import type {
   PublicMapTileSourcesResponse,
   TelemetryRecord,
   TextMessage,
+  BotDirectMessage,
 } from './types'
 
 async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
@@ -377,12 +378,12 @@ export function getBotMessages(botId = 0, limit = 100, offset = 0): Promise<List
   return getJSON<ListResponse<BotMessage>>(`/api/admin/bot/messages?${params.toString()}`)
 }
 
-export function getBotDirectTextMessages(botId: number, targetNodeNum: number, limit = 100, offset = 0, channelId = ''): Promise<ListResponse<TextMessage>> {
+export function getBotDirectMessages(botId: number, targetNodeNum: number, limit = 100, offset = 0, direction = ''): Promise<ListResponse<BotDirectMessage>> {
   const params = new URLSearchParams({ bot_id: String(botId), target_node_num: String(targetNodeNum), limit: String(limit), offset: String(offset) })
-  if (channelId) {
-    params.set('channel_id', channelId)
+  if (direction) {
+    params.set('direction', direction)
   }
-  return getJSON<ListResponse<TextMessage>>(`/api/admin/bot/direct-messages?${params.toString()}`)
+  return getJSON<ListResponse<BotDirectMessage>>(`/api/admin/bot/direct-messages?${params.toString()}`)
 }
 
 export function sendBotMessage(payload: BotSendMessagePayload): Promise<BotMessageMutationResponse> {
