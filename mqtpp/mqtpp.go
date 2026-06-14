@@ -34,6 +34,10 @@ var defaultMeshtasticPSK = []byte{
 
 type Options struct {
 	AllowEncryptedForwarding bool
+	// PKIKeyResolver 在解密 PKI 加密包时被调用：toNodeNum 是包的接收者节点号（应为本地受管节点，
+	// 例如机器人），fromNodeNum 是发送方节点号。回调需要返回接收方的 X25519 私钥（32B）和发送方
+	// 的 X25519 公钥（32B）。当回调缺失或返回 ok=false 时，PKI 解密会被跳过（仍尝试 channel PSK）。
+	PKIKeyResolver func(toNodeNum, fromNodeNum uint32) (privateKey, fromPublicKey []byte, ok bool)
 }
 
 type serviceEnvelope struct {
@@ -126,7 +130,7 @@ func MQTTPP(topic string, raw []byte, key []byte, opts Options) (bool, []byte, m
 		//解包失败
 		return false, nil, map[string]any{"topic": topic, "error": "protobuf decode failed: " + err.Error(), "payload_len": len(raw)}
 	}
-	record, err := describePacket(topic, env, key)
+	record, err := describePacket(topic, env, key, opts)
 	if err != nil {
 		//解码失败
 		return false, nil, map[string]any{"topic": topic, "error": err.Error(), "payload_len": len(raw)}
@@ -664,7 +668,7 @@ func varintValue(typ protowire.Type, value any) uint64 {
 }
 
 // describePacket 根据 ServiceEnvelope 和 PSK 生成统一的 JSON 记录字段。
-func describePacket(topic string, env *serviceEnvelope, key []byte) (map[string]any, error) {
+func describePacket(topic string, env *serviceEnvelope, key []byte, opts Options) (map[string]any, error) {
 	packet := env.Packet
 	if packet == nil {
 		packet = &meshPacket{}
@@ -685,7 +689,7 @@ func describePacket(topic string, env *serviceEnvelope, key []byte) (map[string]
 	}
 
 	if packet.PayloadVariant == "encrypted" {
-		decryptedPacket, decryptStatus := tryDecryptPacket(packet, env.ChannelID, key)
+		decryptedPacket, decryptStatus := tryDecryptPacket(packet, env.ChannelID, key, opts)
 		if decryptedPacket == nil {
 			return merge(base, map[string]any{
 				"type":            "encrypted_packet",
@@ -697,13 +701,15 @@ func describePacket(topic string, env *serviceEnvelope, key []byte) (map[string]
 
 		decryptedEnv := *env
 		decryptedEnv.Packet = decryptedPacket
-		decrypted, err := describePacket(topic, &decryptedEnv, key)
+		decrypted, err := describePacket(topic, &decryptedEnv, key, opts)
 		if err != nil {
 			return nil, err
 		}
 		decrypted["payload_variant"] = "decoded"
 		decrypted["decrypt_success"] = true
 		decrypted["decrypt_status"] = decryptStatus
+		// PKI 解密的包要保留 pki_encrypted 标记（tryDecryptPacket 在成功后会把它标记到 packet 上）
+		decrypted["pki_encrypted"] = decryptedPacket.PKIEncrypted
 		return decrypted, nil
 	}
 
@@ -752,8 +758,22 @@ func describePacket(topic string, env *serviceEnvelope, key []byte) (map[string]
 	}
 }
 
-// tryDecryptPacket 尝试用 channel PSK 解密 encrypted MeshPacket，并返回解密状态。
-func tryDecryptPacket(packet *meshPacket, channelID string, key []byte) (*meshPacket, string) {
+// tryDecryptPacket 尝试解密 encrypted MeshPacket，并返回解密状态。
+// 解密优先级（与固件 perhapsDecode 对齐）：
+//  1. 若包是 PKI 风格（channel=0、to 非广播、PSK 无关）且调用方提供了 PKIKeyResolver，
+//     则用 X25519 + AES-CCM(M=8,L=2) 解密。
+//  2. 否则回落到 channel PSK + AES-CTR 路径。
+func tryDecryptPacket(packet *meshPacket, channelID string, key []byte, opts Options) (*meshPacket, string) {
+	// 先尝试 PKI 路径：固件发出的 PKI 包 channel=0、to 非广播、长度 > pkcOverhead。
+	// channel_id 字面量在 ServiceEnvelope 上一般是 "PKI"，但有些转发路径会保留原 channel 名，
+	// 因此这里以 channel 字段=0 + 注册了 resolver 为充分条件即尝试解密。
+	if opts.PKIKeyResolver != nil && packet.Channel == 0 && packet.To != 0 && packet.To != NodeNumBroadcast &&
+		len(packet.Encrypted) > pkcOverhead {
+		if decrypted, status, ok := tryDecryptPKIPacket(packet, opts.PKIKeyResolver); ok {
+			return decrypted, status
+		}
+	}
+
 	if len(key) == 0 {
 		return nil, "psk disables encryption"
 	}
@@ -778,6 +798,43 @@ func tryDecryptPacket(packet *meshPacket, channelID string, key []byte) (*meshPa
 	decrypted.Decoded = decoded
 	decrypted.PayloadVariant = "decoded"
 	return &decrypted, "success"
+}
+
+// tryDecryptPKIPacket 用接收方私钥 + 发送方公钥派生共享密钥并 AES-CCM 解密。
+// 第三个返回值表示是否“尝试且解出了合法 Data 包”——返回 false 时调用方会回落到 PSK 路径。
+func tryDecryptPKIPacket(packet *meshPacket, resolver func(toNodeNum, fromNodeNum uint32) ([]byte, []byte, bool)) (*meshPacket, string, bool) {
+	privateKey, fromPublic, ok := resolver(packet.To, packet.From)
+	if !ok {
+		return nil, "", false
+	}
+	if len(privateKey) != 32 || len(fromPublic) != 32 {
+		return nil, "", false
+	}
+	encryptedLen := len(packet.Encrypted) - pkcOverhead
+	ciphertext := packet.Encrypted[:encryptedLen]
+	auth := packet.Encrypted[encryptedLen : encryptedLen+8]
+	extraNonce := binary.LittleEndian.Uint32(packet.Encrypted[encryptedLen+8:])
+	sharedKey, err := pkiSharedKey(privateKey, fromPublic)
+	if err != nil {
+		return nil, "", false
+	}
+	plaintext, err := aesCCMDecrypt(sharedKey, pkiNonce(packet.ID, packet.From, extraNonce), ciphertext, auth)
+	if err != nil {
+		return nil, "", false
+	}
+	decoded, err := parseDataPacket(plaintext)
+	if err != nil {
+		return nil, "", false
+	}
+	if decoded.Portnum == unknownApp {
+		return nil, "", false
+	}
+	decrypted := *packet
+	decrypted.Encrypted = nil
+	decrypted.Decoded = decoded
+	decrypted.PayloadVariant = "decoded"
+	decrypted.PKIEncrypted = true
+	return &decrypted, "pki success", true
 }
 
 // decodeUser 将 NODEINFO_APP payload 解码为节点信息 JSON 字段。

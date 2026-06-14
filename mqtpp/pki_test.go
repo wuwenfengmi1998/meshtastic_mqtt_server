@@ -159,3 +159,51 @@ func TestBuildPKIMeshPacketTags(t *testing.T) {
 		}
 	}
 }
+
+// 端到端：发送方构造 PKI 包，接收方通过 PKIKeyResolver 解密并还原文本消息记录。
+func TestMQTTPPDecryptsPKIWithResolver(t *testing.T) {
+	curve := ecdh.X25519()
+	senderPriv, _ := curve.GenerateKey(rand.Reader)
+	recipientPriv, _ := curve.GenerateKey(rand.Reader)
+
+	const text = "hello PKI inbound"
+	const fromNum uint32 = 0xaaaa1111
+	const toNum uint32 = 0xbbbb2222
+	const packetID uint32 = 0x77777777
+
+	raw, err := BuildPKITextMessageServiceEnvelope(PKITextMessageBuildOptions{
+		FromNodeNum:   fromNum,
+		ToNodeNum:     toNum,
+		PacketID:      packetID,
+		GatewayID:     NodeNumToID(fromNum),
+		ViaMQTT:       true,
+		SenderPrivate: senderPriv.Bytes(),
+		RecipientPub:  recipientPriv.PublicKey().Bytes(),
+		SenderPublic:  senderPriv.PublicKey().Bytes(),
+		Text:          text,
+	})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+
+	resolver := func(to, from uint32) ([]byte, []byte, bool) {
+		if to != toNum || from != fromNum {
+			return nil, nil, false
+		}
+		return recipientPriv.Bytes(), senderPriv.PublicKey().Bytes(), true
+	}
+	dummyPSK, _ := ExpandPSK("AQ==")
+	valid, _, record := MQTTPP("msh/2/e/PKI/!aaaa1111", raw, dummyPSK, Options{PKIKeyResolver: resolver})
+	if !valid {
+		t.Fatalf("MQTTPP not valid: %#v", record)
+	}
+	if record["type"] != "text_message" {
+		t.Fatalf("type = %v, want text_message", record["type"])
+	}
+	if record["text"] != text {
+		t.Fatalf("text = %v", record["text"])
+	}
+	if record["pki_encrypted"] != true {
+		t.Fatalf("pki_encrypted = %v", record["pki_encrypted"])
+	}
+}
