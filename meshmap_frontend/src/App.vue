@@ -19,7 +19,7 @@ import MeshMap from './components/MeshMap.vue'
 import NodeDetailedPage from './components/NodeDetailedPage.vue'
 import NodeListPanel from './components/NodeListPanel.vue'
 import { fallbackMapSource, loadEnabledMapSources } from './mapSource'
-import type { AdminUser, HealthStatus, MapBoundsChangePayload, MapBoundsQuery, MapRenderable, MapViewportItem, NodeInfo, NodeInfoById, PositionRecord, PublicMapTileSource, TextMessage } from './types'
+import type { AdminUser, HealthStatus, MapBoundsChangePayload, MapBoundsQuery, MapRenderable, MapViewportItem, MapViewportPoint, NodeInfo, NodeInfoById, PositionRecord, PublicMapTileSource, TextMessage } from './types'
 
 const currentPath = window.location.pathname
 const adminPath = currentPath
@@ -41,6 +41,7 @@ const selectedNodeId = ref<string | null>(null)
 const health = ref<HealthStatus | null>(null)
 const nodeInfoSource = ref<NodeInfo[]>([])
 const mapViewportItems = ref<MapViewportItem[]>([])
+const selectedMapPoint = ref<MapViewportPoint | null>(null)
 const mapViewportMode = ref<'points' | 'clusters'>('points')
 const pagedNodeInfo = ref<NodeInfo[]>([])
 const nodePage = ref(1)
@@ -82,7 +83,13 @@ const nodesById = computed<NodeInfoById>(() => {
 })
 
 const mapItems = computed<MapRenderable[]>(() => {
-  return mapViewportItems.value
+  const items = mapViewportItems.value
+  const selectedItem = selectedMapPoint.value
+  const renderItems = selectedItem && selectedItem.type === 'point' && !items.some((item) => item.type === 'point' && item.node_id === selectedItem.node_id)
+    ? [...items, selectedItem]
+    : items
+
+  return renderItems
     .filter((item) => item.type === 'cluster' || (item.latitude != null && item.longitude != null))
     .map((item) => {
       if (item.type === 'cluster') {
@@ -187,6 +194,21 @@ function isSameJSON(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
+function isMapViewportPoint(item: MapViewportItem): item is MapViewportPoint {
+  return item.type === 'point'
+}
+
+function selectNode(nodeId: string) {
+  selectedNodeId.value = nodeId
+  const item = mapViewportItems.value.find((item): item is MapViewportPoint => isMapViewportPoint(item) && item.node_id === nodeId)
+  selectedMapPoint.value = item ?? (selectedMapPoint.value?.node_id === nodeId ? selectedMapPoint.value : null)
+}
+
+function clearSelectedNode() {
+  selectedNodeId.value = null
+  selectedMapPoint.value = null
+}
+
 async function loadInitialChatMessages() {
   const response = await getTextMessages(chatPageSize, 0)
   messages.value = toChronological(response.items)
@@ -247,6 +269,12 @@ async function loadMapReportsForBounds(bounds: MapBoundsQuery, zoom: number, sho
     }
     if (!isSameJSON(mapViewportItems.value, response.items)) {
       mapViewportItems.value = response.items
+    }
+    const selectedItem = selectedNodeId.value
+      ? response.items.find((item): item is MapViewportPoint => isMapViewportPoint(item) && item.node_id === selectedNodeId.value)
+      : null
+    if (selectedItem) {
+      selectedMapPoint.value = selectedItem
     }
     mapViewportMode.value = response.mode
     mapReportTotal.value = response.total
@@ -391,7 +419,7 @@ async function removeNodeFromLocalState(nodeId: string) {
   pagedNodeInfo.value = pagedNodeInfo.value.filter((node) => node.node_id !== nodeId)
   mapViewportItems.value = mapViewportItems.value.filter((item) => item.type === 'cluster' || item.node_id !== nodeId)
   if (selectedNodeId.value === nodeId) {
-    selectedNodeId.value = null
+    clearSelectedNode()
   }
   await loadNodePage(nodePage.value, false)
 }
@@ -587,7 +615,7 @@ onBeforeUnmount(() => {
           :loading-older="chatLoadingOlder"
           :has-more-messages="chatHasMore"
           :is-admin="!!adminUser"
-          @select-node="selectedNodeId = $event"
+          @select-node="selectNode"
           @load-older="loadOlderMessages"
           @delete-message="requestDeleteMessage"
           @delete-and-block-node="requestDeleteAndBlockNode"
@@ -602,8 +630,8 @@ onBeforeUnmount(() => {
           :map-sources="mapSources"
           @map-source-change="selectMapSource"
           @bounds-change="handleMapBoundsChange"
-          @select-node="selectedNodeId = $event"
-          @clear-node="selectedNodeId = null"
+          @select-node="selectNode"
+          @clear-node="clearSelectedNode"
           @delete-node="requestDeleteNode"
           @delete-and-block-node="requestDeleteAndBlockNode"
         />
@@ -617,7 +645,7 @@ onBeforeUnmount(() => {
         :total="nodeTotal"
         :loading="nodePageLoading || loading"
         :is-admin="!!adminUser"
-        @select-node="selectedNodeId = $event"
+        @select-node="selectNode"
         @page-change="loadNodePage"
         @delete-node="requestDeleteNode"
         @delete-and-block-node="requestDeleteAndBlockNode"
