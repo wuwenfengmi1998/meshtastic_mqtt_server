@@ -40,15 +40,58 @@ function applyTileLayer() {
   }).addTo(map)
 }
 
+function pointStyle(isStart: boolean, isEnd: boolean): L.CircleMarkerOptions {
+  if (isStart) {
+    return { radius: 7, color: '#7f9183', fillColor: '#9aaa95', fillOpacity: 0.88, weight: 2 }
+  }
+  if (isEnd) {
+    return { radius: 7, color: '#b4877f', fillColor: '#c59b93', fillOpacity: 0.88, weight: 2 }
+  }
+  return { radius: 3, color: '#7d8f9a', fillColor: '#9ab3c2', fillOpacity: 0.72, weight: 1 }
+}
+
+function buildPositionPopupHTML(position: PositionRecord, isStart: boolean, isEnd: boolean): string {
+  const title = isStart ? '起点' : isEnd ? '终点' : '轨迹点'
+  const latitude = position.latitude == null ? '-' : position.latitude.toFixed(6)
+  const longitude = position.longitude == null ? '-' : position.longitude.toFixed(6)
+  const altitude = position.altitude == null ? '-' : `${position.altitude} m`
+  const time = new Date(position.created_at).toLocaleString()
+  return `
+    <div class="trajectory-popup">
+      <strong>${escapeHTML(title)}</strong>
+      <dl>
+        <div><dt>纬度</dt><dd>${latitude}</dd></div>
+        <div><dt>经度</dt><dd>${longitude}</dd></div>
+        <div><dt>海拔</dt><dd>${altitude}</dd></div>
+        <div><dt>时间</dt><dd>${escapeHTML(time)}</dd></div>
+      </dl>
+    </div>
+  `
+}
+
+function escapeHTML(value: string): string {
+  return value.replace(/[&<>'"]/g, (char) => {
+    const entities: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#39;',
+      '"': '&quot;',
+    }
+    return entities[char]
+  })
+}
+
 function renderTrajectory() {
   if (!map || !layer) {
     return
   }
-  layer.clearLayers()
-  const points = [...props.positions]
+  const trajectoryLayer = layer
+  trajectoryLayer.clearLayers()
+  const positions = [...props.positions]
     .filter((position) => position.latitude != null && position.longitude != null)
     .reverse()
-    .map((position) => [position.latitude as number, position.longitude as number] as L.LatLngTuple)
+  const points = positions.map((position) => [position.latitude as number, position.longitude as number] as L.LatLngTuple)
 
   if (points.length === 0) {
     map.setView([0, 0], 2)
@@ -56,10 +99,16 @@ function renderTrajectory() {
   }
 
   if (points.length > 1) {
-    L.polyline(points, { color: '#7d8f9a', weight: 4, opacity: 0.78 }).addTo(layer)
+    L.polyline(points, { color: '#7d8f9a', weight: 4, opacity: 0.78 }).addTo(trajectoryLayer)
   }
-  L.circleMarker(points[0], { radius: 6, color: '#7f9183', fillColor: '#9aaa95', fillOpacity: 0.88 }).bindPopup('起点').addTo(layer)
-  L.circleMarker(points[points.length - 1], { radius: 6, color: '#b4877f', fillColor: '#c59b93', fillOpacity: 0.88 }).bindPopup('终点').addTo(layer)
+
+  positions.forEach((position, index) => {
+    const isStart = index === 0
+    const isEnd = index === positions.length - 1
+    L.circleMarker(points[index], pointStyle(isStart, isEnd))
+      .bindPopup(buildPositionPopupHTML(position, isStart, isEnd), { maxWidth: 280, className: 'trajectory-point-popup' })
+      .addTo(trajectoryLayer)
+  })
   map.fitBounds(L.latLngBounds(points), { padding: [24, 24], maxZoom: 14 })
 }
 
