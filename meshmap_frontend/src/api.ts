@@ -40,6 +40,8 @@ import type {
   PositionRecord,
   PublicMapTileSourceResponse,
   PublicMapTileSourcesResponse,
+  SignRecord,
+  SignRecordPayload,
   TelemetryRecord,
   TextMessage,
   BotDirectMessage,
@@ -165,6 +167,26 @@ export function getEnabledMapSources(): Promise<PublicMapTileSourcesResponse> {
 
 export function getTextMessages(limit = 100, offset = 0, nodeIdOrOptions: string | ListQueryOptions = ''): Promise<ListResponse<TextMessage>> {
   return getJSON<ListResponse<TextMessage>>(listPath('/api/text-messages', limit, offset, nodeIdOrOptions))
+}
+
+export function getSignRecords(limit = 100, offset = 0, nodeIdOrOptions: string | ListQueryOptions = ''): Promise<ListResponse<SignRecord>> {
+  return getJSON<ListResponse<SignRecord>>(listPath('/api/signs', limit, offset, nodeIdOrOptions))
+}
+
+export function getAdminSignRecords(limit = 100, offset = 0, nodeIdOrOptions: string | ListQueryOptions = ''): Promise<ListResponse<SignRecord>> {
+  return getJSON<ListResponse<SignRecord>>(listPath('/api/admin/signs', limit, offset, nodeIdOrOptions))
+}
+
+export function createAdminSignRecord(payload: SignRecordPayload): Promise<{ item: SignRecord }> {
+  return postJSON<{ item: SignRecord }>('/api/admin/signs', payload)
+}
+
+export function updateAdminSignRecord(id: number, payload: SignRecordPayload): Promise<{ item: SignRecord }> {
+  return putJSON<{ item: SignRecord }>(`/api/admin/signs/${id}`, payload)
+}
+
+export function deleteAdminSignRecord(id: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/signs/${id}`)
 }
 
 export function deleteTextMessage(id: number): Promise<{ status: string }> {

@@ -153,6 +153,19 @@ func (discardDetailsRecord) TableName() string {
 	return "discard_details"
 }
 
+type signRecord struct {
+	ID        uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	NodeID    string    `gorm:"column:node_id;not null;index"`
+	LongName  *string   `gorm:"column:long_name"`
+	ShortName *string   `gorm:"column:short_name"`
+	SignText  string    `gorm:"column:sign_text;type:text;not null"`
+	SignTime  time.Time `gorm:"column:sign_time;not null;index"`
+}
+
+func (signRecord) TableName() string {
+	return "signs"
+}
+
 type nodeBlockingRecord struct {
 	ID        uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	NodeID    string    `gorm:"column:node_id;not null;uniqueIndex"`
@@ -288,32 +301,32 @@ func (botMessageRecord) TableName() string {
 
 // botDirectMessageRecord 专门保存机器人参与的 PKI 私聊（DM）。
 //
-// - 设计原因：text_message 表只存频道消息；DM 是端到端的，逻辑上属于 “一对会话”，需要按
-//   bot+对端聚合渲染，与 text_message 全表浏览的形态不一样。
-// - direction = "outbound" 表示 bot → device；"inbound" 表示 device → bot。
-// - 出向消息在发送时插入 status=pending，发送成功后更新为 published；入向消息默认直接
-//   published。两种方向都通过 bot_id/peer_node_num 索引快速回放会话。
+//   - 设计原因：text_message 表只存频道消息；DM 是端到端的，逻辑上属于 “一对会话”，需要按
+//     bot+对端聚合渲染，与 text_message 全表浏览的形态不一样。
+//   - direction = "outbound" 表示 bot → device；"inbound" 表示 device → bot。
+//   - 出向消息在发送时插入 status=pending，发送成功后更新为 published；入向消息默认直接
+//     published。两种方向都通过 bot_id/peer_node_num 索引快速回放会话。
 type botDirectMessageRecord struct {
-	ID            uint64     `gorm:"column:id;primaryKey;autoIncrement"`
-	BotID         uint64     `gorm:"column:bot_id;not null;index:idx_bot_dm_bot_peer,priority:1;index:idx_bot_dm_bot_created_at,priority:1"`
-	BotNodeID     string     `gorm:"column:bot_node_id;not null;index"`
-	BotNodeNum    int64      `gorm:"column:bot_node_num;not null;index"`
-	PeerNodeID    string     `gorm:"column:peer_node_id;not null;index:idx_bot_dm_bot_peer,priority:2"`
-	PeerNodeNum   int64      `gorm:"column:peer_node_num;not null;index"`
-	Direction     string     `gorm:"column:direction;not null;index"`
-	Topic         string     `gorm:"column:topic;not null"`
-	PacketID      int64      `gorm:"column:packet_id;not null;index"`
-	Text          string     `gorm:"column:text;type:text;not null"`
-	PayloadLen    int64      `gorm:"column:payload_len;not null"`
-	PKIEncrypted  bool       `gorm:"column:pki_encrypted;not null"`
-	WantAck       bool       `gorm:"column:want_ack;not null"`
-	GatewayID     *string    `gorm:"column:gateway_id"`
-	Status        string     `gorm:"column:status;not null;index"`
-	Error         string     `gorm:"column:error;type:text"`
-	BotMessageID  *uint64    `gorm:"column:bot_message_id;index"`
-	CreatedBy     *string    `gorm:"column:created_by"`
-	PublishedAt   *time.Time `gorm:"column:published_at;index"`
-	ReceivedAt    *time.Time `gorm:"column:received_at;index"`
+	ID           uint64     `gorm:"column:id;primaryKey;autoIncrement"`
+	BotID        uint64     `gorm:"column:bot_id;not null;index:idx_bot_dm_bot_peer,priority:1;index:idx_bot_dm_bot_created_at,priority:1"`
+	BotNodeID    string     `gorm:"column:bot_node_id;not null;index"`
+	BotNodeNum   int64      `gorm:"column:bot_node_num;not null;index"`
+	PeerNodeID   string     `gorm:"column:peer_node_id;not null;index:idx_bot_dm_bot_peer,priority:2"`
+	PeerNodeNum  int64      `gorm:"column:peer_node_num;not null;index"`
+	Direction    string     `gorm:"column:direction;not null;index"`
+	Topic        string     `gorm:"column:topic;not null"`
+	PacketID     int64      `gorm:"column:packet_id;not null;index"`
+	Text         string     `gorm:"column:text;type:text;not null"`
+	PayloadLen   int64      `gorm:"column:payload_len;not null"`
+	PKIEncrypted bool       `gorm:"column:pki_encrypted;not null"`
+	WantAck      bool       `gorm:"column:want_ack;not null"`
+	GatewayID    *string    `gorm:"column:gateway_id"`
+	Status       string     `gorm:"column:status;not null;index"`
+	Error        string     `gorm:"column:error;type:text"`
+	BotMessageID *uint64    `gorm:"column:bot_message_id;index"`
+	CreatedBy    *string    `gorm:"column:created_by"`
+	PublishedAt  *time.Time `gorm:"column:published_at;index"`
+	ReceivedAt   *time.Time `gorm:"column:received_at;index"`
 	// ReadAt 仅对 inbound 消息有意义：管理员在前端打开会话视为“已读”，会通过 read API 写入此字段。
 	// 出向消息默认在创建时就设置为已读，避免出现在未读统计里。
 	ReadAt      *time.Time `gorm:"column:read_at;index"`
@@ -528,6 +541,7 @@ func (s *store) migrate() error {
 			{label: "runtime_settings", model: &runtimeSettingRecord{}},
 			{label: "map_tile_sources", model: &mapTileSourceRecord{}},
 			{label: "discard_details", model: &discardDetailsRecord{}},
+			{label: "signs", model: &signRecord{}},
 			{label: "node_blocking", model: &nodeBlockingRecord{}},
 			{label: "ip_blocking", model: &ipBlockingRecord{}},
 			{label: "forbidden_word_blocking", model: &forbiddenWordBlockingRecord{}},

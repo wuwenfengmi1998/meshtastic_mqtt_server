@@ -11,6 +11,7 @@ import AdminLogin from './components/AdminLogin.vue'
 import AdminLoginLogs from './components/AdminLoginLogs.vue'
 import AdminMapSource from './components/AdminMapSource.vue'
 import AdminMqttForward from './components/AdminMqttForward.vue'
+import AdminSignManagement from './components/AdminSignManagement.vue'
 import AdminUsers from './components/AdminUsers.vue'
 import ChatPanel from './components/ChatPanel.vue'
 import ConfirmDeleteModal from './components/ConfirmDeleteModal.vue'
@@ -18,6 +19,7 @@ import HelpPage from './components/HelpPage.vue'
 import MeshMap from './components/MeshMap.vue'
 import NodeDetailedPage from './components/NodeDetailedPage.vue'
 import NodeListPanel from './components/NodeListPanel.vue'
+import SignedPage from './components/SignedPage.vue'
 import { fallbackMapSource, loadEnabledMapSources } from './mapSource'
 import type { AdminUser, HealthStatus, MapBoundsChangePayload, MapBoundsQuery, MapRenderable, MapViewportItem, MapViewportPoint, NodeInfo, NodeInfoById, PositionRecord, PublicMapTileSource, TextMessage } from './types'
 
@@ -27,10 +29,12 @@ const isAdminPage = adminPath.startsWith('/admin')
 const isMqttForwardAdminPage = adminPath === '/admin/mqtt_forward' || adminPath === '/admin/mqtt_forward/'
 const isBotAdminPage = adminPath === '/admin/bot' || adminPath === '/admin/bot/'
 const isBotDirectAdminPage = adminPath === '/admin/bot/direct' || adminPath === '/admin/bot/direct/'
+const isSignAdminPage = adminPath === '/admin/sign' || adminPath === '/admin/sign/'
 const detailMatch = currentPath.match(/^\/detailed\/(.+)$/)
 const detailedNodeId = detailMatch ? decodeURIComponent(detailMatch[1]) : ''
 const isDetailedPage = !!detailedNodeId
 const isHelpPage = currentPath === '/help'
+const isSignedPage = currentPath === '/signed'
 const adminUser = ref<AdminUser | null>(null)
 const adminChecking = ref(false)
 
@@ -509,7 +513,7 @@ onMounted(() => {
     return
   }
   checkAdminSession()
-  if (isDetailedPage || isHelpPage) {
+  if (isDetailedPage || isHelpPage || isSignedPage) {
     return
   }
   loadMapSource()
@@ -545,6 +549,7 @@ onBeforeUnmount(() => {
             <a href="/admin/mqtt_forward/" :class="{ active: isMqttForwardAdminPage }">MQTT转发</a>
             <a href="/admin/bot" :class="{ active: isBotAdminPage }">机器人</a>
             <a href="/admin/bot/direct" :class="{ active: isBotDirectAdminPage }">机器人私聊</a>
+            <a href="/admin/sign" :class="{ active: isSignAdminPage }">签到管理</a>
             <a href="/admin/map_source" :class="{ active: adminPath === '/admin/map_source' }">地图图源</a>
             <a href="/admin/help_edit" :class="{ active: adminPath === '/admin/help_edit' }">帮助编辑</a>
             <a href="/admin/log/login" :class="{ active: adminPath === '/admin/log/login' }">登录日志</a>
@@ -564,6 +569,7 @@ onBeforeUnmount(() => {
         <template v-else>
           
           <span class="counter">节点 {{ nodeTotal }} · 已加载消息 {{ messages.length }} · 坐标 {{ mapItems.length }} / {{ mapReportTotal }}{{ mapViewportMode === 'clusters' ? ' · 已聚合' : '' }}{{ mapReportsLoading ? ' · 坐标加载中...' : '' }}</span>
+          <a class="topbar-link" href="/signed">签到列表</a>
           <a class="topbar-link" href="/help">使用帮助</a>
           <a class="topbar-link" href="/admin">管理</a>
           <button @click="() => refresh()" :disabled="loading">{{ loading ? '刷新中...' : '刷新' }}</button>
@@ -587,6 +593,7 @@ onBeforeUnmount(() => {
         <AdminMqttForward v-else-if="isMqttForwardAdminPage" />
         <AdminBot v-else-if="isBotAdminPage" />
         <AdminBotDirect v-else-if="isBotDirectAdminPage" />
+        <AdminSignManagement v-else-if="isSignAdminPage" />
         <AdminMapSource v-else-if="adminPath === '/admin/map_source'" />
         <AdminHelpEdit v-else-if="adminPath === '/admin/help_edit'" />
         <AdminLoginLogs v-else-if="adminPath === '/admin/log/login'" />
@@ -602,6 +609,10 @@ onBeforeUnmount(() => {
 
     <template v-else-if="isHelpPage">
       <HelpPage />
+    </template>
+
+    <template v-else-if="isSignedPage">
+      <SignedPage />
     </template>
 
     <template v-else>

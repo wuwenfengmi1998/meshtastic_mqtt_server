@@ -149,6 +149,23 @@ export interface TextMessage {
   content_json: string
 }
 
+export interface SignRecord {
+  id: number
+  node_id: string
+  long_name: string | null
+  short_name: string | null
+  sign_text: string
+  sign_time: string
+}
+
+export interface SignRecordPayload {
+  node_id: string
+  long_name: string
+  short_name: string
+  sign_text: string
+  sign_time?: string
+}
+
 // 机器人 PKI 私聊（bot_direct_messages 表）。direction 区分本地 bot 视角的进出方向。
 export interface BotDirectMessage {
   id: number

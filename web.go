@@ -75,6 +75,19 @@ func registerAPIRoutes(r gin.IRouter, store *store, mapTileCacheDir string) {
 	registerMapSourceRoutes(r, store)
 	registerMapTileProxyRoutes(r, store, mapTileCacheDir)
 	registerHelpRoutes(r, store)
+	r.GET("/signs", func(c *gin.Context) {
+		opts, ok := parseListOptions(c)
+		if !ok {
+			return
+		}
+		rows, err := store.ListSigns(opts)
+		if err != nil {
+			writeListResponse(c, rows, opts, err, signDTO)
+			return
+		}
+		total, err := store.CountSigns(opts)
+		writeListResponseWithTotal(c, rows, opts, total, err, signDTO)
+	})
 	r.GET("/text-messages", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
 		if !ok {
@@ -186,6 +199,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 	protected := r.Group("")
 	protected.Use(requireAdmin(sessions))
 	registerAdminBlockingRoutes(protected, store, blocking)
+	registerAdminSignRoutes(protected, store)
 	registerAdminMQTTForwardRoutes(protected, store, forwarder)
 	registerAdminRuntimeSettingsRoutes(protected, store, settings)
 	registerAdminMapSourceRoutes(protected, store)
@@ -597,6 +611,10 @@ func mapReportViewportPointDTO(row mapReportRecord) gin.H {
 
 func mapReportClusterDTO(row mapReportClusterRecord) gin.H {
 	return gin.H{"type": "cluster", "cluster_id": row.ClusterID, "latitude": row.Latitude, "longitude": row.Longitude, "count": row.Count}
+}
+
+func signDTO(row signRecord) gin.H {
+	return gin.H{"id": row.ID, "node_id": row.NodeID, "long_name": ptrString(row.LongName), "short_name": ptrString(row.ShortName), "sign_text": row.SignText, "sign_time": row.SignTime}
 }
 
 func textMessageDTO(row textMessageRecord) gin.H {
