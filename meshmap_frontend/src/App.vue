@@ -538,6 +538,7 @@ onBeforeUnmount(() => {
         <p class="eyebrow">Meshtastic MQTT Server</p>
         <h1 v-if="isDetailedPage">节点详情</h1>
         <h1 v-else-if="isHelpPage">使用帮助</h1>
+        <h1 v-else-if="isSignedPage">签到列表</h1>
         <h1 v-else>{{ isAdminPage ? 'Admin' : 'MeshMap' }}</h1>
       </div>
       <div class="topbar-actions">
@@ -563,6 +564,10 @@ onBeforeUnmount(() => {
           <a class="topbar-link" href="/admin">管理</a>
         </template>
         <template v-else-if="isHelpPage">
+          <a class="topbar-link" href="/">返回地图</a>
+          <a class="topbar-link" href="/admin">管理</a>
+        </template>
+        <template v-else-if="isSignedPage">
           <a class="topbar-link" href="/">返回地图</a>
           <a class="topbar-link" href="/admin">管理</a>
         </template>
