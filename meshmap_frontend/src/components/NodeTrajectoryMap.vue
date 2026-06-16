@@ -106,7 +106,7 @@ function renderTrajectory() {
     const isStart = index === 0
     const isEnd = index === positions.length - 1
     L.circleMarker(points[index], pointStyle(isStart, isEnd))
-      .bindPopup(buildPositionPopupHTML(position, isStart, isEnd), { maxWidth: 280, className: 'trajectory-point-popup' })
+      .bindPopup(buildPositionPopupHTML(position, isStart, isEnd), { maxWidth: 340, className: 'trajectory-point-popup' })
       .addTo(trajectoryLayer)
   })
   map.fitBounds(L.latLngBounds(points), { padding: [24, 24], maxZoom: 14 })
