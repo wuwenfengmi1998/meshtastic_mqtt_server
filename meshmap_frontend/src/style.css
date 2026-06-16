@@ -1291,6 +1291,13 @@ button.signed-calendar-day:not(:disabled):hover {
   background: var(--color-primary-soft);
 }
 
+.signed-calendar-day.today {
+  border-color: var(--color-warning);
+  color: color-mix(in srgb, var(--color-warning) 72%, var(--color-heading));
+  background: var(--color-warning-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-warning) 36%, transparent);
+}
+
 .signed-calendar-day.selected {
   border-color: var(--color-primary);
   color: #fff;

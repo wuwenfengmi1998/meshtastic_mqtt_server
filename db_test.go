@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -31,6 +32,35 @@ func TestOpenStoreCreatesTables(t *testing.T) {
 	}
 	if oldCount != 0 {
 		t.Fatalf("nodeinfo_map table count = %d, want 0", oldCount)
+	}
+}
+
+func TestCountSignsByDayFormatsDateString(t *testing.T) {
+	st := openTestStore(t)
+	defer st.Close()
+
+	if _, err := st.CreateSign("!11111111", nil, nil, "first", time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("CreateSign() error = %v", err)
+	}
+	if _, err := st.CreateSign("!22222222", nil, nil, "second", time.Date(2026, 6, 15, 11, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("CreateSign() error = %v", err)
+	}
+	if _, err := st.CreateSign("!33333333", nil, nil, "third", time.Date(2026, 6, 16, 9, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("CreateSign() error = %v", err)
+	}
+
+	rows, err := st.CountSignsByDay(listOptions{})
+	if err != nil {
+		t.Fatalf("CountSignsByDay() error = %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("CountSignsByDay() length = %d, want 2", len(rows))
+	}
+	if rows[0].Date != "2026-06-16" || rows[0].Count != 1 {
+		t.Fatalf("first day count = %#v, want 2026-06-16 count 1", rows[0])
+	}
+	if rows[1].Date != "2026-06-15" || rows[1].Count != 2 {
+		t.Fatalf("second day count = %#v, want 2026-06-15 count 2", rows[1])
 	}
 }
 

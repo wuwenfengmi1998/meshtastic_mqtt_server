@@ -14,6 +14,7 @@ const calendarMonth = ref(new Date())
 const dailyCounts = ref<Record<string, number>>({})
 const selectedDate = ref('')
 const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+const todayDate = formatDateKey(new Date())
 
 const calendarDays = computed(() => monthDays(calendarMonth.value))
 
@@ -150,7 +151,7 @@ onMounted(() => {
             v-else
             type="button"
             class="signed-calendar-day"
-            :class="{ selected: selectedDate === day, 'has-signs': dailyCounts[day] }"
+            :class="{ selected: selectedDate === day, today: todayDate === day, 'has-signs': dailyCounts[day] }"
             @click="selectDate(day)"
           >
             <span class="signed-calendar-date">{{ Number(day.slice(8, 10)) }}</span>

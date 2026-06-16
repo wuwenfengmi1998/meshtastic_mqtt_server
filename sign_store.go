@@ -32,9 +32,9 @@ func (s *store) CountSigns(opts listOptions) (int64, error) {
 
 func (s *store) CountSignsByDay(opts listOptions) ([]signDayCount, error) {
 	var rows []signDayCount
-	dateExpr := "date(sign_time)"
+	dateExpr := "strftime('%Y-%m-%d', sign_time)"
 	if s.driver == databaseDriverMySQL {
-		dateExpr = "DATE(sign_time)"
+		dateExpr = "DATE_FORMAT(sign_time, '%Y-%m-%d')"
 	}
 	q := applySignFilters(s.db.Model(&signRecord{}), opts).
 		Select(dateExpr + " AS sign_date, COUNT(*) AS count").
