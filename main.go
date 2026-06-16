@@ -179,9 +179,11 @@ func parseArgs() (*config, error) {
 	flag.StringVar(&cfg.Database.SQLite.Path, "sqlite-path", cfg.Database.SQLite.Path, "SQLite database file path")
 	flag.StringVar(&cfg.Database.MySQL.DSN, "mysql-dsn", cfg.Database.MySQL.DSN, "MySQL database DSN")
 	flag.BoolVar(&cfg.Web.Enabled, "web", cfg.Web.Enabled, "Enable Gin web server")
+	flag.BoolVar(&cfg.Web.PortEnabled, "web-port-enabled", cfg.Web.PortEnabled, "Enable web server on TCP host and port")
+	flag.BoolVar(&cfg.Web.SocketEnabled, "web-socket-enabled", cfg.Web.SocketEnabled, "Enable web server on Unix socket; unsupported on Windows")
 	flag.StringVar(&cfg.Web.Host, "web-host", cfg.Web.Host, "Web server listen host")
 	flag.IntVar(&cfg.Web.Port, "web-port", cfg.Web.Port, "Web server listen port")
-	flag.StringVar(&cfg.Web.SocketPath, "web-socket-path", cfg.Web.SocketPath, "Web server Unix socket path; empty uses host and port; unsupported on Windows")
+	flag.StringVar(&cfg.Web.SocketPath, "web-socket-path", cfg.Web.SocketPath, "Web server Unix socket path; unsupported on Windows")
 	flag.StringVar(&cfg.Web.StaticDir, "web-static-dir", cfg.Web.StaticDir, "Web frontend static files directory")
 	flag.StringVar(&cfg.Web.MapTileCacheDir, "web-map-tile-cache-dir", cfg.Web.MapTileCacheDir, "Map tile disk cache root directory")
 	flag.StringVar(&cfg.Web.Admin.Username, "admin-username", cfg.Web.Admin.Username, "Web admin username")
@@ -245,31 +247,44 @@ func run(cfg *config) error {
 	}
 	defer forwardManager.StopAll()
 
-	var httpServer *http.Server
-	errCh := make(chan error, 1)
+	var httpServers []*http.Server
+	errCh := make(chan error, 2)
 	if cfg.Web.Enabled {
 		sessions, err := newSessionManager(cfg.Web.Admin)
 		if err != nil {
 			return err
 		}
 		mqttStatus := mqttRuntimeStatus{server: server, address: mqttAddr, tls: cfg.MQTT.TLS.Enabled, stats: messageStats, dbQueue: dbQueue}
-		httpServer = newHTTPServer(cfg.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender)
-		webAddress := httpServer.Addr
-		go func() {
-			if cfg.Web.SocketPath != "" {
+		handler := newRouter(cfg.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender)
+		webAddresses := []string{}
+		if cfg.Web.PortEnabled {
+			httpServer := &http.Server{
+				Addr:    net.JoinHostPort(cfg.Web.Host, strconv.Itoa(cfg.Web.Port)),
+				Handler: handler,
+			}
+			httpServers = append(httpServers, httpServer)
+			webAddresses = append(webAddresses, httpServer.Addr)
+			go func() {
+				if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					errCh <- err
+				}
+			}()
+		}
+		if cfg.Web.SocketEnabled {
+			httpServer := &http.Server{Handler: handler}
+			httpServers = append(httpServers, httpServer)
+			webAddresses = append(webAddresses, cfg.Web.SocketPath)
+			go func() {
 				if err := serveHTTPUnixSocket(httpServer, cfg.Web.SocketPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					errCh <- err
 				}
-				return
-			}
-			if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				errCh <- err
-			}
-		}()
-		if cfg.Web.SocketPath != "" {
-			webAddress = cfg.Web.SocketPath
+			}()
 		}
-		printJSON(map[string]any{"event": "web_started", "address": webAddress, "static_dir": cfg.Web.StaticDir})
+		webStarted := map[string]any{"event": "web_started", "addresses": webAddresses, "static_dir": cfg.Web.StaticDir}
+		if len(webAddresses) > 0 {
+			webStarted["address"] = webAddresses[0]
+		}
+		printJSON(webStarted)
 	}
 
 	sigCh := make(chan os.Signal, 1)
@@ -281,12 +296,12 @@ func run(cfg *config) error {
 	case runErr = <-errCh:
 	}
 
-	if httpServer != nil {
+	for _, httpServer := range httpServers {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
 		if err := httpServer.Shutdown(ctx); err != nil && runErr == nil {
 			runErr = err
 		}
+		cancel()
 	}
 	if err := server.Close(); err != nil && runErr == nil {
 		runErr = err

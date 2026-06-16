@@ -52,6 +52,8 @@ type mysqlConfig struct {
 
 type webConfig struct {
 	Enabled         bool           `yaml:"enabled"`
+	PortEnabled     bool           `yaml:"port_enabled"`
+	SocketEnabled   bool           `yaml:"socket_enabled"`
 	Host            string         `yaml:"host"`
 	Port            int            `yaml:"port"`
 	SocketPath      string         `yaml:"socket_path"`
@@ -106,6 +108,8 @@ type rawMySQLConfig struct {
 
 type rawWebConfig struct {
 	Enabled         *bool              `yaml:"enabled"`
+	PortEnabled     *bool              `yaml:"port_enabled"`
+	SocketEnabled   *bool              `yaml:"socket_enabled"`
 	Host            *string            `yaml:"host"`
 	Port            *int               `yaml:"port"`
 	SocketPath      *string            `yaml:"socket_path"`
@@ -143,6 +147,8 @@ func defaultConfig() *config {
 		},
 		Web: webConfig{
 			Enabled:         true,
+			PortEnabled:     true,
+			SocketEnabled:   defaultWebSocketPath() != "",
 			Host:            "0.0.0.0",
 			Port:            8080,
 			SocketPath:      defaultWebSocketPath(),
@@ -160,10 +166,18 @@ func defaultConfig() *config {
 
 // defaultConfigDir 根据操作系统返回配置目录。
 func defaultConfigDir() string {
-	if runtime.GOOS == "windows" {
+	return defaultConfigDirForGOOS(runtime.GOOS)
+}
+
+func defaultConfigDirForGOOS(goos string) string {
+	if useRelativeDefaultPath(goos) {
 		return filepath.Join(".", "win", "etc", "mesh_mqtt_go")
 	}
 	return filepath.Join(string(filepath.Separator), "etc", "mesh_mqtt_go")
+}
+
+func useRelativeDefaultPath(goos string) bool {
+	return goos == "windows" || goos == "darwin"
 }
 
 // defaultConfigPath 返回默认配置文件路径。
@@ -184,7 +198,7 @@ func defaultMapTileCacheDir() string {
 }
 
 func defaultMapTileCacheDirForGOOS(goos string) string {
-	if goos == "windows" {
+	if useRelativeDefaultPath(goos) {
 		return filepath.Join(".", "win", "srv", "mesh_mqtt_go")
 	}
 	return filepath.Join(string(filepath.Separator), "srv", "mesh_mqtt_go")
@@ -194,19 +208,30 @@ func defaultWebSocketPathForGOOS(goos string) string {
 	if goos == "windows" {
 		return ""
 	}
+	if useRelativeDefaultPath(goos) {
+		return filepath.Join(".", "win", "opt", "mesh_mqtt_go", "web.sock")
+	}
 	return filepath.Join(string(filepath.Separator), "opt", "mesh_mqtt_go", "web.sock")
 }
 
 func clearWebSocketPathOnUnsupportedGOOS(cfg *config, goos string) bool {
-	if goos != "windows" || cfg.Web.SocketPath == "" {
+	if goos != "windows" {
 		return false
 	}
-	cfg.Web.SocketPath = ""
-	return true
+	changed := false
+	if cfg.Web.SocketPath != "" {
+		cfg.Web.SocketPath = ""
+		changed = true
+	}
+	if cfg.Web.SocketEnabled {
+		cfg.Web.SocketEnabled = false
+		changed = true
+	}
+	return changed
 }
 
 func defaultSQLitePathForGOOS(goos string) string {
-	if goos == "windows" {
+	if useRelativeDefaultPath(goos) {
 		return filepath.Join(".", "win", "etc", "mesh_mqtt_go", "mesh_mqtt_go.db")
 	}
 	return filepath.Join(string(filepath.Separator), "srv", "mesh_mqtt_go", "mesh_mqtt_go.db")
@@ -336,6 +361,16 @@ func normalizeConfig(raw rawConfig) (*config, bool) {
 		} else {
 			cfg.Web.Enabled = *raw.Web.Enabled
 		}
+		if raw.Web.PortEnabled == nil {
+			changed = true
+		} else {
+			cfg.Web.PortEnabled = *raw.Web.PortEnabled
+		}
+		if raw.Web.SocketEnabled == nil {
+			changed = true
+		} else {
+			cfg.Web.SocketEnabled = *raw.Web.SocketEnabled
+		}
 		if raw.Web.Host == nil {
 			changed = true
 		} else {
@@ -407,8 +442,14 @@ func validateConfig(cfg *config) error {
 		return fmt.Errorf("invalid database.driver %q: must be sqlite or mysql", cfg.Database.Driver)
 	}
 	if cfg.Web.Enabled {
-		if cfg.Web.SocketPath == "" && (cfg.Web.Port <= 0 || cfg.Web.Port > 65535) {
+		if !cfg.Web.PortEnabled && !cfg.Web.SocketEnabled {
+			return fmt.Errorf("web.port_enabled and web.socket_enabled cannot both be false when web is enabled")
+		}
+		if cfg.Web.PortEnabled && (cfg.Web.Port <= 0 || cfg.Web.Port > 65535) {
 			return fmt.Errorf("invalid web port %d: must be 1-65535", cfg.Web.Port)
+		}
+		if cfg.Web.SocketEnabled && cfg.Web.SocketPath == "" {
+			return fmt.Errorf("web.socket_path is required when web.socket_enabled is true")
 		}
 		if cfg.Web.StaticDir == "" {
 			return fmt.Errorf("web.static_dir is required when web is enabled")
