@@ -88,6 +88,14 @@ func registerAPIRoutes(r gin.IRouter, store *store, mapTileCacheDir string) {
 		total, err := store.CountSigns(opts)
 		writeListResponseWithTotal(c, rows, opts, total, err, signDTO)
 	})
+	r.GET("/signs/daily", func(c *gin.Context) {
+		opts, ok := parseListOptions(c)
+		if !ok {
+			return
+		}
+		rows, err := store.CountSignsByDay(opts)
+		writeListResponse(c, rows, opts, err, signDayCountDTO)
+	})
 	r.GET("/text-messages", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
 		if !ok {
@@ -615,6 +623,10 @@ func mapReportClusterDTO(row mapReportClusterRecord) gin.H {
 
 func signDTO(row signRecord) gin.H {
 	return gin.H{"id": row.ID, "node_id": row.NodeID, "long_name": ptrString(row.LongName), "short_name": ptrString(row.ShortName), "sign_text": row.SignText, "sign_time": row.SignTime}
+}
+
+func signDayCountDTO(row signDayCount) gin.H {
+	return gin.H{"date": row.Date, "count": row.Count}
 }
 
 func textMessageDTO(row textMessageRecord) gin.H {

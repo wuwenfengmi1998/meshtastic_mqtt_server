@@ -19,10 +19,28 @@ func (s *store) ListSigns(opts listOptions) ([]signRecord, error) {
 	return rows, q.Find(&rows).Error
 }
 
+type signDayCount struct {
+	Date  string `gorm:"column:sign_date"`
+	Count int64  `gorm:"column:count"`
+}
+
 func (s *store) CountSigns(opts listOptions) (int64, error) {
 	var total int64
 	q := applySignFilters(s.db.Model(&signRecord{}), opts)
 	return total, q.Count(&total).Error
+}
+
+func (s *store) CountSignsByDay(opts listOptions) ([]signDayCount, error) {
+	var rows []signDayCount
+	dateExpr := "date(sign_time)"
+	if s.driver == databaseDriverMySQL {
+		dateExpr = "DATE(sign_time)"
+	}
+	q := applySignFilters(s.db.Model(&signRecord{}), opts).
+		Select(dateExpr + " AS sign_date, COUNT(*) AS count").
+		Group(dateExpr).
+		Order("sign_date DESC")
+	return rows, q.Scan(&rows).Error
 }
 
 func (s *store) GetSignByID(id uint64) (*signRecord, error) {

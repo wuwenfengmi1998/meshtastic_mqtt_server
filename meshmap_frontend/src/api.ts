@@ -40,6 +40,7 @@ import type {
   PositionRecord,
   PublicMapTileSourceResponse,
   PublicMapTileSourcesResponse,
+  SignDayCount,
   SignRecord,
   SignRecordPayload,
   TelemetryRecord,
@@ -171,6 +172,10 @@ export function getTextMessages(limit = 100, offset = 0, nodeIdOrOptions: string
 
 export function getSignRecords(limit = 100, offset = 0, nodeIdOrOptions: string | ListQueryOptions = ''): Promise<ListResponse<SignRecord>> {
   return getJSON<ListResponse<SignRecord>>(listPath('/api/signs', limit, offset, nodeIdOrOptions))
+}
+
+export function getSignDailyCounts(nodeIdOrOptions: string | ListQueryOptions = ''): Promise<ListResponse<SignDayCount>> {
+  return getJSON<ListResponse<SignDayCount>>(listPath('/api/signs/daily', 500, 0, nodeIdOrOptions))
 }
 
 export function getAdminSignRecords(limit = 100, offset = 0, nodeIdOrOptions: string | ListQueryOptions = ''): Promise<ListResponse<SignRecord>> {

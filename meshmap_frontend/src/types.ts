@@ -158,6 +158,11 @@ export interface SignRecord {
   sign_time: string
 }
 
+export interface SignDayCount {
+  date: string
+  count: number
+}
+
 export interface SignRecordPayload {
   node_id: string
   long_name: string
