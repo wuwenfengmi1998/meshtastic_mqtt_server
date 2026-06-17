@@ -266,6 +266,8 @@ type botNodeRecord struct {
 	NodeInfoBroadcastIntervalSeconds int64      `gorm:"column:nodeinfo_broadcast_interval_seconds;not null"`
 	LastNodeInfoBroadcastAt          *time.Time `gorm:"column:last_nodeinfo_broadcast_at;index"`
 	LastPacketID                     int64      `gorm:"column:last_packet_id;not null"`
+	LLMQueueEnabled                  bool       `gorm:"column:llm_queue_enabled;not null;default:1;index"`
+	LLMIncludeChannelMessages        bool       `gorm:"column:llm_include_channel_messages;not null;default:0;index"`
 	CreatedAt                        time.Time  `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt                        time.Time  `gorm:"column:updated_at;autoUpdateTime;index"`
 }
@@ -665,6 +667,16 @@ func migrateBotNodePSK(tx *gorm.DB, migrator gorm.Migrator, driver string) error
 	if !migrator.HasColumn(&botNodeRecord{}, "LastNodeInfoBroadcastAt") {
 		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN last_nodeinfo_broadcast_at datetime NULL").Error; err != nil {
 			return fmt.Errorf("migrate bot_nodes last_nodeinfo_broadcast_at column: %w", err)
+		}
+	}
+	if !migrator.HasColumn(&botNodeRecord{}, "LLMQueueEnabled") {
+		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN llm_queue_enabled numeric NOT NULL DEFAULT 1").Error; err != nil {
+			return fmt.Errorf("migrate bot_nodes llm_queue_enabled column: %w", err)
+		}
+	}
+	if !migrator.HasColumn(&botNodeRecord{}, "LLMIncludeChannelMessages") {
+		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN llm_include_channel_messages numeric NOT NULL DEFAULT 0").Error; err != nil {
+			return fmt.Errorf("migrate bot_nodes llm_include_channel_messages column: %w", err)
 		}
 	}
 	return nil

@@ -19,6 +19,8 @@ type botNodeRequest struct {
 	PSK                              string `json:"psk"`
 	NodeInfoBroadcastEnabled         bool   `json:"nodeinfo_broadcast_enabled"`
 	NodeInfoBroadcastIntervalSeconds int64  `json:"nodeinfo_broadcast_interval_seconds"`
+	LLMQueueEnabled                  bool   `json:"llm_queue_enabled"`
+	LLMIncludeChannelMessages        bool   `json:"llm_include_channel_messages"`
 }
 
 type botSendMessageRequest struct {
@@ -253,7 +255,7 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 }
 
 func botNodeInputFromRequest(req botNodeRequest) botNodeInput {
-	return botNodeInput{NodeNum: req.NodeNum, LongName: req.LongName, ShortName: req.ShortName, Enabled: req.Enabled, DefaultChannelID: req.DefaultChannelID, TopicPrefix: req.TopicPrefix, PSK: req.PSK, NodeInfoBroadcastEnabled: req.NodeInfoBroadcastEnabled, NodeInfoBroadcastIntervalSeconds: req.NodeInfoBroadcastIntervalSeconds}
+	return botNodeInput{NodeNum: req.NodeNum, LongName: req.LongName, ShortName: req.ShortName, Enabled: req.Enabled, DefaultChannelID: req.DefaultChannelID, TopicPrefix: req.TopicPrefix, PSK: req.PSK, NodeInfoBroadcastEnabled: req.NodeInfoBroadcastEnabled, NodeInfoBroadcastIntervalSeconds: req.NodeInfoBroadcastIntervalSeconds, LLMQueueEnabled: req.LLMQueueEnabled, LLMIncludeChannelMessages: req.LLMIncludeChannelMessages}
 }
 
 func parseBotID(c *gin.Context, message string) (uint64, bool) {
@@ -299,7 +301,7 @@ func writeBotNodeMutationResponse(c *gin.Context, status int, row *botNodeRecord
 }
 
 func botNodeDTO(row botNodeRecord) gin.H {
-	return gin.H{"id": row.ID, "node_id": row.NodeID, "node_num": row.NodeNum, "long_name": row.LongName, "short_name": row.ShortName, "enabled": row.Enabled, "default_channel_id": row.DefaultChannelID, "topic_prefix": row.TopicPrefix, "psk": row.PSK, "public_key": row.PublicKey, "private_key_set": row.PrivateKey != "", "nodeinfo_broadcast_enabled": row.NodeInfoBroadcastEnabled, "nodeinfo_broadcast_interval_seconds": row.NodeInfoBroadcastIntervalSeconds, "last_nodeinfo_broadcast_at": row.LastNodeInfoBroadcastAt, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
+	return gin.H{"id": row.ID, "node_id": row.NodeID, "node_num": row.NodeNum, "long_name": row.LongName, "short_name": row.ShortName, "enabled": row.Enabled, "default_channel_id": row.DefaultChannelID, "topic_prefix": row.TopicPrefix, "psk": row.PSK, "public_key": row.PublicKey, "private_key_set": row.PrivateKey != "", "nodeinfo_broadcast_enabled": row.NodeInfoBroadcastEnabled, "nodeinfo_broadcast_interval_seconds": row.NodeInfoBroadcastIntervalSeconds, "last_nodeinfo_broadcast_at": row.LastNodeInfoBroadcastAt, "llm_queue_enabled": row.LLMQueueEnabled, "llm_include_channel_messages": row.LLMIncludeChannelMessages, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
 }
 
 func botMessageDTO(row botMessageRecord) gin.H {

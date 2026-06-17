@@ -27,24 +27,19 @@ type LLMMessageQueueInput struct {
 
 // EnqueueLLMMessage 将消息添加到 LLM 队列
 func (s *store) EnqueueLLMMessage(input LLMMessageQueueInput) (*llmMessageQueueRecord, error) {
-	// 检查 LLM 队列是否启用
-	enabled, err := s.GetBoolRuntimeSetting(runtimeSettingLLMQueueEnabled, true)
-	if err != nil {
-		return nil, fmt.Errorf("check llm queue enabled: %w", err)
-	}
-	if !enabled {
-		return nil, nil // 静默返回，不报错
+	var err error
+
+	if input.BotID == 0 {
+		return nil, nil // bot_id 为 0 的消息不再入队
 	}
 
-	// 如果是频道消息，检查是否启用了频道消息入队
-	if input.BotID == 0 {
-		includeChannel, err := s.GetBoolRuntimeSetting(runtimeSettingLLMQueueIncludeChannel, false)
-		if err != nil {
-			return nil, fmt.Errorf("check llm include channel: %w", err)
-		}
-		if !includeChannel {
-			return nil, nil // 频道消息入队未启用，静默返回
-		}
+	// 检查机器人级别的 LLM 队列设置
+	bot, err := s.GetBotNode(input.BotID)
+	if err != nil {
+		return nil, nil // 机器人不存在，静默返回
+	}
+	if !bot.LLMQueueEnabled {
+		return nil, nil // 机器人的 LLM 队列未启用，静默返回
 	}
 
 	if input.FromNodeID == "" {
@@ -54,21 +49,10 @@ func (s *store) EnqueueLLMMessage(input LLMMessageQueueInput) (*llmMessageQueueR
 		return nil, fmt.Errorf("text is required")
 	}
 
-	// 检查是否存在重复消息
+	// 检查是否存在重复消息：相同 bot_id + packet_id 且未删除
 	var existing llmMessageQueueRecord
-	if input.BotID > 0 {
-		// 机器人私聊：相同 bot_id + packet_id 且未删除
-		err = s.db.Where("bot_id = ? AND packet_id = ? AND deleted_at IS NULL", input.BotID, input.PacketID).
-			Take(&existing).Error
-	} else {
-		// 频道消息：相同 from_node_id + channel_id + packet_id 且未删除
-		channelID := ""
-		if input.ChannelID != nil {
-			channelID = *input.ChannelID
-		}
-		err = s.db.Where("bot_id = 0 AND from_node_id = ? AND channel_id = ? AND packet_id = ? AND deleted_at IS NULL", input.FromNodeID, channelID, input.PacketID).
-			Take(&existing).Error
-	}
+	err = s.db.Where("bot_id = ? AND packet_id = ? AND deleted_at IS NULL", input.BotID, input.PacketID).
+		Take(&existing).Error
 	if err == nil {
 		// 重复消息，直接返回已存在的
 		return &existing, nil
@@ -214,6 +198,7 @@ func llmMessageDTO(row llmMessageQueueRecord) map[string]any {
 }
 
 // enqueueChannelMessageToLLM 将频道消息添加到 LLM 队列
+// 为每个启用了「包含频道消息」的机器人都创建一条独立的队列记录
 func enqueueChannelMessageToLLM(s *store, record map[string]any) error {
 	if s == nil {
 		return nil
@@ -261,20 +246,30 @@ func enqueueChannelMessageToLLM(s *store, record map[string]any) error {
 		contentPtr = &s
 	}
 
-	_, _ = s.EnqueueLLMMessage(LLMMessageQueueInput{
-		BotID:       0, // 0 表示频道消息
-		BotNodeID:   "",
-		BotNodeNum:  0,
-		FromNodeID:  fromNodeID,
-		FromNodeNum: fromNodeNum,
-		LongName:    longName,
-		ShortName:   shortName,
-		Text:        text,
-		PacketID:    packetID,
-		ChannelID:   channelID,
-		Topic:       topic,
-		ContentJSON: contentPtr,
-	})
+	// 查询所有启用了 LLM 队列且包含频道消息的机器人
+	var bots []botNodeRecord
+	err = s.db.Where("llm_queue_enabled = ? AND llm_include_channel_messages = ?", true, true).Find(&bots).Error
+	if err != nil {
+		return fmt.Errorf("query bots for channel message enqueue: %w", err)
+	}
+
+	// 为每个符合条件的机器人创建一条队列记录
+	for _, bot := range bots {
+		_, _ = s.EnqueueLLMMessage(LLMMessageQueueInput{
+			BotID:       bot.ID,
+			BotNodeID:   bot.NodeID,
+			BotNodeNum:  bot.NodeNum,
+			FromNodeID:  fromNodeID,
+			FromNodeNum: fromNodeNum,
+			LongName:    longName,
+			ShortName:   shortName,
+			Text:        text,
+			PacketID:    packetID,
+			ChannelID:   channelID,
+			Topic:       topic,
+			ContentJSON: contentPtr,
+		})
+	}
 
 	return nil
 }

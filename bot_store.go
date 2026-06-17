@@ -39,6 +39,8 @@ type botNodeInput struct {
 	PSK                              string
 	NodeInfoBroadcastEnabled         bool
 	NodeInfoBroadcastIntervalSeconds int64
+	LLMQueueEnabled                  bool
+	LLMIncludeChannelMessages        bool
 }
 
 type botMessageListOptions struct {
@@ -126,6 +128,8 @@ func (s *store) UpdateBotNode(id uint64, input botNodeInput) (*botNodeRecord, er
 		"psk":                                 row.PSK,
 		"nodeinfo_broadcast_enabled":          row.NodeInfoBroadcastEnabled,
 		"nodeinfo_broadcast_interval_seconds": row.NodeInfoBroadcastIntervalSeconds,
+		"llm_queue_enabled":                   row.LLMQueueEnabled,
+		"llm_include_channel_messages":        row.LLMIncludeChannelMessages,
 		"updated_at":                          time.Now(),
 	}
 	if err := s.db.Model(&botNodeRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
@@ -276,7 +280,7 @@ func (s *store) normalizedBotNodeRecord(input botNodeInput) (*botNodeRecord, err
 	if err := validateBotNodeNum(nodeNum); err != nil {
 		return nil, err
 	}
-	return &botNodeRecord{NodeID: mqtpp.NodeNumToID(uint32(nodeNum)), NodeNum: nodeNum, LongName: longName, ShortName: shortName, Enabled: input.Enabled, DefaultChannelID: channelID, TopicPrefix: topicPrefix, PSK: psk, NodeInfoBroadcastEnabled: input.NodeInfoBroadcastEnabled, NodeInfoBroadcastIntervalSeconds: interval}, nil
+	return &botNodeRecord{NodeID: mqtpp.NodeNumToID(uint32(nodeNum)), NodeNum: nodeNum, LongName: longName, ShortName: shortName, Enabled: input.Enabled, DefaultChannelID: channelID, TopicPrefix: topicPrefix, PSK: psk, NodeInfoBroadcastEnabled: input.NodeInfoBroadcastEnabled, NodeInfoBroadcastIntervalSeconds: interval, LLMQueueEnabled: input.LLMQueueEnabled, LLMIncludeChannelMessages: input.LLMIncludeChannelMessages}, nil
 }
 
 func populateBotNodeKeys(row *botNodeRecord) error {

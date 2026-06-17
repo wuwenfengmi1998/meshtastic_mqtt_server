@@ -530,6 +530,8 @@ export interface BotNode {
   nodeinfo_broadcast_enabled: boolean
   nodeinfo_broadcast_interval_seconds: number
   last_nodeinfo_broadcast_at: string | null
+  llm_queue_enabled: boolean
+  llm_include_channel_messages: boolean
   created_at: string
   updated_at: string
 }
@@ -544,6 +546,8 @@ export interface BotNodePayload {
   psk?: string
   nodeinfo_broadcast_enabled?: boolean
   nodeinfo_broadcast_interval_seconds?: number
+  llm_queue_enabled?: boolean
+  llm_include_channel_messages?: boolean
 }
 
 export interface BotNodeMutationResponse {

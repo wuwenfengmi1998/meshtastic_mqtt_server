@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { deleteLLMMessage, deleteLLMMessagesByBot, getAdminRuntimeSettings, getBotNodes, getLLMMessages, updateAdminRuntimeSettings } from '../api'
-import type { AdminRuntimeSettings, BotNode, LLMMessage, ListResponse } from '../types'
+import { deleteLLMMessage, deleteLLMMessagesByBot, getBotNodes, getLLMMessages, updateBotNode } from '../api'
+import type { BotNode, LLMMessage, ListResponse } from '../types'
 
 const loading = ref(false)
-const savingSettings = ref(false)
+const savingBotId = ref<number | null>(null)
 const error = ref('')
 const messages = ref<LLMMessage[]>([])
 const botNodes = ref<BotNode[]>([])
@@ -13,7 +13,6 @@ const limit = 50
 const offset = ref(0)
 const selectedBotId = ref<number | ''>('')
 const includeDeleted = ref(false)
-const settings = ref<AdminRuntimeSettings | null>(null)
 
 const statusColors: Record<string, string> = {
   pending: 'background-color: #fff3cd;',
@@ -29,51 +28,13 @@ const statusLabels: Record<string, string> = {
   error: '错误',
 }
 
-async function loadSettings() {
-  try {
-    const response = await getAdminRuntimeSettings()
-    settings.value = response.item
-  } catch (err) {
-    console.error('加载设置失败:', err)
-  }
-}
-
-async function toggleQueueEnabled() {
-  if (!settings.value || savingSettings.value) return
-  savingSettings.value = true
-  try {
-    await updateAdminRuntimeSettings({
-      allow_encrypted_forwarding: settings.value.allow_encrypted_forwarding,
-      llm_queue_enabled: !settings.value.llm_queue_enabled,
-      llm_include_channel_messages: settings.value.llm_include_channel_messages,
-    })
-    settings.value.llm_queue_enabled = !settings.value.llm_queue_enabled
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
-  } finally {
-    savingSettings.value = false
-  }
-}
-
-async function toggleIncludeChannel() {
-  if (!settings.value || savingSettings.value) return
-  savingSettings.value = true
-  try {
-    await updateAdminRuntimeSettings({
-      allow_encrypted_forwarding: settings.value.allow_encrypted_forwarding,
-      llm_queue_enabled: settings.value.llm_queue_enabled,
-      llm_include_channel_messages: !settings.value.llm_include_channel_messages,
-    })
-    settings.value.llm_include_channel_messages = !settings.value.llm_include_channel_messages
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : String(err)
-  } finally {
-    savingSettings.value = false
-  }
-}
-
 function getMessageType(msg: LLMMessage): string {
-  return msg.bot_id === 0 ? '频道' : '私聊'
+  return msg.channel_id ? '频道' : '私聊'
+}
+
+function getBotName(botId: number): string {
+  const bot = botNodes.value.find(b => b.id === botId)
+  return bot ? bot.long_name : '-'
 }
 
 async function loadBotNodes() {
@@ -82,6 +43,52 @@ async function loadBotNodes() {
     botNodes.value = response.items
   } catch (err) {
     console.error('加载机器人列表失败:', err)
+  }
+}
+
+async function toggleBotLLMQueue(bot: BotNode) {
+  savingBotId.value = bot.id
+  try {
+    await updateBotNode(bot.id, {
+      long_name: bot.long_name,
+      short_name: bot.short_name,
+      enabled: bot.enabled,
+      default_channel_id: bot.default_channel_id,
+      topic_prefix: bot.topic_prefix,
+      psk: bot.psk,
+      nodeinfo_broadcast_enabled: bot.nodeinfo_broadcast_enabled,
+      nodeinfo_broadcast_interval_seconds: bot.nodeinfo_broadcast_interval_seconds,
+      llm_queue_enabled: !bot.llm_queue_enabled,
+      llm_include_channel_messages: bot.llm_include_channel_messages,
+    })
+    bot.llm_queue_enabled = !bot.llm_queue_enabled
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    savingBotId.value = null
+  }
+}
+
+async function toggleBotIncludeChannel(bot: BotNode) {
+  savingBotId.value = bot.id
+  try {
+    await updateBotNode(bot.id, {
+      long_name: bot.long_name,
+      short_name: bot.short_name,
+      enabled: bot.enabled,
+      default_channel_id: bot.default_channel_id,
+      topic_prefix: bot.topic_prefix,
+      psk: bot.psk,
+      nodeinfo_broadcast_enabled: bot.nodeinfo_broadcast_enabled,
+      nodeinfo_broadcast_interval_seconds: bot.nodeinfo_broadcast_interval_seconds,
+      llm_queue_enabled: bot.llm_queue_enabled,
+      llm_include_channel_messages: !bot.llm_include_channel_messages,
+    })
+    bot.llm_include_channel_messages = !bot.llm_include_channel_messages
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    savingBotId.value = null
   }
 }
 
@@ -165,7 +172,6 @@ function goNext() {
 }
 
 onMounted(() => {
-  loadSettings()
   loadBotNodes()
   loadMessages()
 })
@@ -175,21 +181,42 @@ onMounted(() => {
   <div class="admin-llm">
     <h2>LLM 消息队列</h2>
 
+    <div class="admin-llm-section">
+      <h3>机器人 LLM 设置</h3>
+      <p class="section-desc">每个机器人可以独立启用或禁用 LLM 消息队列。启用后，该机器人收到的私聊消息将被加入队列。</p>
+
+      <div class="bot-settings-grid">
+        <div v-for="bot in botNodes" :key="bot.id" class="bot-settings-card">
+          <div class="bot-header">
+            <strong>{{ bot.long_name }}</strong>
+            <span class="bot-node-id">{{ bot.node_id }}</span>
+          </div>
+          <div class="bot-settings">
+            <label class="setting-item">
+              <input
+                type="checkbox"
+                :checked="bot.llm_queue_enabled"
+                @change="toggleBotLLMQueue(bot)"
+                :disabled="savingBotId === bot.id"
+              />
+              <span>启用 LLM 队列</span>
+            </label>
+            <label class="setting-item">
+              <input
+                type="checkbox"
+                :checked="bot.llm_include_channel_messages"
+                @change="toggleBotIncludeChannel(bot)"
+                :disabled="savingBotId === bot.id || !bot.llm_queue_enabled"
+              />
+              <span>包含频道消息</span>
+            </label>
+          </div>
+          <div v-if="savingBotId === bot.id" class="saving-indicator">保存中...</div>
+        </div>
+      </div>
+    </div>
+
     <div class="admin-llm-toolbar">
-      <div class="admin-llm-filter">
-        <label>
-          <input type="checkbox" :checked="settings?.llm_queue_enabled ?? false" @change="toggleQueueEnabled" :disabled="savingSettings" />
-          启用 LLM 消息队列
-        </label>
-      </div>
-
-      <div class="admin-llm-filter">
-        <label>
-          <input type="checkbox" :checked="settings?.llm_include_channel_messages ?? false" @change="toggleIncludeChannel" :disabled="savingSettings || !settings?.llm_queue_enabled" />
-          包含频道消息
-        </label>
-      </div>
-
       <div class="admin-llm-filter">
         <label>选择机器人：</label>
         <select v-model="selectedBotId" @change="loadMessages(true)">
@@ -226,6 +253,7 @@ onMounted(() => {
       <thead>
         <tr>
           <th>ID</th>
+          <th>机器人</th>
           <th>类型</th>
           <th>状态</th>
           <th>来自节点</th>
@@ -239,6 +267,12 @@ onMounted(() => {
       <tbody>
         <tr v-for="msg in messages" :key="msg.id" :style="statusColors[msg.status]">
           <td>{{ msg.id }}</td>
+          <td class="bot-name-cell">
+            <div class="bot-info">
+              <div class="bot-long-name">{{ getBotName(msg.bot_id) }}</div>
+              <div class="bot-node-id" v-if="msg.bot_id !== 0">{{ msg.bot_node_id }}</div>
+            </div>
+          </td>
           <td>
             <span class="type-badge" :class="getMessageType(msg) === '频道' ? 'channel' : 'direct'">
               {{ getMessageType(msg) }}
@@ -255,7 +289,7 @@ onMounted(() => {
               <div class="node-id">{{ msg.from_node_id }}</div>
             </div>
           </td>
-          <td class="channel-cell">{{ msg.channel_id || (msg.bot_id === 0 ? '默认频道' : '-') }}</td>
+          <td class="channel-cell">{{ msg.channel_id || '-' }}</td>
           <td class="message-text">{{ msg.text }}</td>
           <td>{{ formatTime(msg.received_at) }}</td>
           <td>{{ formatTime(msg.processed_at) }}</td>
@@ -266,7 +300,7 @@ onMounted(() => {
           </td>
         </tr>
         <tr v-if="messages.length === 0">
-          <td colspan="9" class="empty-state">暂无消息</td>
+          <td colspan="10" class="empty-state">暂无消息</td>
         </tr>
       </tbody>
     </table>
@@ -288,6 +322,76 @@ onMounted(() => {
 .admin-llm h2 {
   margin: 0 0 1.5rem;
   font-size: 1.5rem;
+}
+
+.admin-llm-section {
+  background: #f8f9fa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.admin-llm-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+.section-desc {
+  margin: 0 0 1rem;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.bot-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.bot-settings-card {
+  background: white;
+  padding: 1rem;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.bot-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #eee;
+}
+
+.bot-node-id {
+  font-size: 0.8rem;
+  color: #666;
+  font-family: monospace;
+}
+
+.bot-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.setting-item input {
+  cursor: pointer;
+}
+
+.saving-indicator {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #0d6efd;
 }
 
 .admin-llm-toolbar {
@@ -357,6 +461,26 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.bot-name-cell {
+  min-width: 150px;
+}
+
+.bot-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.bot-long-name {
+  font-weight: 500;
+}
+
+.bot-node-id {
+  font-size: 0.8rem;
+  color: #666;
+  font-family: monospace;
 }
 
 .admin-llm-table {
