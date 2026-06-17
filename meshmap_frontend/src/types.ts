@@ -617,3 +617,54 @@ export interface LLMMessageStatusPayload {
   status: LLMMessageStatus
   error?: string
 }
+
+// LLM Provider 相关类型
+export interface LLMProvider {
+  name: string
+  active: boolean
+  api_key?: string
+  base_url: string
+  model: string
+  timeout: number
+  context_window_tokens: number
+  created_at: string
+  updated_at: string
+}
+
+export interface LLMProviderPayload {
+  name: string
+  active: boolean
+  api_key: string
+  base_url: string
+  model: string
+  timeout: number
+  context_window_tokens: number
+}
+
+export interface LLMProviderResponse {
+  item: LLMProvider
+}
+
+// LLM Tool Router 相关类型
+export interface LLMPlatformRouter {
+  id: number
+  enabled: boolean
+  openai_name: string
+  timeout: number
+  max_tokens: number
+  system_prompt: string
+  created_at: string
+  updated_at: string
+}
+
+export interface LLMPlatformRouterPayload {
+  enabled: boolean
+  openai_name: string
+  timeout: number
+  max_tokens: number
+  system_prompt: string
+}
+
+export interface LLMPlatformRouterResponse {
+  item: LLMPlatformRouter
+}

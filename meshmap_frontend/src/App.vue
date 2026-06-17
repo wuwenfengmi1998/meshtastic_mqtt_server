@@ -6,6 +6,7 @@ import AdminBot from './components/AdminBot.vue'
 import AdminBotDirect from './components/AdminBotDirect.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
 import AdminLLM from './components/AdminLLM.vue'
+import AdminLLMApi from './components/AdminLLMApi.vue'
 import AdminDiscardDetails from './components/AdminDiscardDetails.vue'
 import AdminHelpEdit from './components/AdminHelpEdit.vue'
 import AdminLogin from './components/AdminLogin.vue'
@@ -31,6 +32,7 @@ const isMqttForwardAdminPage = adminPath === '/admin/mqtt_forward' || adminPath 
 const isBotAdminPage = adminPath === '/admin/bot' || adminPath === '/admin/bot/'
 const isBotDirectAdminPage = adminPath === '/admin/bot/direct' || adminPath === '/admin/bot/direct/'
 const isLLMAdminPage = adminPath === '/admin/llm' || adminPath === '/admin/llm/'
+const isLLMApiAdminPage = adminPath === '/admin/llm/api' || adminPath === '/admin/llm/api/'
 const isSignAdminPage = adminPath === '/admin/sign' || adminPath === '/admin/sign/'
 const detailMatch = currentPath.match(/^\/detailed\/(.+)$/)
 const detailedNodeId = detailMatch ? decodeURIComponent(detailMatch[1]) : ''
@@ -553,6 +555,7 @@ onBeforeUnmount(() => {
             <a href="/admin/bot" :class="{ active: isBotAdminPage }">机器人</a>
             <a href="/admin/bot/direct" :class="{ active: isBotDirectAdminPage }">机器人私聊</a>
             <a href="/admin/llm" :class="{ active: isLLMAdminPage }">LLM消息队列</a>
+            <a href="/admin/llm/api" :class="{ active: isLLMApiAdminPage }">LLM API配置</a>
             <a href="/admin/sign" :class="{ active: isSignAdminPage }">签到管理</a>
             <a href="/admin/map_source" :class="{ active: adminPath === '/admin/map_source' }">地图图源</a>
             <a href="/admin/help_edit" :class="{ active: adminPath === '/admin/help_edit' }">帮助编辑</a>
@@ -602,6 +605,7 @@ onBeforeUnmount(() => {
         <AdminBot v-else-if="isBotAdminPage" />
         <AdminBotDirect v-else-if="isBotDirectAdminPage" />
         <AdminLLM v-else-if="isLLMAdminPage" />
+        <AdminLLMApi v-else-if="isLLMApiAdminPage" />
         <AdminSignManagement v-else-if="isSignAdminPage" />
         <AdminMapSource v-else-if="adminPath === '/admin/map_source'" />
         <AdminHelpEdit v-else-if="adminPath === '/admin/help_edit'" />

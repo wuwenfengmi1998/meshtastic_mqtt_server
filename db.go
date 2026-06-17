@@ -460,6 +460,39 @@ func (textMessageRecord) TableName() string {
 	return "text_message"
 }
 
+// llmProviderRecord 保存 LLM API 配置，支持多个 AI 提供商
+type llmProviderRecord struct {
+	Name               string    `gorm:"column:name;primaryKey;size:64;not null"` // 配置名称，如 "default"、"openai"、"ark" 等
+	Active             bool      `gorm:"column:active;not null;index"`            // 是否启用此配置
+	APIKey             string    `gorm:"column:api_key;type:text;not null"`       // API 密钥
+	BaseURL            string    `gorm:"column:base_url;type:text;not null"`      // API 基础 URL
+	Model              string    `gorm:"column:model;not null"`                   // 模型名称
+	Timeout            int       `gorm:"column:timeout;not null;default:120"`     // 超时时间（秒）
+	ContextWindowTokens int      `gorm:"column:context_window_tokens;not null;default:262144"` // 上下文窗口 token 数
+	CreatedAt          time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt          time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (llmProviderRecord) TableName() string {
+	return "llm_providers"
+}
+
+// llmToolRouterRecord 保存工具路由的配置
+type llmToolRouterRecord struct {
+	ID           uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	Enabled      bool      `gorm:"column:enabled;not null;index"`           // 是否启用工具路由
+	OpenAIName   string    `gorm:"column:openai_name;size:64;not null"`     // 使用的 LLM 提供商名称（关联 llm_providers.name）
+	Timeout      int       `gorm:"column:timeout;not null;default:30"`      // 工具调用超时时间（秒）
+	MaxTokens    int       `gorm:"column:max_tokens;not null;default:512"`  // 工具调用最大 token 数
+	SystemPrompt string    `gorm:"column:system_prompt;type:text;not null"` // 系统提示词
+	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (llmToolRouterRecord) TableName() string {
+	return "llm_tool_router"
+}
+
 type positionRecord struct {
 	AppendPacketFields        `gorm:"embedded"`
 	MQTTClientRecordFields    `gorm:"embedded"`
@@ -591,6 +624,8 @@ func (s *store) migrate() error {
 			{label: "bot_messages", model: &botMessageRecord{}},
 			{label: "bot_direct_messages", model: &botDirectMessageRecord{}},
 			{label: "llm_message_queue", model: &llmMessageQueueRecord{}},
+			{label: "llm_providers", model: &llmProviderRecord{}},
+			{label: "llm_tool_router", model: &llmToolRouterRecord{}},
 			{label: "nodeinfo", model: &nodeInfoRecord{}},
 			{label: "map_report", model: &mapReportRecord{}},
 			{label: "text_message", model: &textMessageRecord{}},
@@ -627,7 +662,17 @@ func (s *store) migrate() error {
 		if err := migrateMapTileSourceHash(tx, migrator, s.driver); err != nil {
 			return err
 		}
-		return (&store{db: tx, driver: s.driver}).EnsureDefaultMapTileSource()
+		txStore := &store{db: tx, driver: s.driver}
+		if err := txStore.EnsureDefaultMapTileSource(); err != nil {
+			return err
+		}
+		if err := txStore.EnsureDefaultLLMProvider(); err != nil {
+			return err
+		}
+		if err := txStore.EnsureDefaultLLMToolRouter(); err != nil {
+			return err
+		}
+		return nil
 	})
 }
 

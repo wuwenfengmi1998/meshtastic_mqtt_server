@@ -49,6 +49,11 @@ import type {
   BotDirectConversationsResponse,
   LLMMessage,
   LLMMessageStatus,
+  LLMProvider,
+  LLMProviderPayload,
+  LLMProviderResponse,
+  LLMPlatformRouterPayload,
+  LLMPlatformRouterResponse,
 } from './types'
 
 async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
@@ -464,5 +469,40 @@ export function cleanupDeletedLLMMessages(days = 7): Promise<{ status: string; d
   return postJSON<{ status: string; deleted_count: number }>('/api/admin/llm/messages/cleanup', { days })
 }
 
+// LLM Provider API
+export function getLLMProviders(includeInactive = false): Promise<ListResponse<LLMProvider>> {
+  const params = new URLSearchParams()
+  if (includeInactive) {
+    params.set('include_inactive', 'true')
+  }
+  const query = params.toString() ? `?${params.toString()}` : ''
+  return getJSON<ListResponse<LLMProvider>>(`/api/admin/llm/providers${query}`)
+}
+
+export function getLLMProvider(name: string): Promise<LLMProviderResponse> {
+  return getJSON<LLMProviderResponse>(`/api/admin/llm/providers/${encodeURIComponent(name)}`)
+}
+
+export function createLLMProvider(payload: LLMProviderPayload): Promise<LLMProviderResponse> {
+  return postJSON<LLMProviderResponse>('/api/admin/llm/providers', payload)
+}
+
+export function updateLLMProvider(name: string, payload: Partial<LLMProviderPayload>): Promise<LLMProviderResponse> {
+  return putJSON<LLMProviderResponse>(`/api/admin/llm/providers/${encodeURIComponent(name)}`, payload)
+}
+
+export function deleteLLMProvider(name: string): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/llm/providers/${encodeURIComponent(name)}`)
+}
+
+// LLM Tool Router API
+export function getLLMToolRouter(): Promise<LLMPlatformRouterResponse> {
+  return getJSON<LLMPlatformRouterResponse>('/api/admin/llm/tool-router')
+}
+
+export function updateLLMToolRouter(payload: Partial<LLMPlatformRouterPayload>): Promise<LLMPlatformRouterResponse> {
+  return putJSON<LLMPlatformRouterResponse>('/api/admin/llm/tool-router', payload)
+}
+
 // 静默使用未导出类型，避免 TS6133（未使用的导入）。
-export type { LLMMessage, LLMMessageStatus } from './types'
+export type { LLMMessage, LLMMessageStatus, LLMProvider, LLMPlatformRouter } from './types'

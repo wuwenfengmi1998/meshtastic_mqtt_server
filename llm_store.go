@@ -9,6 +9,134 @@ import (
 	"gorm.io/gorm"
 )
 
+// ============================================
+// LLM Provider (llm_providers) - 多 AI API 配置
+// ============================================
+
+// ListLLMProviders 列出所有 LLM Provider
+func (s *store) ListLLMProviders(includeInactive bool) ([]llmProviderRecord, error) {
+	var rows []llmProviderRecord
+	query := s.db.Model(&llmProviderRecord{})
+	if !includeInactive {
+		query = query.Where("active = ?", true)
+	}
+	if err := query.Order("created_at DESC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list llm providers: %w", err)
+	}
+	return rows, nil
+}
+
+// GetLLMProvider 获取单个 LLM Provider
+func (s *store) GetLLMProvider(name string) (*llmProviderRecord, error) {
+	var record llmProviderRecord
+	if err := s.db.Where("name = ?", name).Take(&record).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("get llm provider %s: %w", name, err)
+	}
+	return &record, nil
+}
+
+// CreateLLMProvider 创建 LLM Provider
+func (s *store) CreateLLMProvider(record *llmProviderRecord) error {
+	if err := s.db.Create(record).Error; err != nil {
+		return fmt.Errorf("create llm provider %s: %w", record.Name, err)
+	}
+	return nil
+}
+
+// UpdateLLMProvider 更新 LLM Provider
+func (s *store) UpdateLLMProvider(name string, updates map[string]any) error {
+	if err := s.db.Model(&llmProviderRecord{}).Where("name = ?", name).Updates(updates).Error; err != nil {
+		return fmt.Errorf("update llm provider %s: %w", name, err)
+	}
+	return nil
+}
+
+// DeleteLLMProvider 删除 LLM Provider
+func (s *store) DeleteLLMProvider(name string) error {
+	if err := s.db.Where("name = ?", name).Delete(&llmProviderRecord{}).Error; err != nil {
+		return fmt.Errorf("delete llm provider %s: %w", name, err)
+	}
+	return nil
+}
+
+// EnsureDefaultLLMProvider 确保存在默认 LLM Provider 配置
+func (s *store) EnsureDefaultLLMProvider() error {
+	_, err := s.GetLLMProvider("default")
+	if err == nil {
+		return nil // 已存在
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	// 创建默认配置
+	defaultConfig := &llmProviderRecord{
+		Name:               "default",
+		Active:             true,
+		APIKey:             "",
+		BaseURL:            "https://ark.cn-beijing.volces.com/api/v3",
+		Model:              "",
+		Timeout:            120,
+		ContextWindowTokens: 262144,
+	}
+	return s.CreateLLMProvider(defaultConfig)
+}
+
+// ============================================
+// LLM Tool Router (llm_tool_router) - 工具路由配置
+// ============================================
+
+// GetLLMToolRouter 获取当前激活的 Tool Router 配置
+func (s *store) GetLLMToolRouter() (*llmToolRouterRecord, error) {
+	var record llmToolRouterRecord
+	// 默认取第一条记录（ID 最小的），因为通常只需要一个配置
+	if err := s.db.Order("id ASC").First(&record).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("get llm tool router: %w", err)
+	}
+	return &record, nil
+}
+
+// CreateLLMToolRouter 创建 Tool Router 配置
+func (s *store) CreateLLMToolRouter(record *llmToolRouterRecord) error {
+	if err := s.db.Create(record).Error; err != nil {
+		return fmt.Errorf("create llm tool router: %w", err)
+	}
+	return nil
+}
+
+// UpdateLLMToolRouter 更新 Tool Router 配置
+func (s *store) UpdateLLMToolRouter(id uint64, updates map[string]any) error {
+	if err := s.db.Model(&llmToolRouterRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return fmt.Errorf("update llm tool router %d: %w", id, err)
+	}
+	return nil
+}
+
+// EnsureDefaultLLMToolRouter 确保存在默认 Tool Router 配置
+func (s *store) EnsureDefaultLLMToolRouter() error {
+	_, err := s.GetLLMToolRouter()
+	if err == nil {
+		return nil // 已存在
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	// 创建默认配置
+	defaultConfig := &llmToolRouterRecord{
+		Enabled:      true,
+		OpenAIName:   "",
+		Timeout:      30,
+		MaxTokens:    512,
+		SystemPrompt: "你可以按需直接调用可用工具来回答用户问题。\n每个工具的 description 描述了它的适用场景和调用条件。\n工具结果优先于模型内置知识；工具失败时必须如实说明，不要编造结果。\n只调用确实必要的工具。",
+	}
+	return s.CreateLLMToolRouter(defaultConfig)
+}
+
 // LLMMessageQueueInput 是添加 LLM 队列消息的输入
 type LLMMessageQueueInput struct {
 	BotID       uint64 // 0 表示频道消息
