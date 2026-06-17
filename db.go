@@ -343,6 +343,44 @@ const (
 	botDirectMessageDirectionOutbound = "outbound"
 )
 
+// llmMessageQueueRecord 是 LLM 消息队列，用于暂存机器人收到的消息供 LLM 处理。
+//
+//   - 每个队列绑定一个 BotID，消息包含节点信息和消息内容
+//   - deleted_at 用于标记软删除，实际保留一段时间供去重
+//   - received_at 是消息接收时间，processed_at 是 LLM 处理完成时间
+type llmMessageQueueRecord struct {
+	ID          uint64     `gorm:"column:id;primaryKey;autoIncrement"`
+	BotID       uint64     `gorm:"column:bot_id;not null;index:idx_llm_queue_bot_created,priority:1"`
+	BotNodeID   string     `gorm:"column:bot_node_id;not null;index"`
+	BotNodeNum  int64      `gorm:"column:bot_node_num;not null;index"`
+	FromNodeID  string     `gorm:"column:from_node_id;not null;index"`
+	FromNodeNum int64      `gorm:"column:from_node_num;not null;index"`
+	LongName    *string    `gorm:"column:long_name"`
+	ShortName   *string    `gorm:"column:short_name"`
+	Text        string     `gorm:"column:text;type:text;not null"`
+	PacketID    int64      `gorm:"column:packet_id;not null;index"`
+	ChannelID   *string    `gorm:"column:channel_id"`
+	Topic       string     `gorm:"column:topic;not null"`
+	Status      string     `gorm:"column:status;not null;index"`
+	Error       string     `gorm:"column:error;type:text"`
+	ReceivedAt  time.Time  `gorm:"column:received_at;not null;index"`
+	ProcessedAt *time.Time `gorm:"column:processed_at;index"`
+	DeletedAt   *time.Time `gorm:"column:deleted_at;index"`
+	ContentJSON *string    `gorm:"column:content_json;type:text"`
+	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime;index:idx_llm_queue_bot_created,priority:2"`
+}
+
+func (llmMessageQueueRecord) TableName() string {
+	return "llm_message_queue"
+}
+
+const (
+	llmMessageStatusPending    = "pending"
+	llmMessageStatusProcessing = "processing"
+	llmMessageStatusProcessed  = "processed"
+	llmMessageStatusError      = "error"
+)
+
 type nodeInfoRecord struct {
 	NodeID      string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum     int64     `gorm:"column:node_num;not null;index"`
@@ -550,6 +588,7 @@ func (s *store) migrate() error {
 			{label: "bot_nodes", model: &botNodeRecord{}},
 			{label: "bot_messages", model: &botMessageRecord{}},
 			{label: "bot_direct_messages", model: &botDirectMessageRecord{}},
+			{label: "llm_message_queue", model: &llmMessageQueueRecord{}},
 			{label: "nodeinfo", model: &nodeInfoRecord{}},
 			{label: "map_report", model: &mapReportRecord{}},
 			{label: "text_message", model: &textMessageRecord{}},
@@ -571,6 +610,7 @@ func (s *store) migrate() error {
 		}{
 			{label: "text_message", model: &textMessageRecord{}, indexes: []string{"idx_text_message_from_num_created_at", "idx_text_message_created_at", "idx_text_message_packet_id"}},
 			{label: "bot_direct_messages", model: &botDirectMessageRecord{}, indexes: []string{"idx_bot_dm_bot_peer", "idx_bot_dm_bot_created_at"}},
+			{label: "llm_message_queue", model: &llmMessageQueueRecord{}, indexes: []string{"idx_llm_queue_bot_created"}},
 		} {
 			if err := createMissingIndexes(migrator, item.model, item.label, item.indexes); err != nil {
 				return err

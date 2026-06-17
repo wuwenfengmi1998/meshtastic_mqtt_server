@@ -289,5 +289,25 @@ func insertInboundBotDirectMessage(s *store, record map[string]any, clientInfo m
 		return fmt.Errorf("insert bot direct message from %s: %w", peerNodeID, err)
 	}
 	_ = clientInfo // mqtt 元数据已经记录在 content_json 里，这里保留参数以保持队列签名一致
+
+	// 同时将消息添加到 LLM 队列
+	longName := nullableString(record["long_name"])
+	shortName := nullableString(record["short_name"])
+	channelID := nullableString(record["channel_id"])
+	_, _ = s.EnqueueLLMMessage(LLMMessageQueueInput{
+		BotID:       bot.ID,
+		BotNodeID:   bot.NodeID,
+		BotNodeNum:  bot.NodeNum,
+		FromNodeID:  peerNodeID,
+		FromNodeNum: int64(peerNum),
+		LongName:    longName,
+		ShortName:   shortName,
+		Text:        text,
+		PacketID:    int64(packetID),
+		ChannelID:   channelID,
+		Topic:       topic,
+		ContentJSON: contentPtr,
+	})
+
 	return nil
 }

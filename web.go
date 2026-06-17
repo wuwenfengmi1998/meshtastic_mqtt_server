@@ -213,6 +213,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 	registerAdminMapSourceRoutes(protected, store)
 	registerAdminHelpRoutes(protected, store)
 	registerAdminBotRoutes(protected, store, botSender)
+	registerAdminLLMRoutes(protected, store)
 	protected.GET("/me", func(c *gin.Context) {
 		claims := c.MustGet("admin_claims").(*sessionClaims)
 		c.JSON(http.StatusOK, gin.H{"user": adminUserDTO{Username: claims.Username, Role: claims.Role}})

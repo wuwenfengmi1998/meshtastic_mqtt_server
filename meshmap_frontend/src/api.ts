@@ -47,6 +47,8 @@ import type {
   TextMessage,
   BotDirectMessage,
   BotDirectConversationsResponse,
+  LLMMessage,
+  LLMMessageStatus,
 } from './types'
 
 async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
@@ -429,3 +431,38 @@ export type { BotDirectConversation } from './types'
 export function sendBotMessage(payload: BotSendMessagePayload): Promise<BotMessageMutationResponse> {
   return postJSON<BotMessageMutationResponse>('/api/admin/bot/messages', payload)
 }
+
+// LLM 消息队列 API
+export function getLLMMessages(limit = 100, offset = 0, botId?: number, includeDeleted = false): Promise<ListResponse<LLMMessage>> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (botId !== undefined && botId > 0) {
+    params.set('bot_id', String(botId))
+  }
+  if (includeDeleted) {
+    params.set('include_deleted', 'true')
+  }
+  return getJSON<ListResponse<LLMMessage>>(`/api/admin/llm/messages?${params.toString()}`)
+}
+
+export function getLLMMessage(id: number): Promise<{ item: LLMMessage }> {
+  return getJSON<{ item: LLMMessage }>(`/api/admin/llm/messages/${id}`)
+}
+
+export function updateLLMMessageStatus(id: number, status: LLMMessageStatus, error?: string): Promise<{ status: string }> {
+  return putJSON<{ status: string }>(`/api/admin/llm/messages/${id}/status`, { status, error })
+}
+
+export function deleteLLMMessage(id: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/llm/messages/${id}`)
+}
+
+export function deleteLLMMessagesByBot(botId: number): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/llm/bots/${botId}/messages`)
+}
+
+export function cleanupDeletedLLMMessages(days = 7): Promise<{ status: string; deleted_count: number }> {
+  return postJSON<{ status: string; deleted_count: number }>('/api/admin/llm/messages/cleanup', { days })
+}
+
+// 静默使用未导出类型，避免 TS6133（未使用的导入）。
+export type { LLMMessage, LLMMessageStatus } from './types'

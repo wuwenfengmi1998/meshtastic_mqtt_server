@@ -13,11 +13,15 @@ import (
 
 const (
 	runtimeSettingAllowEncryptedForwarding = "mqtt.allow_encrypted_forwarding"
+	runtimeSettingLLMQueueEnabled         = "llm.queue_enabled"
+	runtimeSettingLLMQueueIncludeChannel  = "llm.include_channel_messages"
 	runtimeSettingTypeBool                 = "bool"
 )
 
 type runtimeSettingsSnapshot struct {
 	AllowEncryptedForwarding bool
+	LLMQueueEnabled          bool
+	LLMIncludeChannel        bool
 }
 
 func (s *store) GetRuntimeSettings() (runtimeSettingsSnapshot, error) {
@@ -25,7 +29,19 @@ func (s *store) GetRuntimeSettings() (runtimeSettingsSnapshot, error) {
 	if err != nil {
 		return runtimeSettingsSnapshot{}, err
 	}
-	return runtimeSettingsSnapshot{AllowEncryptedForwarding: allowEncrypted}, nil
+	llmQueueEnabled, err := s.GetBoolRuntimeSetting(runtimeSettingLLMQueueEnabled, true)
+	if err != nil {
+		return runtimeSettingsSnapshot{}, err
+	}
+	llmIncludeChannel, err := s.GetBoolRuntimeSetting(runtimeSettingLLMQueueIncludeChannel, false)
+	if err != nil {
+		return runtimeSettingsSnapshot{}, err
+	}
+	return runtimeSettingsSnapshot{
+		AllowEncryptedForwarding: allowEncrypted,
+		LLMQueueEnabled:          llmQueueEnabled,
+		LLMIncludeChannel:        llmIncludeChannel,
+	}, nil
 }
 
 func (s *store) GetBoolRuntimeSetting(key string, defaultValue bool) (bool, error) {

@@ -333,10 +333,14 @@ export interface AdminMqttClient {
 
 export interface AdminRuntimeSettings {
   allow_encrypted_forwarding: boolean
+  llm_queue_enabled: boolean
+  llm_include_channel_messages: boolean
 }
 
 export interface AdminRuntimeSettingsPayload {
   allow_encrypted_forwarding: boolean
+  llm_queue_enabled?: boolean
+  llm_include_channel_messages?: boolean
 }
 
 export interface AdminRuntimeSettingsResponse {
@@ -578,5 +582,34 @@ export interface BotSendMessagePayload {
 
 export interface BotMessageMutationResponse {
   item: BotMessage
+  error?: string
+}
+
+// LLM 消息队列
+export type LLMMessageStatus = 'pending' | 'processing' | 'processed' | 'error'
+
+export interface LLMMessage {
+  id: number
+  bot_id: number
+  bot_node_id: string
+  bot_node_num: number
+  from_node_id: string
+  from_node_num: number
+  long_name: string | null
+  short_name: string | null
+  text: string
+  packet_id: number
+  channel_id: string | null
+  topic: string
+  status: LLMMessageStatus
+  error: string
+  received_at: string
+  processed_at: string | null
+  deleted_at: string | null
+  created_at: string
+}
+
+export interface LLMMessageStatusPayload {
+  status: LLMMessageStatus
   error?: string
 }

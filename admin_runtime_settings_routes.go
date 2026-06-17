@@ -7,9 +7,13 @@ import (
 )
 
 const allowEncryptedForwardingLabel = "Allow encrypted MQTT packets to be forwarded when they cannot be decrypted"
+const llmQueueEnabledLabel = "Enable LLM message queue"
+const llmIncludeChannelLabel = "Include channel messages in LLM queue"
 
 type runtimeSettingsRequest struct {
 	AllowEncryptedForwarding bool `json:"allow_encrypted_forwarding"`
+	LLMQueueEnabled          bool `json:"llm_queue_enabled"`
+	LLMIncludeChannelMessages bool `json:"llm_include_channel_messages"`
 }
 
 func registerAdminRuntimeSettingsRoutes(r gin.IRouter, store *store, settings *runtimeSettingsCache) {
@@ -32,6 +36,14 @@ func registerAdminRuntimeSettingsRoutes(r gin.IRouter, store *store, settings *r
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+		if _, err := store.SetBoolRuntimeSetting(runtimeSettingLLMQueueEnabled, req.LLMQueueEnabled, llmQueueEnabledLabel); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if _, err := store.SetBoolRuntimeSetting(runtimeSettingLLMQueueIncludeChannel, req.LLMIncludeChannelMessages, llmIncludeChannelLabel); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		if settings != nil {
 			if err := settings.Reload(store); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -48,5 +60,9 @@ func registerAdminRuntimeSettingsRoutes(r gin.IRouter, store *store, settings *r
 }
 
 func runtimeSettingsDTO(settings runtimeSettingsSnapshot) gin.H {
-	return gin.H{"allow_encrypted_forwarding": settings.AllowEncryptedForwarding}
+	return gin.H{
+		"allow_encrypted_forwarding":    settings.AllowEncryptedForwarding,
+		"llm_queue_enabled":             settings.LLMQueueEnabled,
+		"llm_include_channel_messages":  settings.LLMIncludeChannel,
+	}
 }

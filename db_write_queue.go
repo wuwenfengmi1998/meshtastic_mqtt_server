@@ -51,6 +51,10 @@ func (q *dbWriteQueue) EnqueueRecord(record map[string]any, clientInfo mqttClien
 			}})
 			return
 		}
+		// 频道消息同时也写入 LLM 队列（如果启用的话）
+		q.enqueue(dbWriteJob{typeName: "llm_channel_message", from: record["from"], run: func() error {
+			return enqueueChannelMessageToLLM(q.store, record)
+		}})
 		q.enqueue(dbWriteJob{typeName: "text_message", from: record["from"], run: func() error {
 			return q.store.InsertTextMessage(record, clientInfo)
 		}})
