@@ -75,12 +75,12 @@ func (s *store) EnsureDefaultLLMProvider() error {
 	}
 	// 创建默认配置
 	defaultConfig := &llmProviderRecord{
-		Name:               "default",
-		Active:             true,
-		APIKey:             "",
-		BaseURL:            "https://ark.cn-beijing.volces.com/api/v3",
-		Model:              "",
-		Timeout:            120,
+		Name:                "default",
+		Active:              true,
+		APIKey:              "",
+		BaseURL:             "https://ark.cn-beijing.volces.com/api/v3",
+		Model:               "",
+		Timeout:             120,
 		ContextWindowTokens: 262144,
 	}
 	return s.CreateLLMProvider(defaultConfig)
@@ -139,6 +139,60 @@ func (s *store) EnsureDefaultLLMToolRouter() error {
 	return s.CreateLLMToolRouter(defaultConfig)
 }
 
+// ============================================
+// LLM Primary Config (llm_primary_config) - 主 AI 回复配置
+// ============================================
+
+// GetLLMPrimaryConfig 获取当前激活的主 AI 回复配置
+func (s *store) GetLLMPrimaryConfig() (*llmPrimaryConfigRecord, error) {
+	var record llmPrimaryConfigRecord
+	// 默认取第一条记录（ID 最小的），因为通常只需要一个配置
+	if err := s.db.Order("id ASC").First(&record).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("get llm primary config: %w", err)
+	}
+	return &record, nil
+}
+
+// CreateLLMPrimaryConfig 创建主 AI 回复配置
+func (s *store) CreateLLMPrimaryConfig(record *llmPrimaryConfigRecord) error {
+	if err := s.db.Create(record).Error; err != nil {
+		return fmt.Errorf("create llm primary config: %w", err)
+	}
+	return nil
+}
+
+// UpdateLLMPrimaryConfig 更新主 AI 回复配置
+func (s *store) UpdateLLMPrimaryConfig(id uint64, updates map[string]any) error {
+	if err := s.db.Model(&llmPrimaryConfigRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return fmt.Errorf("update llm primary config %d: %w", id, err)
+	}
+	return nil
+}
+
+// EnsureDefaultLLMPrimaryConfig 确保存在默认主 AI 回复配置
+func (s *store) EnsureDefaultLLMPrimaryConfig() error {
+	_, err := s.GetLLMPrimaryConfig()
+	if err == nil {
+		return nil // 已存在
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	// 创建默认配置
+	defaultConfig := &llmPrimaryConfigRecord{
+		Enabled:      false,
+		ProviderName: "",
+		Timeout:      120,
+		MaxTokens:    1024,
+		SystemPrompt: "你是一个 Meshtastic 网络助手。请简洁回答用户问题。\n回答要简短清晰，适合在低带宽无线电环境传输。每次回复限制在200 bytes以内。",
+		EnableTool:   false,
+	}
+	return s.CreateLLMPrimaryConfig(defaultConfig)
+}
+
 // LLMMessageQueueInput 是添加 LLM 队列消息的输入
 type LLMMessageQueueInput struct {
 	BotID       uint64 // 0 表示频道消息
@@ -179,12 +233,24 @@ func (s *store) EnqueueLLMMessage(input LLMMessageQueueInput) (*llmMessageQueueR
 		return nil, fmt.Errorf("text is required")
 	}
 
-	// 检查是否存在重复消息：相同 bot_id + packet_id 且未删除
+	// 检查是否存在重复消息
+	// packet_id > 0: 用 bot_id + packet_id 去重（频道消息）
+	// packet_id = 0: 用 bot_id + from_node_id + text 去重（私聊消息，可能没有 packet_id）
+	// 只排除 pending/processing 状态的消息，允许 error 状态的消息重新入队
 	var existing llmMessageQueueRecord
-	err = s.db.Where("bot_id = ? AND packet_id = ? AND deleted_at IS NULL", input.BotID, input.PacketID).
-		Take(&existing).Error
+	if input.PacketID > 0 {
+		// 频道消息：用 bot_id + packet_id 去重
+		err = s.db.Where("bot_id = ? AND packet_id = ? AND deleted_at IS NULL AND status IN (?, ?)",
+			input.BotID, input.PacketID, llmMessageStatusPending, llmMessageStatusProcessing).
+			Take(&existing).Error
+	} else {
+		// 私聊消息：用 bot_id + from_node_id + text 去重（避免同一人连续发相同内容被拒绝）
+		err = s.db.Where("bot_id = ? AND from_node_id = ? AND text = ? AND deleted_at IS NULL AND status IN (?, ?)",
+			input.BotID, input.FromNodeID, input.Text, llmMessageStatusPending, llmMessageStatusProcessing).
+			Take(&existing).Error
+	}
 	if err == nil {
-		// 重复消息，直接返回已存在的
+		// 存在正在处理或待处理的相同消息，直接返回
 		return &existing, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -377,15 +443,16 @@ func enqueueChannelMessageToLLM(s *store, record map[string]any) error {
 	}
 
 	// 查询所有启用了 LLM 队列且包含频道消息的机器人
+	// SQLite 中 numeric 布尔值用 1/0 存储，必须用整数查询
 	var bots []botNodeRecord
-	err = s.db.Where("llm_queue_enabled = ? AND llm_include_channel_messages = ?", true, true).Find(&bots).Error
+	err = s.db.Where("llm_queue_enabled = ? AND llm_include_channel_messages = ?", 1, 1).Find(&bots).Error
 	if err != nil {
 		return fmt.Errorf("query bots for channel message enqueue: %w", err)
 	}
 
 	// 为每个符合条件的机器人创建一条队列记录
 	for _, bot := range bots {
-		_, _ = s.EnqueueLLMMessage(LLMMessageQueueInput{
+		_, err = s.EnqueueLLMMessage(LLMMessageQueueInput{
 			BotID:       bot.ID,
 			BotNodeID:   bot.NodeID,
 			BotNodeNum:  bot.NodeNum,
@@ -399,6 +466,15 @@ func enqueueChannelMessageToLLM(s *store, record map[string]any) error {
 			Topic:       topic,
 			ContentJSON: contentPtr,
 		})
+		if err != nil {
+			printJSON(map[string]any{
+				"event":  "llm_queue_enqueue_failed",
+				"bot_id": bot.ID,
+				"from":   fromNodeID,
+				"text":   text,
+				"error":  err.Error(),
+			})
+		}
 	}
 
 	return nil

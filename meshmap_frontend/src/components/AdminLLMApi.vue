@@ -5,10 +5,12 @@ import {
   deleteLLMProvider,
   getLLMProviders,
   getLLMToolRouter,
+  getLLMPrimaryConfig,
   updateLLMProvider,
   updateLLMToolRouter,
+  updateLLMPrimaryConfig,
 } from '../api'
-import type { LLMPlatformRouter, LLMProvider } from '../types'
+import type { LLMPlatformRouter, LLMProvider, LLMPrimaryConfig } from '../types'
 
 const loading = ref(false)
 const error = ref('')
@@ -42,6 +44,19 @@ const toolRouterForm = ref({
   system_prompt: '',
 })
 
+// Primary AI Config 相关 - 主 AI 回复配置
+const primaryConfig = ref<LLMPrimaryConfig | null>(null)
+const editingPrimaryConfig = ref(false)
+
+const primaryConfigForm = ref({
+  enabled: false,
+  provider_name: '',
+  timeout: 120,
+  max_tokens: 1024,
+  system_prompt: '',
+  enable_tool: false,
+})
+
 const activeProviders = computed(() => providers.value.filter((p) => p.active))
 
 function clearSuccess() {
@@ -70,6 +85,16 @@ async function loadToolRouter() {
   } catch (err) {
     // 如果不存在，使用默认值
     console.warn('Tool router config not found, using defaults')
+  }
+}
+
+async function loadPrimaryConfig() {
+  try {
+    const response = await getLLMPrimaryConfig()
+    primaryConfig.value = response.item
+  } catch (err) {
+    // 如果不存在，使用默认值
+    console.warn('Primary AI config not found, using defaults')
   }
 }
 
@@ -178,9 +203,40 @@ async function saveToolRouter() {
   }
 }
 
+function openEditPrimaryConfig() {
+  if (primaryConfig.value) {
+    primaryConfigForm.value = {
+      enabled: primaryConfig.value.enabled,
+      provider_name: primaryConfig.value.provider_name,
+      timeout: primaryConfig.value.timeout,
+      max_tokens: primaryConfig.value.max_tokens,
+      system_prompt: primaryConfig.value.system_prompt,
+      enable_tool: primaryConfig.value.enable_tool,
+    }
+  }
+  editingPrimaryConfig.value = true
+}
+
+function closePrimaryConfigForm() {
+  editingPrimaryConfig.value = false
+}
+
+async function savePrimaryConfig() {
+  try {
+    await updateLLMPrimaryConfig(primaryConfigForm.value)
+    success.value = '更新成功'
+    clearSuccess()
+    closePrimaryConfigForm()
+    await loadPrimaryConfig()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
 onMounted(() => {
   loadProviders()
   loadToolRouter()
+  loadPrimaryConfig()
 })
 </script>
 
@@ -327,6 +383,101 @@ onMounted(() => {
 
       <div v-else class="empty-state">
         <p>暂无工具路由配置，点击上方按钮进行配置。</p>
+      </div>
+    </div>
+
+    <!-- Primary AI Config 配置 - 主 AI 回复配置 -->
+    <div class="admin-section">
+      <div class="section-header">
+        <div>
+          <h3>主 AI 回复配置</h3>
+          <p class="section-desc">配置机器人自动回复消息的核心 AI 设置。</p>
+        </div>
+        <button v-if="!editingPrimaryConfig" class="admin-button" @click="openEditPrimaryConfig">编辑配置</button>
+      </div>
+
+      <div v-if="editingPrimaryConfig" class="tool-router-form">
+        <div class="form-group">
+          <label>
+            <input type="checkbox" v-model="primaryConfigForm.enabled" />
+            启用 AI 自动回复
+          </label>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>使用的 AI 配置</label>
+            <select v-model="primaryConfigForm.provider_name" class="form-input">
+              <option value="">请选择</option>
+              <option v-for="p in activeProviders" :key="p.name" :value="p.name">{{ p.name }}</option>
+            </select>
+            <p class="form-hint">选择用于自动回复消息的 AI 提供商配置</p>
+          </div>
+          <div class="form-group">
+            <label>是否启用工具调用</label>
+            <select v-model="primaryConfigForm.enable_tool" class="form-input">
+              <option :value="false">不启用</option>
+              <option :value="true">启用</option>
+            </select>
+            <p class="form-hint">选择是否让 AI 在回复中调用工具（如计算器等）</p>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>超时时间（秒）</label>
+            <input type="number" v-model.number="primaryConfigForm.timeout" class="form-input" min="1" />
+          </div>
+          <div class="form-group">
+            <label>最大 Token 数</label>
+            <input type="number" v-model.number="primaryConfigForm.max_tokens" class="form-input" min="1" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>系统提示词</label>
+          <textarea v-model="primaryConfigForm.system_prompt" class="form-textarea" rows="6"></textarea>
+          <p class="form-hint">用于指导 AI 如何回复用户消息的系统提示词</p>
+        </div>
+
+        <div class="form-actions">
+          <button class="admin-button admin-button-secondary" @click="closePrimaryConfigForm">取消</button>
+          <button class="admin-button" @click="savePrimaryConfig">保存</button>
+        </div>
+      </div>
+
+      <div v-else-if="primaryConfig" class="tool-router-display">
+        <div class="router-status">
+          <span class="status-badge" :class="{ active: primaryConfig.enabled, inactive: !primaryConfig.enabled }">
+            {{ primaryConfig.enabled ? '已启用' : '已停用' }}
+          </span>
+        </div>
+        <div class="router-details">
+          <div class="detail-row">
+            <span class="detail-label">使用的 AI 配置</span>
+            <span class="detail-value">{{ primaryConfig.provider_name || '未设置' }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">超时时间</span>
+            <span class="detail-value">{{ primaryConfig.timeout }} 秒</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">最大 Token 数</span>
+            <span class="detail-value">{{ primaryConfig.max_tokens }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">工具调用</span>
+            <span class="detail-value">{{ primaryConfig.enable_tool ? '已启用' : '未启用' }}</span>
+          </div>
+          <div class="detail-row full-width">
+            <span class="detail-label">系统提示词</span>
+            <pre class="detail-value system-prompt">{{ primaryConfig.system_prompt }}</pre>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="empty-state">
+        <p>暂无主 AI 回复配置，点击上方按钮进行配置。</p>
       </div>
     </div>
 

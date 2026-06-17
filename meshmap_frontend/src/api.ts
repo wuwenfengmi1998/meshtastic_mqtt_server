@@ -54,6 +54,8 @@ import type {
   LLMProviderResponse,
   LLMPlatformRouterPayload,
   LLMPlatformRouterResponse,
+  LLMPrimaryConfigPayload,
+  LLMPrimaryConfigResponse,
 } from './types'
 
 async function requestJSON<T>(path: string, init?: RequestInit): Promise<T> {
@@ -504,5 +506,14 @@ export function updateLLMToolRouter(payload: Partial<LLMPlatformRouterPayload>):
   return putJSON<LLMPlatformRouterResponse>('/api/admin/llm/tool-router', payload)
 }
 
+// LLM Primary Config API - 主 AI 回复配置
+export function getLLMPrimaryConfig(): Promise<LLMPrimaryConfigResponse> {
+  return getJSON<LLMPrimaryConfigResponse>('/api/admin/llm/primary-config')
+}
+
+export function updateLLMPrimaryConfig(payload: Partial<LLMPrimaryConfigPayload>): Promise<LLMPrimaryConfigResponse> {
+  return putJSON<LLMPrimaryConfigResponse>('/api/admin/llm/primary-config', payload)
+}
+
 // 静默使用未导出类型，避免 TS6133（未使用的导入）。
-export type { LLMMessage, LLMMessageStatus, LLMProvider, LLMPlatformRouter } from './types'
+export type { LLMMessage, LLMMessageStatus, LLMProvider, LLMPlatformRouter, LLMPrimaryConfig } from './types'

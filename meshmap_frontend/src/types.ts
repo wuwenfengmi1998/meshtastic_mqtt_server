@@ -668,3 +668,29 @@ export interface LLMPlatformRouterPayload {
 export interface LLMPlatformRouterResponse {
   item: LLMPlatformRouter
 }
+
+// LLM Primary Config 相关类型 - 主 AI 回复配置
+export interface LLMPrimaryConfig {
+  id: number
+  enabled: boolean
+  provider_name: string
+  timeout: number
+  max_tokens: number
+  system_prompt: string
+  enable_tool: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface LLMPrimaryConfigPayload {
+  enabled: boolean
+  provider_name: string
+  timeout: number
+  max_tokens: number
+  system_prompt: string
+  enable_tool: boolean
+}
+
+export interface LLMPrimaryConfigResponse {
+  item: LLMPrimaryConfig
+}

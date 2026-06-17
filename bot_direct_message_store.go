@@ -294,7 +294,7 @@ func insertInboundBotDirectMessage(s *store, record map[string]any, clientInfo m
 	longName := nullableString(record["long_name"])
 	shortName := nullableString(record["short_name"])
 	channelID := nullableString(record["channel_id"])
-	_, _ = s.EnqueueLLMMessage(LLMMessageQueueInput{
+	_, err = s.EnqueueLLMMessage(LLMMessageQueueInput{
 		BotID:       bot.ID,
 		BotNodeID:   bot.NodeID,
 		BotNodeNum:  bot.NodeNum,
@@ -308,6 +308,15 @@ func insertInboundBotDirectMessage(s *store, record map[string]any, clientInfo m
 		Topic:       topic,
 		ContentJSON: contentPtr,
 	})
+	if err != nil {
+		printJSON(map[string]any{
+			"event":   "llm_queue_enqueue_failed",
+			"bot_id":  bot.ID,
+			"from":    peerNodeID,
+			"text":    text,
+			"error":   err.Error(),
+		})
+	}
 
 	return nil
 }

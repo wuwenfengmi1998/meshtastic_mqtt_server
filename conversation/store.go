@@ -88,14 +88,10 @@ func (s *Store) Get(id string) (*message.Conversation, error) {
 func (s *Store) GetOrCreateForBot(botID uint64, botNodeID string, peerNodeID string) (*message.Conversation, error) {
 	// Try to find an existing conversation with this peer
 	convs, err := s.ListForBot(botID)
-	if err == nil {
-		for _, conv := range convs {
-			// Simple matching: use peer node ID in the future if needed
-			// For now, just use the most recent conversation
-			if conv.BotID == botID && len(conv.Messages) > 0 {
-				return s.Get(conv.ID)
-			}
-		}
+	if err == nil && len(convs) > 0 {
+		// Use the most recent conversation (List already sorts by UpdatedAt desc)
+		// Note: List returns convs with Messages = nil, so we need to reload
+		return s.Get(convs[0].ID)
 	}
 	// Create a new conversation
 	return s.Create(botID, botNodeID)

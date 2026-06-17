@@ -494,6 +494,23 @@ func (llmToolRouterRecord) TableName() string {
 	return "llm_tool_router"
 }
 
+// llmPrimaryConfigRecord 保存主 AI 回复的配置
+type llmPrimaryConfigRecord struct {
+	ID            uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	Enabled       bool      `gorm:"column:enabled;not null;index"`             // 是否启用 AI 回复
+	ProviderName  string    `gorm:"column:provider_name;size:64;not null"`     // 使用的 LLM 提供商名称（关联 llm_providers.name）
+	Timeout       int       `gorm:"column:timeout;not null;default:120"`       // 请求超时时间（秒）
+	MaxTokens     int       `gorm:"column:max_tokens;not null;default:1024"`   // 回复最大 token 数
+	SystemPrompt  string    `gorm:"column:system_prompt;type:text;not null"`   // 默认系统提示词
+	EnableTool    bool      `gorm:"column:enable_tool;not null;default:false"` // 是否启用工具调用
+	CreatedAt     time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt     time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (llmPrimaryConfigRecord) TableName() string {
+	return "llm_primary_config"
+}
+
 type positionRecord struct {
 	AppendPacketFields        `gorm:"embedded"`
 	MQTTClientRecordFields    `gorm:"embedded"`
@@ -627,6 +644,7 @@ func (s *store) migrate() error {
 			{label: "llm_message_queue", model: &llmMessageQueueRecord{}},
 			{label: "llm_providers", model: &llmProviderRecord{}},
 			{label: "llm_tool_router", model: &llmToolRouterRecord{}},
+			{label: "llm_primary_config", model: &llmPrimaryConfigRecord{}},
 			{label: "nodeinfo", model: &nodeInfoRecord{}},
 			{label: "map_report", model: &mapReportRecord{}},
 			{label: "text_message", model: &textMessageRecord{}},
@@ -671,6 +689,9 @@ func (s *store) migrate() error {
 			return err
 		}
 		if err := txStore.EnsureDefaultLLMToolRouter(); err != nil {
+			return err
+		}
+		if err := txStore.EnsureDefaultLLMPrimaryConfig(); err != nil {
 			return err
 		}
 		return nil
@@ -723,6 +744,12 @@ func migrateBotNodePSK(tx *gorm.DB, migrator gorm.Migrator, driver string) error
 	if !migrator.HasColumn(&botNodeRecord{}, "LLMIncludeChannelMessages") {
 		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN llm_include_channel_messages numeric NOT NULL DEFAULT 0").Error; err != nil {
 			return fmt.Errorf("migrate bot_nodes llm_include_channel_messages column: %w", err)
+		}
+	}
+	// 迁移 LLM 消息队列 reply 列
+	if migrator.HasTable(&llmMessageQueueRecord{}) && !migrator.HasColumn(&llmMessageQueueRecord{}, "Reply") {
+		if err := tx.Exec("ALTER TABLE llm_message_queue ADD COLUMN reply text").Error; err != nil {
+			return fmt.Errorf("migrate llm_message_queue reply column: %w", err)
 		}
 	}
 	return nil

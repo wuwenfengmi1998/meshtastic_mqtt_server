@@ -31,6 +31,10 @@ func registerAdminLLMRoutes(r *gin.RouterGroup, store *store) {
 		// LLM Tool Router
 		group.GET("/tool-router", handleGetLLMToolRouter(store))
 		group.PUT("/tool-router", handleUpdateLLMToolRouter(store))
+
+		// LLM Primary Config - 主 AI 回复配置
+		group.GET("/primary-config", handleGetLLMPrimaryConfig(store))
+		group.PUT("/primary-config", handleUpdateLLMPrimaryConfig(store))
 	}
 }
 
@@ -493,5 +497,132 @@ func llmToolRouterDTO(row llmToolRouterRecord) map[string]any {
 		"system_prompt": row.SystemPrompt,
 		"created_at":    row.CreatedAt,
 		"updated_at":    row.UpdatedAt,
+	}
+}
+
+// ============================================
+// LLM Primary Config Handlers
+// ============================================
+
+func handleGetLLMPrimaryConfig(store *store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		record, err := store.GetLLMPrimaryConfig()
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "primary config not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"item": llmPrimaryConfigDTO(*record)})
+	}
+}
+
+func handleUpdateLLMPrimaryConfig(store *store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		record, err := store.GetLLMPrimaryConfig()
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		var req struct {
+			Enabled      *bool   `json:"enabled"`
+			ProviderName *string `json:"provider_name"`
+			Timeout      *int    `json:"timeout"`
+			MaxTokens    *int    `json:"max_tokens"`
+			SystemPrompt *string `json:"system_prompt"`
+			EnableTool   *bool   `json:"enable_tool"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+			return
+		}
+
+		updates := make(map[string]any)
+		if req.Enabled != nil {
+			updates["enabled"] = *req.Enabled
+		}
+		if req.ProviderName != nil {
+			updates["provider_name"] = *req.ProviderName
+		}
+		if req.Timeout != nil {
+			updates["timeout"] = *req.Timeout
+		}
+		if req.MaxTokens != nil {
+			updates["max_tokens"] = *req.MaxTokens
+		}
+		if req.SystemPrompt != nil {
+			updates["system_prompt"] = *req.SystemPrompt
+		}
+		if req.EnableTool != nil {
+			updates["enable_tool"] = *req.EnableTool
+		}
+
+		if len(updates) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no fields to update"})
+			return
+		}
+
+		if record == nil {
+			// 创建新配置
+			newRecord := &llmPrimaryConfigRecord{
+				Enabled:      req.Enabled != nil && *req.Enabled,
+				ProviderName: "",
+				Timeout:      120,
+				MaxTokens:    1024,
+				SystemPrompt: "",
+				EnableTool:   false,
+			}
+			if req.ProviderName != nil {
+				newRecord.ProviderName = *req.ProviderName
+			}
+			if req.Timeout != nil {
+				newRecord.Timeout = *req.Timeout
+			}
+			if req.MaxTokens != nil {
+				newRecord.MaxTokens = *req.MaxTokens
+			}
+			if req.SystemPrompt != nil {
+				newRecord.SystemPrompt = *req.SystemPrompt
+			}
+			if req.EnableTool != nil {
+				newRecord.EnableTool = *req.EnableTool
+			}
+			if err := store.CreateLLMPrimaryConfig(newRecord); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			record = newRecord
+		} else {
+			// 更新现有配置
+			if err := store.UpdateLLMPrimaryConfig(record.ID, updates); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			record, err = store.GetLLMPrimaryConfig()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "item": llmPrimaryConfigDTO(*record)})
+	}
+}
+
+func llmPrimaryConfigDTO(row llmPrimaryConfigRecord) map[string]any {
+	return map[string]any{
+		"id":             row.ID,
+		"enabled":        row.Enabled,
+		"provider_name":  row.ProviderName,
+		"timeout":        row.Timeout,
+		"max_tokens":     row.MaxTokens,
+		"system_prompt":  row.SystemPrompt,
+		"enable_tool":    row.EnableTool,
+		"created_at":     row.CreatedAt,
+		"updated_at":     row.UpdatedAt,
 	}
 }
