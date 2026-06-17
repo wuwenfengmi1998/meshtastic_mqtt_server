@@ -17,6 +17,8 @@ type config struct {
 	Meshtastic meshtasticConfig `yaml:"meshtastic"`
 	Database   databaseConfig   `yaml:"database"`
 	Web        webConfig        `yaml:"web"`
+	AI         aiConfig         `yaml:"ai"`
+	DataDir    string           `yaml:"data_dir"`
 	key        []byte
 }
 
@@ -69,11 +71,21 @@ type webAdminConfig struct {
 	SessionSecure bool   `yaml:"session_secure"`
 }
 
+type aiConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
 type rawConfig struct {
 	MQTT       *rawMQTTConfig       `yaml:"mqtt"`
 	Meshtastic *rawMeshtasticConfig `yaml:"meshtastic"`
 	Database   *rawDatabaseConfig   `yaml:"database"`
 	Web        *rawWebConfig        `yaml:"web"`
+	AI         *rawAIConfig         `yaml:"ai"`
+	DataDir    *string              `yaml:"data_dir"`
+}
+
+type rawAIConfig struct {
+	Enabled *bool `yaml:"enabled"`
 }
 
 type rawMQTTConfig struct {
@@ -161,6 +173,10 @@ func defaultConfig() *config {
 				SessionSecure: false,
 			},
 		},
+		AI: aiConfig{
+			Enabled: false,
+		},
+		DataDir: defaultDataDir(),
 	}
 }
 
@@ -235,6 +251,17 @@ func defaultSQLitePathForGOOS(goos string) string {
 		return filepath.Join(".", "win", "etc", "mesh_mqtt_go", "mesh_mqtt_go.db")
 	}
 	return filepath.Join(string(filepath.Separator), "srv", "mesh_mqtt_go", "mesh_mqtt_go.db")
+}
+
+func defaultDataDir() string {
+	return defaultDataDirForGOOS(runtime.GOOS)
+}
+
+func defaultDataDirForGOOS(goos string) string {
+	if useRelativeDefaultPath(goos) {
+		return filepath.Join(".", "win", "var", "lib", "mesh_mqtt_go")
+	}
+	return filepath.Join(string(filepath.Separator), "var", "lib", "mesh_mqtt_go")
 }
 
 // loadConfig 加载配置文件；文件不存在时生成，字段缺失时自动补全并写回。
@@ -420,6 +447,22 @@ func normalizeConfig(raw rawConfig) (*config, bool) {
 				cfg.Web.Admin.SessionSecure = *raw.Web.Admin.SessionSecure
 			}
 		}
+	}
+
+	if raw.AI == nil {
+		changed = true
+	} else {
+		if raw.AI.Enabled == nil {
+			changed = true
+		} else {
+			cfg.AI.Enabled = *raw.AI.Enabled
+		}
+	}
+
+	if raw.DataDir == nil {
+		changed = true
+	} else {
+		cfg.DataDir = *raw.DataDir
 	}
 
 	return cfg, changed

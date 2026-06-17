@@ -14,6 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"meshtastic_mqtt_server/ai"
+	"meshtastic_mqtt_server/autoreply"
+	"meshtastic_mqtt_server/llm"
 	"meshtastic_mqtt_server/mqtpp"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
@@ -246,6 +249,60 @@ func run(cfg *config) error {
 		return err
 	}
 	defer forwardManager.StopAll()
+
+	// Initialize AI Service
+	var aiService *ai.Service
+	if cfg.AI.Enabled {
+		// Get LLM providers from database
+		llmProviders, err := store.ListLLMProviders(true)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load LLM providers: %v\n", err)
+		} else if len(llmProviders) > 0 {
+			// Convert database records to provider configs
+			providerConfigs := make([]llm.ProviderConfig, 0, len(llmProviders))
+			for _, p := range llmProviders {
+				providerConfigs = append(providerConfigs, llm.ProviderConfig{
+					Name:               p.Name,
+					Active:             p.Active,
+					APIKey:             p.APIKey,
+					BaseURL:            p.BaseURL,
+					Model:              p.Model,
+					Timeout:            p.Timeout,
+					ContextWindowTokens: p.ContextWindowTokens,
+				})
+			}
+
+			// Create bot sender adapter
+			botSenderAdapter := autoreply.NewBotServiceAdapter(
+				func(ctx context.Context, botID uint64, toNodeNum int64, text string) error {
+					_, err := botSender.SendText(ctx, botSendTextRequest{
+						BotID:       botID,
+						MessageType: "direct",
+						ToNodeNum:   &toNodeNum,
+						Text:        text,
+					})
+					return err
+				},
+			)
+
+			aiService, err = ai.NewService(ai.Config{
+				LLMProviders: providerConfigs,
+				DataDir:      cfg.DataDir,
+				Enabled:      cfg.AI.Enabled,
+			}, store.db, botSenderAdapter)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to initialize AI service: %v\n", err)
+			} else {
+				if err := aiService.Start(botCtx); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to start AI service: %v\n", err)
+				}
+				defer aiService.Stop()
+				printJSON(map[string]any{"event": "ai_service_started", "providers": len(providerConfigs)})
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: AI service is enabled but no LLM providers configured\n")
+		}
+	}
 
 	var httpServers []*http.Server
 	errCh := make(chan error, 2)

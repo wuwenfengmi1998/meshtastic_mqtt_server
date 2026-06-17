@@ -4,7 +4,8 @@
       "Bash(go build *)",
       "Bash(go test *)",
       "Bash(npx --no-install vue-tsc --noEmit)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Read(//c/Users/wuwen/Documents/project/aichat/**)"
     ]
   }
 }

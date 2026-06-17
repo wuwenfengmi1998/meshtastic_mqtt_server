@@ -63,13 +63,15 @@ func (s *store) DeleteLLMProvider(name string) error {
 }
 
 // EnsureDefaultLLMProvider 确保存在默认 LLM Provider 配置
+// 只有当数据库中完全没有任何 provider 配置时，才创建默认配置
 func (s *store) EnsureDefaultLLMProvider() error {
-	_, err := s.GetLLMProvider("default")
-	if err == nil {
-		return nil // 已存在
+	// 先检查是否已经有任何 provider 配置
+	providers, err := s.ListLLMProviders(true)
+	if err != nil {
+		return fmt.Errorf("list llm providers: %w", err)
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+	if len(providers) > 0 {
+		return nil // 已有配置，不创建默认
 	}
 	// 创建默认配置
 	defaultConfig := &llmProviderRecord{

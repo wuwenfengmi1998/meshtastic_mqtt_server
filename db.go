@@ -365,6 +365,7 @@ type llmMessageQueueRecord struct {
 	Topic       string     `gorm:"column:topic;not null"`
 	Status      string     `gorm:"column:status;not null;index"`
 	Error       string     `gorm:"column:error;type:text"`
+	Reply       string     `gorm:"column:reply;type:text"`
 	ReceivedAt  time.Time  `gorm:"column:received_at;not null;index"`
 	ProcessedAt *time.Time `gorm:"column:processed_at;index"`
 	DeletedAt   *time.Time `gorm:"column:deleted_at;index"`
