@@ -18,17 +18,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// SystemPromptStore is the interface for getting the system prompt
-type SystemPromptStore interface {
+// ToolConfigStore is the interface for getting tool configuration
+type ToolConfigStore interface {
 	GetLLMPrimaryConfigSystemPrompt() (string, error)
+	GetLLMPrimaryConfigEnableTool() (bool, error)
 }
 
 // Config holds the AI service configuration
 type Config struct {
-	LLMProviders      []llm.ProviderConfig
-	DataDir           string
-	Enabled           bool
-	SystemPromptStore SystemPromptStore
+	LLMProviders     []llm.ProviderConfig
+	DataDir          string
+	Enabled          bool
+	ToolConfigStore  ToolConfigStore
 }
 
 // Service manages all AI-related components
@@ -97,7 +98,7 @@ func NewService(cfg Config, db *gorm.DB, botSender autoreply.BotSender) (*Servic
 		convStore,
 		msgQueue,
 		botSender,
-		cfg.SystemPromptStore,
+		cfg.ToolConfigStore,
 	)
 
 	return &Service{

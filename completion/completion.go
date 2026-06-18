@@ -85,3 +85,31 @@ func CompleteText(ctx context.Context, profile *llm.Profile, systemPrompt string
 	}
 	return "", nil
 }
+
+// CompleteTextWithArkMessages completes a text prompt using already converted Ark messages
+// This is used when messages have already been converted (e.g. after tool loop)
+func CompleteTextWithArkMessages(ctx context.Context, profile *llm.Profile, arkMessages []*model.ChatCompletionMessage, maxTokens int) (string, error) {
+	if profile == nil || profile.Client == nil {
+		return "", fmt.Errorf("llm profile or client is nil")
+	}
+
+	req := model.CreateChatCompletionRequest{
+		Model:     profile.Config.Model,
+		Messages:  arkMessages,
+		MaxTokens: &maxTokens,
+	}
+
+	resp, err := profile.Client.CreateChatCompletion(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("text completion failed: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("no completion choices returned")
+	}
+
+	if resp.Choices[0].Message.Content != nil && resp.Choices[0].Message.Content.StringValue != nil {
+		return *resp.Choices[0].Message.Content.StringValue, nil
+	}
+	return "", nil
+}

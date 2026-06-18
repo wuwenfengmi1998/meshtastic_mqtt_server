@@ -18,7 +18,8 @@ import (
 const maxAgentToolIterations = 6
 
 // RunAgentToolLoop runs the agent tool calling loop
-func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, chatMessages []message.ChatMessage, manager *toolmanager.Manager, emit stream.EmitFunc) ([]*model.ChatCompletionMessage, error) {
+// systemPrompt is the primary system prompt from LLM config
+func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, systemPrompt string, chatMessages []message.ChatMessage, manager *toolmanager.Manager, emit stream.EmitFunc) ([]*model.ChatCompletionMessage, error) {
 	finalMessages, err := buildArkMessages(chatMessages)
 	if err != nil {
 		return nil, err
@@ -29,6 +30,16 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, c
 	}
 	tools := availableAgentTools(state, routerProfile, manager, emit)
 	if len(tools) == 0 {
+		// No tools available, add system prompt and return
+		if strings.TrimSpace(systemPrompt) != "" {
+			systemMessage := &model.ChatCompletionMessage{
+				Role: "system",
+				Content: &model.ChatCompletionMessageContent{
+					StringValue: &systemPrompt,
+				},
+			}
+			finalMessages = append([]*model.ChatCompletionMessage{systemMessage}, finalMessages...)
+		}
 		return finalMessages, nil
 	}
 
@@ -50,9 +61,25 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, c
 		emit(stream.Frame{Type: "trace", Tool: "agent_tools", Stage: "prepare", Status: "success", Message: "已准备可用工具", Data: map[string]any{"tools": availableNames, "tool_descriptions": toolDescriptions}})
 	}
 	if state == nil || state.cfg == nil {
+		// No tool router config, but we have tools - use primary system prompt
+		if strings.TrimSpace(systemPrompt) != "" {
+			systemMessage := &model.ChatCompletionMessage{
+				Role: "system",
+				Content: &model.ChatCompletionMessageContent{
+					StringValue: &systemPrompt,
+				},
+			}
+			finalMessages = append([]*model.ChatCompletionMessage{systemMessage}, finalMessages...)
+			decisionMessages = append([]*model.ChatCompletionMessage{systemMessage}, decisionMessages...)
+		}
 		return finalMessages, nil
 	}
-	if prompt := strings.TrimSpace(state.cfg.SystemPrompt); prompt != "" {
+	// Use tool router system prompt if available, otherwise fall back to primary system prompt
+	prompt := strings.TrimSpace(state.cfg.SystemPrompt)
+	if prompt == "" {
+		prompt = strings.TrimSpace(systemPrompt)
+	}
+	if prompt != "" {
 		systemMessage := &model.ChatCompletionMessage{
 			Role: "system",
 			Content: &model.ChatCompletionMessageContent{

@@ -14,6 +14,8 @@ import (
 	"meshtastic_mqtt_server/message"
 	"meshtastic_mqtt_server/toolmanager"
 	"meshtastic_mqtt_server/toolrouter"
+
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 const (
@@ -63,20 +65,21 @@ type BotSender interface {
 	SendChannelText(ctx context.Context, botID uint64, channelID string, text string) error
 }
 
-// SystemPromptStore is the interface for getting the system prompt
-type SystemPromptStore interface {
+// ToolConfigStore is the interface for getting tool configuration
+type ToolConfigStore interface {
 	GetLLMPrimaryConfigSystemPrompt() (string, error)
+	GetLLMPrimaryConfigEnableTool() (bool, error)
 }
 
 // Service manages automatic AI replies for bots
 type Service struct {
-	llmState          *llm.State
-	toolRouter        *toolrouter.State
-	toolMgr           *toolmanager.Manager
-	convStore         *conversation.Store
-	msgQueue          MessageQueue
-	botSender         BotSender
-	systemPromptStore SystemPromptStore
+	llmState         *llm.State
+	toolRouter       *toolrouter.State
+	toolMgr          *toolmanager.Manager
+	convStore        *conversation.Store
+	msgQueue         MessageQueue
+	botSender        BotSender
+	toolConfigStore  ToolConfigStore
 
 	running bool
 	mu      sync.Mutex
@@ -92,16 +95,16 @@ func NewService(
 	convStore *conversation.Store,
 	msgQueue MessageQueue,
 	botSender BotSender,
-	systemPromptStore SystemPromptStore,
+	toolConfigStore ToolConfigStore,
 ) *Service {
 	return &Service{
-		llmState:          llmState,
-		toolRouter:        toolRouter,
-		toolMgr:           toolMgr,
-		convStore:         convStore,
-		msgQueue:          msgQueue,
-		botSender:         botSender,
-		systemPromptStore: systemPromptStore,
+		llmState:         llmState,
+		toolRouter:       toolRouter,
+		toolMgr:          toolMgr,
+		convStore:        convStore,
+		msgQueue:         msgQueue,
+		botSender:        botSender,
+		toolConfigStore:  toolConfigStore,
 	}
 }
 
@@ -253,22 +256,61 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 		return
 	}
 
-	// Get system prompt from primary config
+	// Get system prompt and tool enable flag from primary config
 	var systemPrompt string
-	if s.systemPromptStore != nil {
-		systemPrompt, err = s.systemPromptStore.GetLLMPrimaryConfigSystemPrompt()
+	enableTool := false
+	if s.toolConfigStore != nil {
+		systemPrompt, err = s.toolConfigStore.GetLLMPrimaryConfigSystemPrompt()
 		if err != nil {
 			printJSON(map[string]any{"event": "llm_system_prompt_warning", "msg_id": msg.ID, "error": err.Error()})
 		}
+		enableTool, err = s.toolConfigStore.GetLLMPrimaryConfigEnableTool()
+		if err != nil {
+			printJSON(map[string]any{"event": "llm_enable_tool_warning", "msg_id": msg.ID, "error": err.Error()})
+		}
 	}
 
-	// Run the tool loop to get augmented messages
-	augmentedMessages, err := toolrouter.RunAgentToolLoop(procCtx, s.toolRouter, profile, conv.Messages, s.toolMgr, nil)
-	_ = augmentedMessages // We'll use this in the future with proper tool support
+	// Print tool manager status for debugging
+	toolCount := 0
+	if s.toolMgr != nil {
+		tools := s.toolMgr.Tools()
+		toolCount = len(tools)
+		toolNames := make([]string, 0, toolCount)
+		for _, t := range tools {
+			toolNames = append(toolNames, t.Name())
+		}
+		printJSON(map[string]any{
+			"event":      "llm_tool_manager_status",
+			"msg_id":     msg.ID,
+			"tool_count":  toolCount,
+			"tool_names":  toolNames,
+			"enable_tool": enableTool,
+		})
+	}
 
-	// For now, use simple completion since we don't have tools registered yet
-	printJSON(map[string]any{"event": "llm_process_completion_start", "msg_id": msg.ID, "has_system_prompt": systemPrompt != ""})
-	reply, err := completion.CompleteText(procCtx, profile, systemPrompt, conv.Messages, 512)
+	// Run the tool loop to get augmented messages - pass system prompt to tool router
+	// Tool loop will handle system prompt and tool calling
+	var augmentedMessages []*model.ChatCompletionMessage
+	if enableTool && toolCount > 0 {
+		augmentedMessages, err = toolrouter.RunAgentToolLoop(procCtx, s.toolRouter, profile, systemPrompt, conv.Messages, s.toolMgr, nil)
+		if err != nil {
+			printJSON(map[string]any{"event": "llm_tool_loop_warning", "msg_id": msg.ID, "error": err.Error()})
+			// Continue with original messages if tool loop fails
+		}
+	}
+
+	printJSON(map[string]any{"event": "llm_process_completion_start", "msg_id": msg.ID, "has_system_prompt": systemPrompt != "", "augmented_messages": len(augmentedMessages)})
+
+	// Use augmented messages from tool loop (already includes system prompt and tool results)
+	// If augmented messages is empty or nil, fallback to original messages with system prompt
+	var reply string
+	if len(augmentedMessages) > 0 {
+		// Use augmented messages from tool loop (already converted to model.ChatCompletionMessage)
+		reply, err = completion.CompleteTextWithArkMessages(procCtx, profile, augmentedMessages, 512)
+	} else {
+		// Fallback to simple completion
+		reply, err = completion.CompleteText(procCtx, profile, systemPrompt, conv.Messages, 512)
+	}
 	if err != nil {
 		errMsg := fmt.Sprintf("LLM completion failed: %v", err)
 		printJSON(map[string]any{"event": "llm_process_failed", "msg_id": msg.ID, "step": "llm_completion", "error": errMsg})

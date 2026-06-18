@@ -18,17 +18,21 @@ type Manager struct {
 }
 
 // Load loads tools from the given directory
+// If directory doesn't exist or is empty, automatically loads all registered tools
 func Load(root string, options agenttool.LoadOptions) (*Manager, error) {
+	manager := &Manager{tools: map[string]agenttool.LoadedTool{}}
+
+	// Try to read directory
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		// Directory doesn't exist, create empty manager
-		if os.IsNotExist(err) {
-			return &Manager{tools: map[string]agenttool.LoadedTool{}}, nil
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to read tools directory: %w", err)
 		}
-		return nil, fmt.Errorf("failed to read tools directory: %w", err)
+		// Directory doesn't exist, continue to load all registered tools
+		entries = []os.DirEntry{}
 	}
 
-	manager := &Manager{tools: map[string]agenttool.LoadedTool{}}
+	// Load tools from directory if they exist
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -56,6 +60,34 @@ func Load(root string, options agenttool.LoadOptions) (*Manager, error) {
 		}
 		manager.tools[toolName] = tool
 		manager.order = append(manager.order, toolName)
+	}
+
+	// If no tools loaded from directory, automatically load all registered tools
+	if len(manager.tools) == 0 {
+		registeredTools := agenttool.Names()
+		for _, name := range registeredTools {
+			descriptor, ok := agenttool.Lookup(name)
+			if !ok {
+				continue
+			}
+			// Use empty path for tools that don't require configuration files
+			tool, err := descriptor.Load("", options)
+			if err != nil {
+				continue
+			}
+			if tool == nil {
+				continue
+			}
+			toolName := strings.ToLower(strings.TrimSpace(tool.Name()))
+			if toolName == "" {
+				toolName = name
+			}
+			if _, ok := manager.tools[toolName]; ok {
+				continue
+			}
+			manager.tools[toolName] = tool
+			manager.order = append(manager.order, toolName)
+		}
 	}
 	return manager, nil
 }

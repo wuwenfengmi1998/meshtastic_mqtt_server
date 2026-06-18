@@ -170,6 +170,18 @@ func (s *store) GetLLMPrimaryConfigSystemPrompt() (string, error) {
 	return record.SystemPrompt, nil
 }
 
+// GetLLMPrimaryConfigEnableTool 获取是否启用工具调用
+func (s *store) GetLLMPrimaryConfigEnableTool() (bool, error) {
+	record, err := s.GetLLMPrimaryConfig()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return record.EnableTool, nil
+}
+
 // CreateLLMPrimaryConfig 创建主 AI 回复配置
 func (s *store) CreateLLMPrimaryConfig(record *llmPrimaryConfigRecord) error {
 	if err := s.db.Create(record).Error; err != nil {
