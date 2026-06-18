@@ -1,4 +1,4 @@
-package main
+package help
 
 import (
 	"errors"
@@ -7,13 +7,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	"meshtastic_mqtt_server/internal/auth"
+	storepkg "meshtastic_mqtt_server/internal/store"
 )
 
 type helpContentRequest struct {
 	Markdown string `json:"markdown"`
 }
 
-func registerHelpRoutes(r gin.IRouter, store *store) {
+// RegisterPublicRoutes 把对外可见的 GET /help 挂到给定路由组下。
+func RegisterPublicRoutes(r gin.IRouter, store *storepkg.Store) {
 	r.GET("/help", func(c *gin.Context) {
 		item, err := latestHelpContentDTO(store)
 		if err != nil {
@@ -24,7 +28,8 @@ func registerHelpRoutes(r gin.IRouter, store *store) {
 	})
 }
 
-func registerAdminHelpRoutes(r gin.IRouter, store *store) {
+// RegisterAdminRoutes 注册管理员侧 /help、/help、/help/preview 这三条路由。
+func RegisterAdminRoutes(r gin.IRouter, store *storepkg.Store) {
 	r.GET("/help", func(c *gin.Context) {
 		item, err := latestHelpContentDTO(store)
 		if err != nil {
@@ -39,7 +44,7 @@ func registerAdminHelpRoutes(r gin.IRouter, store *store) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid help content request"})
 			return
 		}
-		claims := c.MustGet("admin_claims").(*sessionClaims)
+		claims := c.MustGet(auth.AdminClaimsKey).(*auth.SessionClaims)
 		row, err := store.InsertHelpContent(req.Markdown, claims.Username)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -58,7 +63,7 @@ func registerAdminHelpRoutes(r gin.IRouter, store *store) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid help preview request"})
 			return
 		}
-		html, err := renderHelpMarkdown(req.Markdown)
+		html, err := RenderMarkdown(req.Markdown)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -67,10 +72,10 @@ func registerAdminHelpRoutes(r gin.IRouter, store *store) {
 	})
 }
 
-func latestHelpContentDTO(store *store) (gin.H, error) {
+func latestHelpContentDTO(store *storepkg.Store) (gin.H, error) {
 	row, err := store.GetLatestHelpContent()
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return helpContentDTO(0, defaultHelpMarkdown, "", nil)
+		return helpContentDTO(0, storepkg.DefaultHelpMarkdown, "", nil)
 	}
 	if err != nil {
 		return nil, err
@@ -79,7 +84,7 @@ func latestHelpContentDTO(store *store) (gin.H, error) {
 }
 
 func helpContentDTO(id uint64, markdown, createdBy string, createdAt *time.Time) (gin.H, error) {
-	html, err := renderHelpMarkdown(markdown)
+	html, err := RenderMarkdown(markdown)
 	if err != nil {
 		return nil, err
 	}

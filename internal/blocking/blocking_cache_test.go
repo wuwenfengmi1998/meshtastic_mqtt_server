@@ -1,4 +1,4 @@
-package main
+package blocking
 
 import "testing"
 
@@ -27,9 +27,9 @@ func TestBlockingCacheLoadsEnabledRules(t *testing.T) {
 		t.Fatalf("CreateForbiddenWordBlocking(disabled) error = %v", err)
 	}
 
-	cache, err := newBlockingCache(st)
+	cache, err := New(st)
 	if err != nil {
-		t.Fatalf("newBlockingCache() error = %v", err)
+		t.Fatalf("New() error = %v", err)
 	}
 
 	if !cache.IsNodeBlocked("!12345678", nil) {
@@ -65,9 +65,9 @@ func TestBlockingCacheIPExactAndCIDR(t *testing.T) {
 	if _, err := st.CreateIPBlocking("2001:db8::/32", "docs", true); err != nil {
 		t.Fatalf("CreateIPBlocking(ipv6 cidr) error = %v", err)
 	}
-	cache, err := newBlockingCache(st)
+	cache, err := New(st)
 	if err != nil {
-		t.Fatalf("newBlockingCache() error = %v", err)
+		t.Fatalf("New() error = %v", err)
 	}
 
 	if !cache.IsIPBlocked("127.0.0.1") {
@@ -88,9 +88,9 @@ func TestBlockingCacheForbiddenWordCaseSensitivity(t *testing.T) {
 	if _, err := st.CreateForbiddenWordBlocking("Spam", "contains", true, "case-sensitive", true); err != nil {
 		t.Fatalf("CreateForbiddenWordBlocking(case-sensitive) error = %v", err)
 	}
-	cache, err := newBlockingCache(st)
+	cache, err := New(st)
 	if err != nil {
-		t.Fatalf("newBlockingCache() error = %v", err)
+		t.Fatalf("New() error = %v", err)
 	}
 
 	if _, ok := cache.FindForbiddenWord("lowercase spam"); ok {

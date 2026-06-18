@@ -1,4 +1,4 @@
-package main
+package help
 
 import (
 	"bytes"
@@ -9,7 +9,9 @@ import (
 	"github.com/yuin/goldmark/extension"
 )
 
-func renderHelpMarkdown(markdown string) (string, error) {
+// RenderMarkdown 把 GFM markdown 转成净化后的 HTML，供 admin 编辑器预览
+// 与 /help 路由直接渲染。
+func RenderMarkdown(markdown string) (string, error) {
 	var buf bytes.Buffer
 	md := goldmark.New(goldmark.WithExtensions(extension.GFM))
 	if err := md.Convert([]byte(markdown), &buf); err != nil {

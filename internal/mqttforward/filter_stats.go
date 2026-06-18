@@ -1,32 +1,32 @@
-package main
+package mqttforward
 
 import "sync/atomic"
 
-type meshtasticMessageStats struct {
+type Stats struct {
 	forwarded atomic.Int64
 	dropped   atomic.Int64
 }
 
-func (s *meshtasticMessageStats) IncForwarded() {
+func (s *Stats) IncForwarded() {
 	if s != nil {
 		s.forwarded.Add(1)
 	}
 }
 
-func (s *meshtasticMessageStats) IncDropped() {
+func (s *Stats) IncDropped() {
 	if s != nil {
 		s.dropped.Add(1)
 	}
 }
 
-func (s *meshtasticMessageStats) Forwarded() int64 {
+func (s *Stats) Forwarded() int64 {
 	if s == nil {
 		return 0
 	}
 	return s.forwarded.Load()
 }
 
-func (s *meshtasticMessageStats) Dropped() int64 {
+func (s *Stats) Dropped() int64 {
 	if s == nil {
 		return 0
 	}

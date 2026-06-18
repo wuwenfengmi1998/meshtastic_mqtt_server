@@ -1,4 +1,4 @@
-package main
+package blocking
 
 import (
 	"errors"
@@ -7,6 +7,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	storepkg "meshtastic_mqtt_server/internal/store"
+	"meshtastic_mqtt_server/internal/webutil"
 )
 
 type nodeBlockingRequest struct {
@@ -30,7 +33,7 @@ type forbiddenWordBlockingRequest struct {
 	Enabled       bool   `json:"enabled"`
 }
 
-func registerAdminBlockingRoutes(r gin.IRouter, store *store, blocking *blockingCache) {
+func RegisterRoutes(r gin.IRouter, store *storepkg.Store, blocking *Cache) {
 	reloadBlocking := func() error {
 		if blocking == nil {
 			return nil
@@ -39,17 +42,17 @@ func registerAdminBlockingRoutes(r gin.IRouter, store *store, blocking *blocking
 	}
 
 	r.GET("/blocking/nodes", func(c *gin.Context) {
-		opts, ok := parseListOptions(c)
+		opts, ok := webutil.ParseListOptions(c)
 		if !ok {
 			return
 		}
 		rows, err := store.ListNodeBlocking(opts)
 		if err != nil {
-			writeListResponse(c, rows, opts, err, nodeBlockingDTO)
+			webutil.WriteListResponse(c, rows, opts, err, nodeBlockingDTO)
 			return
 		}
 		total, err := store.CountNodeBlocking(opts)
-		writeListResponseWithTotal(c, rows, opts, total, err, nodeBlockingDTO)
+		webutil.WriteListResponseWithTotal(c, rows, opts, total, err, nodeBlockingDTO)
 	})
 	r.POST("/blocking/nodes", func(c *gin.Context) {
 		var req nodeBlockingRequest
@@ -82,17 +85,17 @@ func registerAdminBlockingRoutes(r gin.IRouter, store *store, blocking *blocking
 	})
 
 	r.GET("/blocking/ips", func(c *gin.Context) {
-		opts, ok := parseListOptions(c)
+		opts, ok := webutil.ParseListOptions(c)
 		if !ok {
 			return
 		}
 		rows, err := store.ListIPBlocking(opts)
 		if err != nil {
-			writeListResponse(c, rows, opts, err, ipBlockingDTO)
+			webutil.WriteListResponse(c, rows, opts, err, ipBlockingDTO)
 			return
 		}
 		total, err := store.CountIPBlocking(opts)
-		writeListResponseWithTotal(c, rows, opts, total, err, ipBlockingDTO)
+		webutil.WriteListResponseWithTotal(c, rows, opts, total, err, ipBlockingDTO)
 	})
 	r.POST("/blocking/ips", func(c *gin.Context) {
 		var req ipBlockingRequest
@@ -125,17 +128,17 @@ func registerAdminBlockingRoutes(r gin.IRouter, store *store, blocking *blocking
 	})
 
 	r.GET("/blocking/words", func(c *gin.Context) {
-		opts, ok := parseListOptions(c)
+		opts, ok := webutil.ParseListOptions(c)
 		if !ok {
 			return
 		}
 		rows, err := store.ListForbiddenWordBlocking(opts)
 		if err != nil {
-			writeListResponse(c, rows, opts, err, forbiddenWordBlockingDTO)
+			webutil.WriteListResponse(c, rows, opts, err, forbiddenWordBlockingDTO)
 			return
 		}
 		total, err := store.CountForbiddenWordBlocking(opts)
-		writeListResponseWithTotal(c, rows, opts, total, err, forbiddenWordBlockingDTO)
+		webutil.WriteListResponseWithTotal(c, rows, opts, total, err, forbiddenWordBlockingDTO)
 	})
 	r.POST("/blocking/words", func(c *gin.Context) {
 		var req forbiddenWordBlockingRequest
@@ -178,7 +181,7 @@ func parseBlockingID(c *gin.Context) (uint64, bool) {
 }
 
 func writeBlockingMutationResponse[T any](c *gin.Context, status int, row *T, err error, convert func(T) gin.H, afterSuccess func() error) {
-	if errors.Is(err, errBlockingAlreadyExists) {
+	if errors.Is(err, storepkg.ErrBlockingAlreadyExists) {
 		c.JSON(http.StatusConflict, gin.H{"error": "blocking rule already exists"})
 		return
 	}
@@ -217,14 +220,14 @@ func writeBlockingDeleteResponse(c *gin.Context, err error, afterSuccess func() 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-func nodeBlockingDTO(row nodeBlockingRecord) gin.H {
-	return gin.H{"id": row.ID, "node_id": row.NodeID, "node_num": ptrInt64(row.NodeNum), "reason": row.Reason, "enabled": row.Enabled, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
+func nodeBlockingDTO(row storepkg.NodeBlockingRecord) gin.H {
+	return gin.H{"id": row.ID, "node_id": row.NodeID, "node_num": webutil.PtrInt64(row.NodeNum), "reason": row.Reason, "enabled": row.Enabled, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
 }
 
-func ipBlockingDTO(row ipBlockingRecord) gin.H {
+func ipBlockingDTO(row storepkg.IPBlockingRecord) gin.H {
 	return gin.H{"id": row.ID, "ip_value": row.IPValue, "reason": row.Reason, "enabled": row.Enabled, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
 }
 
-func forbiddenWordBlockingDTO(row forbiddenWordBlockingRecord) gin.H {
+func forbiddenWordBlockingDTO(row storepkg.ForbiddenWordBlockingRecord) gin.H {
 	return gin.H{"id": row.ID, "word": row.Word, "match_type": row.MatchType, "case_sensitive": row.CaseSensitive, "reason": row.Reason, "enabled": row.Enabled, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
 }

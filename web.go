@@ -190,7 +190,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 			return
 		}
-		cookie, err := sessions.newCookie(*user)
+		cookie, err := sessions.NewCookie(*user)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -200,7 +200,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 		c.JSON(http.StatusOK, gin.H{"user": adminUserResponse(*user)})
 	})
 	r.POST("/logout", func(c *gin.Context) {
-		http.SetCookie(c.Writer, sessions.clearCookie())
+		http.SetCookie(c.Writer, sessions.ClearCookie())
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 

@@ -1,4 +1,4 @@
-package main
+package blocking
 
 import (
 	"fmt"
@@ -6,9 +6,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	storepkg "meshtastic_mqtt_server/internal/store"
 )
 
-type blockingCache struct {
+type Cache struct {
 	mu       sync.RWMutex
 	nodes    map[string]struct{}
 	nodeNums map[int64]struct{}
@@ -24,15 +26,15 @@ type forbiddenWordRule struct {
 	caseSensitive bool
 }
 
-func newBlockingCache(store *store) (*blockingCache, error) {
-	cache := &blockingCache{}
+func New(store *storepkg.Store) (*Cache, error) {
+	cache := &Cache{}
 	if err := cache.Reload(store); err != nil {
 		return nil, err
 	}
 	return cache, nil
 }
 
-func (c *blockingCache) Reload(store *store) error {
+func (c *Cache) Reload(store *storepkg.Store) error {
 	if store == nil {
 		return fmt.Errorf("store is required")
 	}
@@ -81,7 +83,7 @@ func (c *blockingCache) Reload(store *store) error {
 	words := make([]forbiddenWordRule, 0, len(wordRows))
 	for _, row := range wordRows {
 		word := strings.TrimSpace(row.Word)
-		if word == "" || row.MatchType != forbiddenWordMatchContains {
+		if word == "" || row.MatchType != storepkg.ForbiddenWordMatchContains {
 			continue
 		}
 		words = append(words, forbiddenWordRule{word: word, foldedWord: strings.ToLower(word), matchType: row.MatchType, caseSensitive: row.CaseSensitive})
@@ -97,7 +99,7 @@ func (c *blockingCache) Reload(store *store) error {
 	return nil
 }
 
-func (c *blockingCache) IsNodeBlocked(nodeID any, nodeNum any) bool {
+func (c *Cache) IsNodeBlocked(nodeID any, nodeNum any) bool {
 	if c == nil {
 		return false
 	}
@@ -118,7 +120,7 @@ func (c *blockingCache) IsNodeBlocked(nodeID any, nodeNum any) bool {
 	return false
 }
 
-func (c *blockingCache) IsIPBlocked(host string) bool {
+func (c *Cache) IsIPBlocked(host string) bool {
 	if c == nil {
 		return false
 	}
@@ -144,7 +146,7 @@ func (c *blockingCache) IsIPBlocked(host string) bool {
 	return false
 }
 
-func (c *blockingCache) FindForbiddenWord(text any) (string, bool) {
+func (c *Cache) FindForbiddenWord(text any) (string, bool) {
 	if c == nil {
 		return "", false
 	}
@@ -157,7 +159,7 @@ func (c *blockingCache) FindForbiddenWord(text any) (string, bool) {
 	defer c.mu.RUnlock()
 	foldedText := ""
 	for _, rule := range c.words {
-		if rule.matchType != forbiddenWordMatchContains {
+		if rule.matchType != storepkg.ForbiddenWordMatchContains {
 			continue
 		}
 		if rule.caseSensitive {

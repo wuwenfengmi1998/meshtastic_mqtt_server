@@ -1,9 +1,11 @@
-package main
+package runtimesettings
 
 import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	storepkg "meshtastic_mqtt_server/internal/store"
 )
 
 const allowEncryptedForwardingLabel = "Allow encrypted MQTT packets to be forwarded when they cannot be decrypted"
@@ -11,12 +13,13 @@ const llmQueueEnabledLabel = "Enable LLM message queue"
 const llmIncludeChannelLabel = "Include channel messages in LLM queue"
 
 type runtimeSettingsRequest struct {
-	AllowEncryptedForwarding bool `json:"allow_encrypted_forwarding"`
-	LLMQueueEnabled          bool `json:"llm_queue_enabled"`
+	AllowEncryptedForwarding  bool `json:"allow_encrypted_forwarding"`
+	LLMQueueEnabled           bool `json:"llm_queue_enabled"`
 	LLMIncludeChannelMessages bool `json:"llm_include_channel_messages"`
 }
 
-func registerAdminRuntimeSettingsRoutes(r gin.IRouter, store *store, settings *runtimeSettingsCache) {
+// RegisterRoutes 把 GET /runtime-settings 与 PUT /runtime-settings 挂到给定路由组下。
+func RegisterRoutes(r gin.IRouter, store *storepkg.Store, settings *Cache) {
 	r.GET("/runtime-settings", func(c *gin.Context) {
 		snapshot, err := store.GetRuntimeSettings()
 		if err != nil {
@@ -32,15 +35,15 @@ func registerAdminRuntimeSettingsRoutes(r gin.IRouter, store *store, settings *r
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid runtime settings request"})
 			return
 		}
-		if _, err := store.SetBoolRuntimeSetting(runtimeSettingAllowEncryptedForwarding, req.AllowEncryptedForwarding, allowEncryptedForwardingLabel); err != nil {
+		if _, err := store.SetBoolRuntimeSetting(storepkg.RuntimeSettingAllowEncryptedForwarding, req.AllowEncryptedForwarding, allowEncryptedForwardingLabel); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		if _, err := store.SetBoolRuntimeSetting(runtimeSettingLLMQueueEnabled, req.LLMQueueEnabled, llmQueueEnabledLabel); err != nil {
+		if _, err := store.SetBoolRuntimeSetting(storepkg.RuntimeSettingLLMQueueEnabled, req.LLMQueueEnabled, llmQueueEnabledLabel); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		if _, err := store.SetBoolRuntimeSetting(runtimeSettingLLMQueueIncludeChannel, req.LLMIncludeChannelMessages, llmIncludeChannelLabel); err != nil {
+		if _, err := store.SetBoolRuntimeSetting(storepkg.RuntimeSettingLLMQueueIncludeChannel, req.LLMIncludeChannelMessages, llmIncludeChannelLabel); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -59,10 +62,10 @@ func registerAdminRuntimeSettingsRoutes(r gin.IRouter, store *store, settings *r
 	})
 }
 
-func runtimeSettingsDTO(settings runtimeSettingsSnapshot) gin.H {
+func runtimeSettingsDTO(settings storepkg.RuntimeSettingsSnapshot) gin.H {
 	return gin.H{
-		"allow_encrypted_forwarding":    settings.AllowEncryptedForwarding,
-		"llm_queue_enabled":             settings.LLMQueueEnabled,
-		"llm_include_channel_messages":  settings.LLMIncludeChannel,
+		"allow_encrypted_forwarding":   settings.AllowEncryptedForwarding,
+		"llm_queue_enabled":            settings.LLMQueueEnabled,
+		"llm_include_channel_messages": settings.LLMIncludeChannel,
 	}
 }

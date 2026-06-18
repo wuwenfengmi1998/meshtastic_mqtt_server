@@ -1,6 +1,7 @@
-package main
+package mqttforward
 
 import (
+	storepkg "meshtastic_mqtt_server/internal/store"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -23,19 +24,19 @@ const (
 	mqttForwardLoopMaxEntries          = 10000
 )
 
-type mqttForwardReloader interface {
+type Reloader interface {
 	ReloadForwarder(id uint64) error
 	StopForwarder(id uint64)
-	Status() []mqttForwardRuntimeStatus
+	Status() []RuntimeStatus
 }
 
-type mqttForwardManager struct {
-	store   *store
+type Manager struct {
+	store   *storepkg.Store
 	mu      sync.Mutex
-	runners map[uint64]*mqttForwardRunner
+	runners map[uint64]*runner
 }
 
-type mqttForwardRuntimeStatus struct {
+type RuntimeStatus struct {
 	ForwarderID       uint64     `json:"forwarder_id"`
 	Running           bool       `json:"running"`
 	SourceConnected   bool       `json:"source_connected"`
@@ -46,8 +47,8 @@ type mqttForwardRuntimeStatus struct {
 	MessagesDropped   uint64     `json:"messages_dropped"`
 }
 
-type mqttForwardRunner struct {
-	config mqttForwarderConfig
+type runner struct {
+	config storepkg.MQTTForwarderConfig
 	ctx    context.Context
 	cancel context.CancelFunc
 	source pahomqtt.Client
@@ -63,11 +64,11 @@ type mqttForwardRunner struct {
 	loopCache         map[string]time.Time
 }
 
-func newMQTTForwardManager(store *store) *mqttForwardManager {
-	return &mqttForwardManager{store: store, runners: make(map[uint64]*mqttForwardRunner)}
+func NewManager(store *storepkg.Store) *Manager {
+	return &Manager{store: store, runners: make(map[uint64]*runner)}
 }
 
-func (m *mqttForwardManager) StartFromStore() error {
+func (m *Manager) StartFromStore() error {
 	configs, err := m.store.ListEnabledMQTTForwarderConfigs()
 	if err != nil {
 		return err
@@ -76,7 +77,7 @@ func (m *mqttForwardManager) StartFromStore() error {
 		if len(cfg.Topics) == 0 {
 			continue
 		}
-		runner := newMQTTForwardRunner(cfg)
+		runner := newRunner(cfg)
 		runner.Start()
 		m.mu.Lock()
 		m.runners[cfg.Forwarder.ID] = runner
@@ -85,7 +86,7 @@ func (m *mqttForwardManager) StartFromStore() error {
 	return nil
 }
 
-func (m *mqttForwardManager) ReloadForwarder(id uint64) error {
+func (m *Manager) ReloadForwarder(id uint64) error {
 	m.StopForwarder(id)
 	cfg, err := m.store.GetMQTTForwarderConfig(id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -97,7 +98,7 @@ func (m *mqttForwardManager) ReloadForwarder(id uint64) error {
 	if !cfg.Forwarder.Enabled || len(cfg.Topics) == 0 {
 		return nil
 	}
-	runner := newMQTTForwardRunner(*cfg)
+	runner := newRunner(*cfg)
 	runner.Start()
 	m.mu.Lock()
 	m.runners[id] = runner
@@ -105,7 +106,7 @@ func (m *mqttForwardManager) ReloadForwarder(id uint64) error {
 	return nil
 }
 
-func (m *mqttForwardManager) StopForwarder(id uint64) {
+func (m *Manager) StopForwarder(id uint64) {
 	m.mu.Lock()
 	runner := m.runners[id]
 	delete(m.runners, id)
@@ -115,9 +116,9 @@ func (m *mqttForwardManager) StopForwarder(id uint64) {
 	}
 }
 
-func (m *mqttForwardManager) StopAll() {
+func (m *Manager) StopAll() {
 	m.mu.Lock()
-	runners := make([]*mqttForwardRunner, 0, len(m.runners))
+	runners := make([]*runner, 0, len(m.runners))
 	for id, runner := range m.runners {
 		runners = append(runners, runner)
 		delete(m.runners, id)
@@ -128,14 +129,14 @@ func (m *mqttForwardManager) StopAll() {
 	}
 }
 
-func (m *mqttForwardManager) Status() []mqttForwardRuntimeStatus {
+func (m *Manager) Status() []RuntimeStatus {
 	m.mu.Lock()
-	runners := make([]*mqttForwardRunner, 0, len(m.runners))
+	runners := make([]*runner, 0, len(m.runners))
 	for _, runner := range m.runners {
 		runners = append(runners, runner)
 	}
 	m.mu.Unlock()
-	items := make([]mqttForwardRuntimeStatus, 0, len(runners))
+	items := make([]RuntimeStatus, 0, len(runners))
 	for _, runner := range runners {
 		items = append(items, runner.Status())
 	}
@@ -143,19 +144,19 @@ func (m *mqttForwardManager) Status() []mqttForwardRuntimeStatus {
 	return items
 }
 
-func newMQTTForwardRunner(config mqttForwarderConfig) *mqttForwardRunner {
+func newRunner(config storepkg.MQTTForwarderConfig) *runner {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &mqttForwardRunner{config: config, ctx: ctx, cancel: cancel, startedAt: time.Now(), loopCache: make(map[string]time.Time)}
+	return &runner{config: config, ctx: ctx, cancel: cancel, startedAt: time.Now(), loopCache: make(map[string]time.Time)}
 }
 
-func (r *mqttForwardRunner) Start() {
+func (r *runner) Start() {
 	r.source = r.newClient(true)
 	r.target = r.newClient(false)
 	r.connectClient(r.target, "target")
 	r.connectClient(r.source, "source")
 }
 
-func (r *mqttForwardRunner) Stop() {
+func (r *runner) Stop() {
 	r.cancel()
 	if r.source != nil && r.source.IsConnected() {
 		r.source.Disconnect(250)
@@ -165,11 +166,11 @@ func (r *mqttForwardRunner) Stop() {
 	}
 }
 
-func (r *mqttForwardRunner) Status() mqttForwardRuntimeStatus {
+func (r *runner) Status() RuntimeStatus {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	started := r.startedAt
-	return mqttForwardRuntimeStatus{
+	return RuntimeStatus{
 		ForwarderID:       r.config.Forwarder.ID,
 		Running:           true,
 		SourceConnected:   r.sourceConnected,
@@ -181,7 +182,7 @@ func (r *mqttForwardRunner) Status() mqttForwardRuntimeStatus {
 	}
 }
 
-func (r *mqttForwardRunner) newClient(source bool) pahomqtt.Client {
+func (r *runner) newClient(source bool) pahomqtt.Client {
 	forwarder := r.config.Forwarder
 	host, port, username, password, clientID, useTLS := forwarder.SourceHost, forwarder.SourcePort, forwarder.SourceUsername, forwarder.SourcePassword, forwarder.SourceClientID, forwarder.SourceTLS
 	role := "source"
@@ -222,7 +223,7 @@ func (r *mqttForwardRunner) newClient(source bool) pahomqtt.Client {
 	return pahomqtt.NewClient(opts)
 }
 
-func (r *mqttForwardRunner) connectClient(client pahomqtt.Client, label string) {
+func (r *runner) connectClient(client pahomqtt.Client, label string) {
 	token := client.Connect()
 	if !token.WaitTimeout(2 * time.Second) {
 		r.setError(label + " connect pending")
@@ -233,11 +234,11 @@ func (r *mqttForwardRunner) connectClient(client pahomqtt.Client, label string) 
 	}
 }
 
-func (r *mqttForwardRunner) subscribe(client pahomqtt.Client, source bool) {
+func (r *runner) subscribe(client pahomqtt.Client, source bool) {
 	for _, topic := range r.config.Topics {
 		filter := topic.Topic
 		if !source {
-			if topic.Direction != mqttForwardDirectionBidirectional {
+			if topic.Direction != storepkg.MQTTForwardDirectionBidirectional {
 				continue
 			}
 			filter = mapMQTTForwardTopic(topic.Topic, topic.SourcePrefix, topic.TargetPrefix)
@@ -256,7 +257,7 @@ func (r *mqttForwardRunner) subscribe(client pahomqtt.Client, source bool) {
 	}
 }
 
-func (r *mqttForwardRunner) forwardMessage(fromSource bool, rule mqttForwardTopicRecord, msg pahomqtt.Message) {
+func (r *runner) forwardMessage(fromSource bool, rule storepkg.MQTTForwardTopicRecord, msg pahomqtt.Message) {
 	if r.ctx.Err() != nil {
 		return
 	}
@@ -269,7 +270,7 @@ func (r *mqttForwardRunner) forwardMessage(fromSource bool, rule mqttForwardTopi
 		return
 	}
 	toTopic := fromTopic
-	forwardDirection := mqttForwardDirectionSourceToTarget
+	forwardDirection := storepkg.MQTTForwardDirectionSourceToTarget
 	if fromSource {
 		toTopic = mapMQTTForwardTopic(fromTopic, rule.SourcePrefix, rule.TargetPrefix)
 	} else {
@@ -284,7 +285,7 @@ func (r *mqttForwardRunner) forwardMessage(fromSource bool, rule mqttForwardTopi
 	reverseDirection := mqttForwardDirectionTargetToSource
 	if !fromSource {
 		target = r.source
-		reverseDirection = mqttForwardDirectionSourceToTarget
+		reverseDirection = storepkg.MQTTForwardDirectionSourceToTarget
 	}
 	r.markSuppressed(reverseDirection, toTopic, fromTopic, msg.Payload(), rule.QoS, rule.Retain)
 	token := target.Publish(toTopic, byte(rule.QoS), rule.Retain, msg.Payload())
@@ -301,7 +302,7 @@ func (r *mqttForwardRunner) forwardMessage(fromSource bool, rule mqttForwardTopi
 	r.incForwarded()
 }
 
-func (r *mqttForwardRunner) setConnected(source bool, connected bool) {
+func (r *runner) setConnected(source bool, connected bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if source {
@@ -311,25 +312,25 @@ func (r *mqttForwardRunner) setConnected(source bool, connected bool) {
 	}
 }
 
-func (r *mqttForwardRunner) setError(message string) {
+func (r *runner) setError(message string) {
 	r.mu.Lock()
 	r.lastError = message
 	r.mu.Unlock()
 }
 
-func (r *mqttForwardRunner) incForwarded() {
+func (r *runner) incForwarded() {
 	r.mu.Lock()
 	r.messagesForwarded++
 	r.mu.Unlock()
 }
 
-func (r *mqttForwardRunner) incDropped() {
+func (r *runner) incDropped() {
 	r.mu.Lock()
 	r.messagesDropped++
 	r.mu.Unlock()
 }
 
-func (r *mqttForwardRunner) isSuppressed(direction, fromTopic, toTopic string, payload []byte, qos int, retain bool) bool {
+func (r *runner) isSuppressed(direction, fromTopic, toTopic string, payload []byte, qos int, retain bool) bool {
 	key := mqttForwardLoopKey(direction, fromTopic, toTopic, payload, qos, retain)
 	now := time.Now()
 	r.mu.Lock()
@@ -346,7 +347,7 @@ func (r *mqttForwardRunner) isSuppressed(direction, fromTopic, toTopic string, p
 	return true
 }
 
-func (r *mqttForwardRunner) markSuppressed(direction, fromTopic, toTopic string, payload []byte, qos int, retain bool) {
+func (r *runner) markSuppressed(direction, fromTopic, toTopic string, payload []byte, qos int, retain bool) {
 	key := mqttForwardLoopKey(direction, fromTopic, toTopic, payload, qos, retain)
 	now := time.Now()
 	r.mu.Lock()
