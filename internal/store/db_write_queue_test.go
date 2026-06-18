@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"database/sql"
@@ -11,7 +11,7 @@ func TestDBWriteQueueWritesRecordsAsync(t *testing.T) {
 
 	queue := newDBWriteQueue(st)
 	record := textMessageTestRecord("queued")
-	queue.EnqueueRecord(record, mqttClientInfo{ClientID: "client-1"})
+	queue.EnqueueRecord(record, MQTTClientInfo{ClientID: "client-1"})
 	record["text"] = "mutated after enqueue"
 	queue.Close()
 
@@ -30,7 +30,7 @@ func TestDBWriteQueueWritesDiscardAsync(t *testing.T) {
 
 	queue := newDBWriteQueue(st)
 	record := map[string]any{"topic": "msh/test", "error": "bad packet"}
-	queue.EnqueueDiscard(record, []byte{1, 2, 3}, mqttClientInfo{RemoteAddr: "127.0.0.1:1883"})
+	queue.EnqueueDiscard(record, []byte{1, 2, 3}, MQTTClientInfo{RemoteAddr: "127.0.0.1:1883"})
 	record["error"] = "mutated after enqueue"
 	queue.Close()
 
@@ -44,8 +44,8 @@ func TestDBWriteQueueWritesDiscardAsync(t *testing.T) {
 }
 
 func TestDBWriteQueueLen(t *testing.T) {
-	queue := &dbWriteQueue{jobs: make(chan dbWriteJob, 1)}
-	queue.enqueue(dbWriteJob{run: func() error { return nil }})
+	queue := &WriteQueue{jobs: make(chan writeJob, 1)}
+	queue.enqueue(writeJob{run: func() error { return nil }})
 	if queue.Len() != 1 {
 		t.Fatalf("queue.Len() = %d, want 1", queue.Len())
 	}
@@ -56,7 +56,7 @@ func TestDBWriteQueueIgnoresUnsupportedRecordType(t *testing.T) {
 	defer st.Close()
 
 	queue := newDBWriteQueue(st)
-	queue.EnqueueRecord(map[string]any{"type": "empty_packet", "from": "!12345678"}, mqttClientInfo{})
+	queue.EnqueueRecord(map[string]any{"type": "empty_packet", "from": "!12345678"}, MQTTClientInfo{})
 	queue.Close()
 
 	var count int
@@ -72,9 +72,9 @@ func TestDBWriteQueueNilStore(t *testing.T) {
 	if queue := newDBWriteQueue(nil); queue != nil {
 		t.Fatalf("newDBWriteQueue(nil) = %#v, want nil", queue)
 	}
-	var queue *dbWriteQueue
-	queue.EnqueueRecord(textMessageTestRecord("ignored"), mqttClientInfo{})
-	queue.EnqueueDiscard(map[string]any{"topic": "ignored"}, []byte{1}, mqttClientInfo{})
+	var queue *WriteQueue
+	queue.EnqueueRecord(textMessageTestRecord("ignored"), MQTTClientInfo{})
+	queue.EnqueueDiscard(map[string]any{"topic": "ignored"}, []byte{1}, MQTTClientInfo{})
 	queue.Close()
 }
 
@@ -85,8 +85,8 @@ func TestDBWriteQueueRecordValidationErrorDoesNotStopWorker(t *testing.T) {
 	queue := newDBWriteQueue(st)
 	badRecord := textMessageTestRecord("bad")
 	delete(badRecord, "from")
-	queue.EnqueueRecord(badRecord, mqttClientInfo{})
-	queue.EnqueueRecord(textMessageTestRecord("good"), mqttClientInfo{})
+	queue.EnqueueRecord(badRecord, MQTTClientInfo{})
+	queue.EnqueueRecord(textMessageTestRecord("good"), MQTTClientInfo{})
 	queue.Close()
 
 	var text string

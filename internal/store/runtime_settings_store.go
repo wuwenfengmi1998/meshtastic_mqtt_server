@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"errors"
@@ -12,45 +12,45 @@ import (
 )
 
 const (
-	runtimeSettingAllowEncryptedForwarding = "mqtt.allow_encrypted_forwarding"
-	runtimeSettingLLMQueueEnabled         = "llm.queue_enabled"
-	runtimeSettingLLMQueueIncludeChannel  = "llm.include_channel_messages"
+	RuntimeSettingAllowEncryptedForwarding = "mqtt.allow_encrypted_forwarding"
+	RuntimeSettingLLMQueueEnabled         = "llm.queue_enabled"
+	RuntimeSettingLLMQueueIncludeChannel  = "llm.include_channel_messages"
 	runtimeSettingTypeBool                 = "bool"
 )
 
-type runtimeSettingsSnapshot struct {
+type RuntimeSettingsSnapshot struct {
 	AllowEncryptedForwarding bool
 	LLMQueueEnabled          bool
 	LLMIncludeChannel        bool
 }
 
-func (s *store) GetRuntimeSettings() (runtimeSettingsSnapshot, error) {
-	allowEncrypted, err := s.GetBoolRuntimeSetting(runtimeSettingAllowEncryptedForwarding, false)
+func (s *Store) GetRuntimeSettings() (RuntimeSettingsSnapshot, error) {
+	allowEncrypted, err := s.GetBoolRuntimeSetting(RuntimeSettingAllowEncryptedForwarding, false)
 	if err != nil {
-		return runtimeSettingsSnapshot{}, err
+		return RuntimeSettingsSnapshot{}, err
 	}
-	llmQueueEnabled, err := s.GetBoolRuntimeSetting(runtimeSettingLLMQueueEnabled, true)
+	llmQueueEnabled, err := s.GetBoolRuntimeSetting(RuntimeSettingLLMQueueEnabled, true)
 	if err != nil {
-		return runtimeSettingsSnapshot{}, err
+		return RuntimeSettingsSnapshot{}, err
 	}
-	llmIncludeChannel, err := s.GetBoolRuntimeSetting(runtimeSettingLLMQueueIncludeChannel, false)
+	llmIncludeChannel, err := s.GetBoolRuntimeSetting(RuntimeSettingLLMQueueIncludeChannel, false)
 	if err != nil {
-		return runtimeSettingsSnapshot{}, err
+		return RuntimeSettingsSnapshot{}, err
 	}
-	return runtimeSettingsSnapshot{
+	return RuntimeSettingsSnapshot{
 		AllowEncryptedForwarding: allowEncrypted,
 		LLMQueueEnabled:          llmQueueEnabled,
 		LLMIncludeChannel:        llmIncludeChannel,
 	}, nil
 }
 
-func (s *store) GetBoolRuntimeSetting(key string, defaultValue bool) (bool, error) {
+func (s *Store) GetBoolRuntimeSetting(key string, defaultValue bool) (bool, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return false, fmt.Errorf("runtime setting key is required")
 	}
 
-	var row runtimeSettingRecord
+	var row RuntimeSettingRecord
 	err := s.db.Where("`key` = ?", key).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return defaultValue, nil
@@ -68,13 +68,13 @@ func (s *store) GetBoolRuntimeSetting(key string, defaultValue bool) (bool, erro
 	return value, nil
 }
 
-func (s *store) SetBoolRuntimeSetting(key string, value bool, label string) (*runtimeSettingRecord, error) {
+func (s *Store) SetBoolRuntimeSetting(key string, value bool, label string) (*RuntimeSettingRecord, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil, fmt.Errorf("runtime setting key is required")
 	}
 
-	row := runtimeSettingRecord{
+	row := RuntimeSettingRecord{
 		Key:       key,
 		Value:     strconv.FormatBool(value),
 		ValueType: runtimeSettingTypeBool,

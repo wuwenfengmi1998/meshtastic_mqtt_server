@@ -207,7 +207,7 @@ func parseArgs() (*config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.key = key
+	cfg.Key = key
 	return cfg, nil
 }
 
@@ -238,7 +238,7 @@ func run(cfg *config) error {
 	if err != nil {
 		return err
 	}
-	botSender := newBotService(store, server, cfg.key)
+	botSender := newBotService(store, server, cfg.Key)
 	mqttHook.autoAcker = botSender.MaybeAutoAck
 	botCtx, stopBotBroadcaster := context.WithCancel(context.Background())
 	defer stopBotBroadcaster()
@@ -301,7 +301,7 @@ func run(cfg *config) error {
 				DataDir:          cfg.DataDir,
 				Enabled:          cfg.AI.Enabled,
 				ToolConfigStore:  store,
-			}, store.db, botSenderAdapter)
+			}, store.DB(), botSenderAdapter)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to initialize AI service: %v\n", err)
 			} else {
@@ -384,7 +384,7 @@ func startMQTTServer(cfg *config, store *store, dbQueue *dbWriteQueue, stats *me
 		return nil, nil, "", err
 	}
 	hook := &meshtasticFilterHook{
-		key:         cfg.key,
+		key:         cfg.Key,
 		dbQueue:     dbQueue,
 		stats:       stats,
 		blocking:    blocking,

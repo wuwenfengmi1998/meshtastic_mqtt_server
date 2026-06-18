@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"errors"
@@ -10,16 +10,16 @@ import (
 )
 
 const (
-	mqttForwardDirectionSourceToTarget = "source_to_target"
-	mqttForwardDirectionBidirectional  = "bidirectional"
+	MQTTForwardDirectionSourceToTarget = "source_to_target"
+	MQTTForwardDirectionBidirectional  = "bidirectional"
 )
 
 var (
-	errMQTTForwarderAlreadyExists    = errors.New("mqtt forwarder already exists")
-	errMQTTForwardTopicAlreadyExists = errors.New("mqtt forward topic already exists")
+	ErrMQTTForwarderAlreadyExists    = errors.New("mqtt forwarder already exists")
+	ErrMQTTForwardTopicAlreadyExists = errors.New("mqtt forward topic already exists")
 )
 
-type mqttForwarderInput struct {
+type MQTTForwarderInput struct {
 	Name           string
 	Enabled        bool
 	SourceHost     string
@@ -36,7 +36,7 @@ type mqttForwarderInput struct {
 	TargetTLS      bool
 }
 
-type mqttForwardTopicInput struct {
+type MQTTForwardTopicInput struct {
 	Topic        string
 	Enabled      bool
 	Direction    string
@@ -46,15 +46,15 @@ type mqttForwardTopicInput struct {
 	Retain       bool
 }
 
-type mqttForwarderConfig struct {
-	Forwarder mqttForwarderRecord
-	Topics    []mqttForwardTopicRecord
+type MQTTForwarderConfig struct {
+	Forwarder MQTTForwarderRecord
+	Topics    []MQTTForwardTopicRecord
 }
 
-func (s *store) ListMQTTForwarders(opts listOptions) ([]mqttForwarderRecord, error) {
-	opts = normalizeListOptions(opts)
-	var rows []mqttForwarderRecord
-	q := s.db.Model(&mqttForwarderRecord{}).
+func (s *Store) ListMQTTForwarders(opts ListOptions) ([]MQTTForwarderRecord, error) {
+	opts = NormalizeListOptions(opts)
+	var rows []MQTTForwarderRecord
+	q := s.db.Model(&MQTTForwarderRecord{}).
 		Order("updated_at DESC").
 		Order("id DESC").
 		Limit(opts.Limit).
@@ -62,20 +62,20 @@ func (s *store) ListMQTTForwarders(opts listOptions) ([]mqttForwarderRecord, err
 	return rows, q.Find(&rows).Error
 }
 
-func (s *store) CountMQTTForwarders(opts listOptions) (int64, error) {
+func (s *Store) CountMQTTForwarders(opts ListOptions) (int64, error) {
 	var total int64
-	return total, s.db.Model(&mqttForwarderRecord{}).Count(&total).Error
+	return total, s.db.Model(&MQTTForwarderRecord{}).Count(&total).Error
 }
 
-func (s *store) GetMQTTForwarder(id uint64) (*mqttForwarderRecord, error) {
-	var row mqttForwarderRecord
+func (s *Store) GetMQTTForwarder(id uint64) (*MQTTForwarderRecord, error) {
+	var row MQTTForwarderRecord
 	if err := s.db.Where("id = ?", id).Take(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) CreateMQTTForwarder(input mqttForwarderInput) (*mqttForwarderRecord, error) {
+func (s *Store) CreateMQTTForwarder(input MQTTForwarderInput) (*MQTTForwarderRecord, error) {
 	row, err := mqttForwarderFromInput(input, nil)
 	if err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func (s *store) CreateMQTTForwarder(input mqttForwarderInput) (*mqttForwarderRec
 	return row, nil
 }
 
-func (s *store) UpdateMQTTForwarder(id uint64, input mqttForwarderInput) (*mqttForwarderRecord, error) {
+func (s *Store) UpdateMQTTForwarder(id uint64, input MQTTForwarderInput) (*MQTTForwarderRecord, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("mqtt forwarder id is required")
 	}
@@ -112,21 +112,21 @@ func (s *store) UpdateMQTTForwarder(id uint64, input mqttForwarderInput) (*mqttF
 		"target_password": row.TargetPassword, "target_client_id": row.TargetClientID, "target_tls": row.TargetTLS,
 		"updated_at": time.Now(),
 	}
-	if err := s.db.Model(&mqttForwarderRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.Model(&MQTTForwarderRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	return s.GetMQTTForwarder(id)
 }
 
-func (s *store) DeleteMQTTForwarder(id uint64) error {
+func (s *Store) DeleteMQTTForwarder(id uint64) error {
 	if id == 0 {
 		return fmt.Errorf("mqtt forwarder id is required")
 	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("forwarder_id = ?", id).Delete(&mqttForwardTopicRecord{}).Error; err != nil {
+		if err := tx.Where("forwarder_id = ?", id).Delete(&MQTTForwardTopicRecord{}).Error; err != nil {
 			return err
 		}
-		result := tx.Where("id = ?", id).Delete(&mqttForwarderRecord{})
+		result := tx.Where("id = ?", id).Delete(&MQTTForwarderRecord{})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -137,10 +137,10 @@ func (s *store) DeleteMQTTForwarder(id uint64) error {
 	})
 }
 
-func (s *store) ListMQTTForwardTopics(forwarderID uint64, opts listOptions) ([]mqttForwardTopicRecord, error) {
-	opts = normalizeListOptions(opts)
-	var rows []mqttForwardTopicRecord
-	q := s.db.Model(&mqttForwardTopicRecord{}).
+func (s *Store) ListMQTTForwardTopics(forwarderID uint64, opts ListOptions) ([]MQTTForwardTopicRecord, error) {
+	opts = NormalizeListOptions(opts)
+	var rows []MQTTForwardTopicRecord
+	q := s.db.Model(&MQTTForwardTopicRecord{}).
 		Where("forwarder_id = ?", forwarderID).
 		Order("updated_at DESC").
 		Order("id DESC").
@@ -149,20 +149,20 @@ func (s *store) ListMQTTForwardTopics(forwarderID uint64, opts listOptions) ([]m
 	return rows, q.Find(&rows).Error
 }
 
-func (s *store) CountMQTTForwardTopics(forwarderID uint64) (int64, error) {
+func (s *Store) CountMQTTForwardTopics(forwarderID uint64) (int64, error) {
 	var total int64
-	return total, s.db.Model(&mqttForwardTopicRecord{}).Where("forwarder_id = ?", forwarderID).Count(&total).Error
+	return total, s.db.Model(&MQTTForwardTopicRecord{}).Where("forwarder_id = ?", forwarderID).Count(&total).Error
 }
 
-func (s *store) GetMQTTForwardTopic(id uint64) (*mqttForwardTopicRecord, error) {
-	var row mqttForwardTopicRecord
+func (s *Store) GetMQTTForwardTopic(id uint64) (*MQTTForwardTopicRecord, error) {
+	var row MQTTForwardTopicRecord
 	if err := s.db.Where("id = ?", id).Take(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) CreateMQTTForwardTopic(forwarderID uint64, input mqttForwardTopicInput) (*mqttForwardTopicRecord, error) {
+func (s *Store) CreateMQTTForwardTopic(forwarderID uint64, input MQTTForwardTopicInput) (*MQTTForwardTopicRecord, error) {
 	if _, err := s.GetMQTTForwarder(forwarderID); err != nil {
 		return nil, err
 	}
@@ -179,7 +179,7 @@ func (s *store) CreateMQTTForwardTopic(forwarderID uint64, input mqttForwardTopi
 	return row, nil
 }
 
-func (s *store) UpdateMQTTForwardTopic(id uint64, input mqttForwardTopicInput) (*mqttForwardTopicRecord, error) {
+func (s *Store) UpdateMQTTForwardTopic(id uint64, input MQTTForwardTopicInput) (*MQTTForwardTopicRecord, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("mqtt forward topic id is required")
 	}
@@ -199,14 +199,14 @@ func (s *store) UpdateMQTTForwardTopic(id uint64, input mqttForwardTopicInput) (
 		"source_prefix": row.SourcePrefix, "target_prefix": row.TargetPrefix,
 		"qos": row.QoS, "retain": row.Retain, "updated_at": time.Now(),
 	}
-	if err := s.db.Model(&mqttForwardTopicRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.Model(&MQTTForwardTopicRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	return s.GetMQTTForwardTopic(id)
 }
 
-func (s *store) DeleteMQTTForwardTopic(id uint64) error {
-	result := s.db.Where("id = ?", id).Delete(&mqttForwardTopicRecord{})
+func (s *Store) DeleteMQTTForwardTopic(id uint64) error {
+	result := s.db.Where("id = ?", id).Delete(&MQTTForwardTopicRecord{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -216,39 +216,39 @@ func (s *store) DeleteMQTTForwardTopic(id uint64) error {
 	return nil
 }
 
-func (s *store) GetMQTTForwarderConfig(id uint64) (*mqttForwarderConfig, error) {
+func (s *Store) GetMQTTForwarderConfig(id uint64) (*MQTTForwarderConfig, error) {
 	forwarder, err := s.GetMQTTForwarder(id)
 	if err != nil {
 		return nil, err
 	}
-	var topics []mqttForwardTopicRecord
+	var topics []MQTTForwardTopicRecord
 	if err := s.db.Where("forwarder_id = ? AND enabled = ?", id, true).Order("id ASC").Find(&topics).Error; err != nil {
 		return nil, err
 	}
-	return &mqttForwarderConfig{Forwarder: *forwarder, Topics: topics}, nil
+	return &MQTTForwarderConfig{Forwarder: *forwarder, Topics: topics}, nil
 }
 
-func (s *store) ListEnabledMQTTForwarderConfigs() ([]mqttForwarderConfig, error) {
-	var forwarders []mqttForwarderRecord
+func (s *Store) ListEnabledMQTTForwarderConfigs() ([]MQTTForwarderConfig, error) {
+	var forwarders []MQTTForwarderRecord
 	if err := s.db.Where("enabled = ?", true).Order("id ASC").Find(&forwarders).Error; err != nil {
 		return nil, err
 	}
-	configs := make([]mqttForwarderConfig, 0, len(forwarders))
+	configs := make([]MQTTForwarderConfig, 0, len(forwarders))
 	for _, forwarder := range forwarders {
-		var topics []mqttForwardTopicRecord
+		var topics []MQTTForwardTopicRecord
 		if err := s.db.Where("forwarder_id = ? AND enabled = ?", forwarder.ID, true).Order("id ASC").Find(&topics).Error; err != nil {
 			return nil, err
 		}
 		if len(topics) == 0 {
 			continue
 		}
-		configs = append(configs, mqttForwarderConfig{Forwarder: forwarder, Topics: topics})
+		configs = append(configs, MQTTForwarderConfig{Forwarder: forwarder, Topics: topics})
 	}
 	return configs, nil
 }
 
-func (s *store) ensureMQTTForwarderNameUnique(id uint64, name string) error {
-	var existing mqttForwarderRecord
+func (s *Store) ensureMQTTForwarderNameUnique(id uint64, name string) error {
+	var existing MQTTForwarderRecord
 	q := s.db.Where("name = ?", name)
 	if id != 0 {
 		q = q.Where("id <> ?", id)
@@ -260,11 +260,11 @@ func (s *store) ensureMQTTForwarderNameUnique(id uint64, name string) error {
 	if err != nil {
 		return err
 	}
-	return errMQTTForwarderAlreadyExists
+	return ErrMQTTForwarderAlreadyExists
 }
 
-func (s *store) ensureMQTTForwardTopicUnique(id, forwarderID uint64, topic string) error {
-	var existing mqttForwardTopicRecord
+func (s *Store) ensureMQTTForwardTopicUnique(id, forwarderID uint64, topic string) error {
+	var existing MQTTForwardTopicRecord
 	q := s.db.Where("forwarder_id = ? AND topic = ?", forwarderID, topic)
 	if id != 0 {
 		q = q.Where("id <> ?", id)
@@ -276,10 +276,10 @@ func (s *store) ensureMQTTForwardTopicUnique(id, forwarderID uint64, topic strin
 	if err != nil {
 		return err
 	}
-	return errMQTTForwardTopicAlreadyExists
+	return ErrMQTTForwardTopicAlreadyExists
 }
 
-func mqttForwarderFromInput(input mqttForwarderInput, existing *mqttForwarderRecord) (*mqttForwarderRecord, error) {
+func mqttForwarderFromInput(input MQTTForwarderInput, existing *MQTTForwarderRecord) (*MQTTForwarderRecord, error) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return nil, fmt.Errorf("mqtt forwarder name is required")
@@ -298,7 +298,7 @@ func mqttForwarderFromInput(input mqttForwarderInput, existing *mqttForwarderRec
 	if err := validateMQTTForwardPort(input.TargetPort, "target port"); err != nil {
 		return nil, err
 	}
-	row := &mqttForwarderRecord{
+	row := &MQTTForwarderRecord{
 		Name: name, Enabled: input.Enabled,
 		SourceHost: sourceHost, SourcePort: input.SourcePort, SourceUsername: strings.TrimSpace(input.SourceUsername), SourceClientID: strings.TrimSpace(input.SourceClientID), SourceTLS: input.SourceTLS,
 		TargetHost: targetHost, TargetPort: input.TargetPort, TargetUsername: strings.TrimSpace(input.TargetUsername), TargetClientID: strings.TrimSpace(input.TargetClientID), TargetTLS: input.TargetTLS,
@@ -316,7 +316,7 @@ func mqttForwarderFromInput(input mqttForwarderInput, existing *mqttForwarderRec
 	return row, nil
 }
 
-func mqttForwardTopicFromInput(forwarderID uint64, input mqttForwardTopicInput) (*mqttForwardTopicRecord, error) {
+func mqttForwardTopicFromInput(forwarderID uint64, input MQTTForwardTopicInput) (*MQTTForwardTopicRecord, error) {
 	if forwarderID == 0 {
 		return nil, fmt.Errorf("mqtt forwarder id is required")
 	}
@@ -331,7 +331,7 @@ func mqttForwardTopicFromInput(forwarderID uint64, input mqttForwardTopicInput) 
 	if input.QoS < 0 || input.QoS > 2 {
 		return nil, fmt.Errorf("qos must be 0, 1, or 2")
 	}
-	return &mqttForwardTopicRecord{
+	return &MQTTForwardTopicRecord{
 		ForwarderID: forwarderID, Topic: topic, Enabled: input.Enabled, Direction: direction,
 		SourcePrefix: strings.Trim(strings.TrimSpace(input.SourcePrefix), "/"),
 		TargetPrefix: strings.Trim(strings.TrimSpace(input.TargetPrefix), "/"),
@@ -349,10 +349,10 @@ func validateMQTTForwardPort(port int, label string) error {
 func normalizeMQTTForwardDirection(direction string) (string, error) {
 	direction = strings.TrimSpace(direction)
 	if direction == "" {
-		direction = mqttForwardDirectionSourceToTarget
+		direction = MQTTForwardDirectionSourceToTarget
 	}
 	switch direction {
-	case mqttForwardDirectionSourceToTarget, mqttForwardDirectionBidirectional:
+	case MQTTForwardDirectionSourceToTarget, MQTTForwardDirectionBidirectional:
 		return direction, nil
 	default:
 		return "", fmt.Errorf("invalid mqtt forward direction")

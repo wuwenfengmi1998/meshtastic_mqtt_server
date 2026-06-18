@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 
 const maxHelpMarkdownBytes = 200 * 1024
 
-const defaultHelpMarkdown = `## 连接地址
+const DefaultHelpMarkdown = `## 连接地址
 
 将 Meshtastic 设备连接到本服务提供的 MQTT broker。
 
@@ -29,15 +29,15 @@ const defaultHelpMarkdown = `## 连接地址
 
 如果遇到 bug，请在 GitHub [提交 issue](https://github.com/wuwenfengmi1998/meshtastic_mqtt_server)，或联系邮箱 [kevin@lmve.net](mailto:kevin@lmve.net)。`
 
-func (s *store) GetLatestHelpContent() (*helpContentRecord, error) {
-	var row helpContentRecord
+func (s *Store) GetLatestHelpContent() (*HelpContentRecord, error) {
+	var row HelpContentRecord
 	if err := s.db.Order("id DESC").Take(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) InsertHelpContent(markdown, createdBy string) (*helpContentRecord, error) {
+func (s *Store) InsertHelpContent(markdown, createdBy string) (*HelpContentRecord, error) {
 	markdown = strings.TrimSpace(markdown)
 	createdBy = strings.TrimSpace(createdBy)
 	if markdown == "" {
@@ -46,7 +46,7 @@ func (s *store) InsertHelpContent(markdown, createdBy string) (*helpContentRecor
 	if len([]byte(markdown)) > maxHelpMarkdownBytes {
 		return nil, fmt.Errorf("markdown exceeds %d bytes", maxHelpMarkdownBytes)
 	}
-	row := helpContentRecord{Markdown: markdown, CreatedBy: createdBy}
+	row := HelpContentRecord{Markdown: markdown, CreatedBy: createdBy}
 	if err := s.db.Create(&row).Error; err != nil {
 		return nil, err
 	}

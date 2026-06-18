@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"encoding/base64"
@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-func (s *store) InsertDiscardDetails(record map[string]any, raw []byte, clientInfo mqttClientInfo) error {
+func (s *Store) InsertDiscardDetails(record map[string]any, raw []byte, clientInfo MQTTClientInfo) error {
 	details, err := discardDetailsFromRecord(record, raw, clientInfo)
 	if err != nil {
 		return err
@@ -17,28 +17,28 @@ func (s *store) InsertDiscardDetails(record map[string]any, raw []byte, clientIn
 	return nil
 }
 
-func discardDetailsFromRecord(record map[string]any, raw []byte, clientInfo mqttClientInfo) (*discardDetailsRecord, error) {
+func discardDetailsFromRecord(record map[string]any, raw []byte, clientInfo MQTTClientInfo) (*DiscardDetailsRecord, error) {
 	contentJSON, err := json.Marshal(record)
 	if err != nil {
 		return nil, fmt.Errorf("encode discard_details content_json: %w", err)
 	}
-	return &discardDetailsRecord{
+	return &DiscardDetailsRecord{
 		Topic:          stringValue(record["topic"]),
 		Error:          stringValue(record["error"]),
 		PayloadLen:     int64(len(raw)),
 		RawBase64:      base64.StdEncoding.EncodeToString(raw),
 		ContentJSON:    string(contentJSON),
-		MQTTClientID:   nullableStringValue(clientInfo.ClientID),
-		MQTTUsername:   nullableStringValue(clientInfo.Username),
-		MQTTListener:   nullableStringValue(clientInfo.Listener),
-		MQTTRemoteAddr: nullableStringValue(clientInfo.RemoteAddr),
-		MQTTRemoteHost: nullableStringValue(clientInfo.RemoteHost),
-		MQTTRemotePort: nullableStringValue(clientInfo.RemotePort),
+		MQTTClientID:   NullableStringValue(clientInfo.ClientID),
+		MQTTUsername:   NullableStringValue(clientInfo.Username),
+		MQTTListener:   NullableStringValue(clientInfo.Listener),
+		MQTTRemoteAddr: NullableStringValue(clientInfo.RemoteAddr),
+		MQTTRemoteHost: NullableStringValue(clientInfo.RemoteHost),
+		MQTTRemotePort: NullableStringValue(clientInfo.RemotePort),
 	}, nil
 }
 
 func stringValue(value any) string {
-	if s := nullableStringValue(value); s != nil {
+	if s := NullableStringValue(value); s != nil {
 		return *s
 	}
 	return ""

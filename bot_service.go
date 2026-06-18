@@ -123,7 +123,7 @@ func (s *botService) buildPKIAck(bot *botNodeRecord, toNum, ackPacketID, request
 	if err != nil {
 		return nil, err
 	}
-	recipientPublic, ok := lookupNodeInfoPublicKey(s.store, toNum)
+	recipientPublic, ok := s.store.LookupNodeInfoPublicKey(toNum)
 	if !ok {
 		return nil, fmt.Errorf("recipient %s has no public key on file", mqtpp.NodeNumToID(toNum))
 	}

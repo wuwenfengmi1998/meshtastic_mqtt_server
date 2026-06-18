@@ -1,94 +1,94 @@
-package main
+package store
 
 import "sync"
 
-type dbWriteQueue struct {
-	store *store
-	jobs  chan dbWriteJob
+type WriteQueue struct {
+	store *Store
+	jobs  chan writeJob
 	wg    sync.WaitGroup
 }
 
-type dbWriteJob struct {
+type writeJob struct {
 	typeName   string
 	from       any
 	run        func() error
 	errorEvent map[string]any
 }
 
-func newDBWriteQueue(store *store) *dbWriteQueue {
-	if store == nil {
+func NewWriteQueue(s *Store) *WriteQueue {
+	if s == nil {
 		return nil
 	}
-	q := &dbWriteQueue{
-		store: store,
-		jobs:  make(chan dbWriteJob, 1024),
+	q := &WriteQueue{
+		store: s,
+		jobs:  make(chan writeJob, 1024),
 	}
 	q.wg.Add(1)
 	go q.run()
 	return q
 }
 
-func (q *dbWriteQueue) EnqueueRecord(record map[string]any, clientInfo mqttClientInfo) {
+func (q *WriteQueue) EnqueueRecord(record map[string]any, clientInfo MQTTClientInfo) {
 	if q == nil {
 		return
 	}
 	record = cloneDBWriteRecord(record)
 	switch record["type"] {
 	case "nodeinfo":
-		q.enqueue(dbWriteJob{typeName: "nodeinfo", from: record["from"], run: func() error {
+		q.enqueue(writeJob{typeName: "nodeinfo", from: record["from"], run: func() error {
 			return q.store.UpsertNodeInfo(record)
 		}})
 	case "map_report":
-		q.enqueue(dbWriteJob{typeName: "map_report", from: record["from"], run: func() error {
+		q.enqueue(writeJob{typeName: "map_report", from: record["from"], run: func() error {
 			return q.store.UpsertMapReport(record)
 		}})
 	case "text_message":
 		// 私聊（PKI 加密、发往受管 bot）单独走 bot_direct_messages 表，
 		// 不再写入 text_message 以避免和频道消息混在一起。
 		if isInboundBotDirectMessage(q.store, record) {
-			q.enqueue(dbWriteJob{typeName: "bot_direct_message_inbound", from: record["from"], run: func() error {
+			q.enqueue(writeJob{typeName: "bot_direct_message_inbound", from: record["from"], run: func() error {
 				return insertInboundBotDirectMessage(q.store, record, clientInfo)
 			}})
 			return
 		}
 		// 频道消息同时也写入 LLM 队列（如果启用的话）
-		q.enqueue(dbWriteJob{typeName: "llm_channel_message", from: record["from"], run: func() error {
+		q.enqueue(writeJob{typeName: "llm_channel_message", from: record["from"], run: func() error {
 			return enqueueChannelMessageToLLM(q.store, record)
 		}})
-		q.enqueue(dbWriteJob{typeName: "text_message", from: record["from"], run: func() error {
+		q.enqueue(writeJob{typeName: "text_message", from: record["from"], run: func() error {
 			return q.store.InsertTextMessage(record, clientInfo)
 		}})
 	case "position":
-		q.enqueue(dbWriteJob{typeName: "position", from: record["from"], run: func() error {
+		q.enqueue(writeJob{typeName: "position", from: record["from"], run: func() error {
 			return q.store.InsertPosition(record, clientInfo)
 		}})
 	case "telemetry":
-		q.enqueue(dbWriteJob{typeName: "telemetry", from: record["from"], run: func() error {
+		q.enqueue(writeJob{typeName: "telemetry", from: record["from"], run: func() error {
 			return q.store.InsertTelemetry(record, clientInfo)
 		}})
 	case "routing":
-		q.enqueue(dbWriteJob{typeName: "routing", from: record["from"], run: func() error {
+		q.enqueue(writeJob{typeName: "routing", from: record["from"], run: func() error {
 			return q.store.InsertRouting(record, clientInfo)
 		}})
 	case "traceroute":
-		q.enqueue(dbWriteJob{typeName: "traceroute", from: record["from"], run: func() error {
+		q.enqueue(writeJob{typeName: "traceroute", from: record["from"], run: func() error {
 			return q.store.InsertTraceroute(record, clientInfo)
 		}})
 	}
 }
 
-func (q *dbWriteQueue) EnqueueDiscard(record map[string]any, raw []byte, clientInfo mqttClientInfo) {
+func (q *WriteQueue) EnqueueDiscard(record map[string]any, raw []byte, clientInfo MQTTClientInfo) {
 	if q == nil {
 		return
 	}
 	record = cloneDBWriteRecord(record)
 	raw = append([]byte(nil), raw...)
-	q.enqueue(dbWriteJob{typeName: "discard_details", from: record["from"], errorEvent: map[string]any{"event": "db_error", "type": "discard_details", "topic": record["topic"]}, run: func() error {
+	q.enqueue(writeJob{typeName: "discard_details", from: record["from"], errorEvent: map[string]any{"event": "db_error", "type": "discard_details", "topic": record["topic"]}, run: func() error {
 		return q.store.InsertDiscardDetails(record, raw, clientInfo)
 	}})
 }
 
-func (q *dbWriteQueue) Close() {
+func (q *WriteQueue) Close() {
 	if q == nil {
 		return
 	}
@@ -96,18 +96,18 @@ func (q *dbWriteQueue) Close() {
 	q.wg.Wait()
 }
 
-func (q *dbWriteQueue) Len() int {
+func (q *WriteQueue) Len() int {
 	if q == nil {
 		return 0
 	}
 	return len(q.jobs)
 }
 
-func (q *dbWriteQueue) enqueue(job dbWriteJob) {
+func (q *WriteQueue) enqueue(job writeJob) {
 	q.jobs <- job
 }
 
-func (q *dbWriteQueue) run() {
+func (q *WriteQueue) run() {
 	defer q.wg.Done()
 	for job := range q.jobs {
 		if err := job.run(); err != nil {

@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"errors"
@@ -9,30 +9,30 @@ import (
 	"gorm.io/gorm"
 )
 
-var errUserAlreadyExists = errors.New("user already exists")
+var ErrUserAlreadyExists = errors.New("user already exists")
 
-func (s *store) GetUserByUsername(username string) (*userRecord, error) {
-	var user userRecord
+func (s *Store) GetUserByUsername(username string) (*UserRecord, error) {
+	var user UserRecord
 	if err := s.db.Where("username = ?", username).Take(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
 }
 
-func (s *store) GetUserByID(id uint64) (*userRecord, error) {
-	var user userRecord
+func (s *Store) GetUserByID(id uint64) (*UserRecord, error) {
+	var user UserRecord
 	if err := s.db.Where("id = ?", id).Take(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
 }
 
-func (s *store) ListUsers() ([]userRecord, error) {
-	var users []userRecord
+func (s *Store) ListUsers() ([]UserRecord, error) {
+	var users []UserRecord
 	return users, s.db.Order("id ASC").Find(&users).Error
 }
 
-func (s *store) CreateAdminUser(username, password string) (*userRecord, error) {
+func (s *Store) CreateAdminUser(username, password string) (*UserRecord, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return nil, fmt.Errorf("username is required")
@@ -41,7 +41,7 @@ func (s *store) CreateAdminUser(username, password string) (*userRecord, error) 
 		return nil, fmt.Errorf("password is required")
 	}
 	if _, err := s.GetUserByUsername(username); err == nil {
-		return nil, errUserAlreadyExists
+		return nil, ErrUserAlreadyExists
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
@@ -49,14 +49,14 @@ func (s *store) CreateAdminUser(username, password string) (*userRecord, error) 
 	if err != nil {
 		return nil, fmt.Errorf("hash user password: %w", err)
 	}
-	user := userRecord{Username: username, PasswordHash: hash, Role: adminRole}
+	user := UserRecord{Username: username, PasswordHash: hash, Role: AdminRole}
 	if err := s.db.Create(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
 }
 
-func (s *store) UpdateUserPassword(id uint64, password string) (*userRecord, error) {
+func (s *Store) UpdateUserPassword(id uint64, password string) (*UserRecord, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("user id is required")
 	}
@@ -71,15 +71,15 @@ func (s *store) UpdateUserPassword(id uint64, password string) (*userRecord, err
 	if err != nil {
 		return nil, fmt.Errorf("hash user password: %w", err)
 	}
-	if err := s.db.Model(&userRecord{}).Where("id = ?", id).Updates(map[string]any{"password_hash": hash, "updated_at": time.Now()}).Error; err != nil {
+	if err := s.db.Model(&UserRecord{}).Where("id = ?", id).Updates(map[string]any{"password_hash": hash, "updated_at": time.Now()}).Error; err != nil {
 		return nil, err
 	}
 	user.PasswordHash = hash
 	return s.GetUserByID(id)
 }
 
-func (s *store) EnsureDefaultAdmin(username, password string) error {
-	var existing userRecord
+func (s *Store) EnsureDefaultAdmin(username, password string) error {
+	var existing UserRecord
 	err := s.db.Where("username = ?", username).Take(&existing).Error
 	if err == nil {
 		return nil
@@ -91,7 +91,7 @@ func (s *store) EnsureDefaultAdmin(username, password string) error {
 	if err != nil {
 		return fmt.Errorf("hash admin password: %w", err)
 	}
-	user := userRecord{Username: username, PasswordHash: hash, Role: adminRole}
+	user := UserRecord{Username: username, PasswordHash: hash, Role: AdminRole}
 	if err := s.db.Create(&user).Error; err != nil {
 		return fmt.Errorf("create default admin user: %w", err)
 	}

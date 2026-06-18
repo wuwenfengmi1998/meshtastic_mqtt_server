@@ -125,11 +125,11 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 		}
 		rows, err := store.ListBotMessages(opts)
 		if err != nil {
-			writeListResponse(c, rows, opts.listOptions, err, botMessageDTO)
+			writeListResponse(c, rows, opts.ListOptions, err, botMessageDTO)
 			return
 		}
 		total, err := store.CountBotMessages(opts)
-		writeListResponseWithTotal(c, rows, opts.listOptions, total, err, botMessageDTO)
+		writeListResponseWithTotal(c, rows, opts.ListOptions, total, err, botMessageDTO)
 	})
 	r.GET("/bot/direct-messages", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
@@ -153,7 +153,7 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid target node num"})
 			return
 		}
-		dmOpts := botDirectMessageListOptions{listOptions: opts, BotID: botID, PeerNodeNum: target, Direction: c.Query("direction")}
+		dmOpts := botDirectMessageListOptions{ListOptions: opts, BotID: botID, PeerNodeNum: target, Direction: c.Query("direction")}
 		rows, err := store.ListBotDirectMessagesByConversation(dmOpts)
 		if err != nil {
 			writeListResponse(c, rows, opts, err, botDirectMessageDTO)
@@ -272,7 +272,7 @@ func parseBotMessageListOptions(c *gin.Context) (botMessageListOptions, bool) {
 	if !ok {
 		return botMessageListOptions{}, false
 	}
-	opts := botMessageListOptions{listOptions: listOpts, MessageType: c.Query("message_type"), ChannelID: c.Query("channel_id")}
+	opts := botMessageListOptions{ListOptions: listOpts, MessageType: c.Query("message_type"), ChannelID: c.Query("channel_id")}
 	if value := c.Query("bot_id"); value != "" {
 		id, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {

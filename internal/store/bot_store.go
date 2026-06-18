@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"crypto/ecdh"
@@ -17,19 +17,19 @@ import (
 )
 
 const (
-	botDefaultTopicPrefix              = "msh/CN"
-	botDefaultPSK                      = "AQ=="
-	botDefaultNodeInfoBroadcastSeconds = int64(3600)
-	botMessageTypeChannel              = "channel"
-	botMessageTypeDirect               = "direct"
-	botMessageStatusPending            = "pending"
-	botMessageStatusPublished          = "published"
-	botMessageStatusFailed             = "failed"
+	BotDefaultTopicPrefix              = "msh/CN"
+	BotDefaultPSK                      = "AQ=="
+	BotDefaultNodeInfoBroadcastSeconds = int64(3600)
+	BotMessageTypeChannel              = "channel"
+	BotMessageTypeDirect               = "direct"
+	BotMessageStatusPending            = "pending"
+	BotMessageStatusPublished          = "published"
+	BotMessageStatusFailed             = "failed"
 )
 
-var errBotNodeAlreadyExists = errors.New("bot node already exists")
+var ErrBotNodeAlreadyExists = errors.New("bot node already exists")
 
-type botNodeInput struct {
+type BotNodeInput struct {
 	NodeNum                          *int64
 	LongName                         string
 	ShortName                        string
@@ -43,17 +43,17 @@ type botNodeInput struct {
 	LLMIncludeChannelMessages        bool
 }
 
-type botMessageListOptions struct {
-	listOptions
+type BotMessageListOptions struct {
+	ListOptions
 	BotID       uint64
 	MessageType string
 	ChannelID   string
 }
 
-func (s *store) ListBotNodes(opts listOptions) ([]botNodeRecord, error) {
-	opts = normalizeListOptions(opts)
-	var rows []botNodeRecord
-	q := s.db.Model(&botNodeRecord{}).
+func (s *Store) ListBotNodes(opts ListOptions) ([]BotNodeRecord, error) {
+	opts = NormalizeListOptions(opts)
+	var rows []BotNodeRecord
+	q := s.db.Model(&BotNodeRecord{}).
 		Order("updated_at DESC").
 		Order("id DESC").
 		Limit(opts.Limit).
@@ -61,20 +61,20 @@ func (s *store) ListBotNodes(opts listOptions) ([]botNodeRecord, error) {
 	return rows, q.Find(&rows).Error
 }
 
-func (s *store) CountBotNodes(opts listOptions) (int64, error) {
+func (s *Store) CountBotNodes(opts ListOptions) (int64, error) {
 	var total int64
-	return total, s.db.Model(&botNodeRecord{}).Count(&total).Error
+	return total, s.db.Model(&BotNodeRecord{}).Count(&total).Error
 }
 
-func (s *store) GetBotNode(id uint64) (*botNodeRecord, error) {
-	var row botNodeRecord
+func (s *Store) GetBotNode(id uint64) (*BotNodeRecord, error) {
+	var row BotNodeRecord
 	if err := s.db.Where("id = ?", id).Take(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) CreateBotNode(input botNodeInput) (*botNodeRecord, error) {
+func (s *Store) CreateBotNode(input BotNodeInput) (*BotNodeRecord, error) {
 	row, err := s.normalizedBotNodeRecord(input)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func (s *store) CreateBotNode(input botNodeInput) (*botNodeRecord, error) {
 	return row, nil
 }
 
-func (s *store) UpdateBotNode(id uint64, input botNodeInput) (*botNodeRecord, error) {
+func (s *Store) UpdateBotNode(id uint64, input BotNodeInput) (*BotNodeRecord, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("bot node id is required")
 	}
@@ -132,14 +132,14 @@ func (s *store) UpdateBotNode(id uint64, input botNodeInput) (*botNodeRecord, er
 		"llm_include_channel_messages":        row.LLMIncludeChannelMessages,
 		"updated_at":                          time.Now(),
 	}
-	if err := s.db.Model(&botNodeRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.Model(&BotNodeRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	return s.GetBotNode(id)
 }
 
-func (s *store) DeleteBotNode(id uint64) error {
-	result := s.db.Where("id = ?", id).Delete(&botNodeRecord{})
+func (s *Store) DeleteBotNode(id uint64) error {
+	result := s.db.Where("id = ?", id).Delete(&BotNodeRecord{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -149,13 +149,13 @@ func (s *store) DeleteBotNode(id uint64) error {
 	return nil
 }
 
-func (s *store) InsertBotMessage(row *botMessageRecord) error {
+func (s *Store) InsertBotMessage(row *BotMessageRecord) error {
 	return s.db.Create(row).Error
 }
 
-func (s *store) UpdateBotMessageStatus(id uint64, status, errText string, publishedAt *time.Time) error {
+func (s *Store) UpdateBotMessageStatus(id uint64, status, errText string, publishedAt *time.Time) error {
 	updates := map[string]any{"status": status, "error": strings.TrimSpace(errText), "published_at": publishedAt}
-	result := s.db.Model(&botMessageRecord{}).Where("id = ?", id).Updates(updates)
+	result := s.db.Model(&BotMessageRecord{}).Where("id = ?", id).Updates(updates)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -165,8 +165,8 @@ func (s *store) UpdateBotMessageStatus(id uint64, status, errText string, publis
 	return nil
 }
 
-func (s *store) UpdateBotNodeInfoBroadcastAt(id uint64, t time.Time) error {
-	result := s.db.Model(&botNodeRecord{}).Where("id = ?", id).Updates(map[string]any{"last_nodeinfo_broadcast_at": &t, "updated_at": time.Now()})
+func (s *Store) UpdateBotNodeInfoBroadcastAt(id uint64, t time.Time) error {
+	result := s.db.Model(&BotNodeRecord{}).Where("id = ?", id).Updates(map[string]any{"last_nodeinfo_broadcast_at": &t, "updated_at": time.Now()})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -176,7 +176,7 @@ func (s *store) UpdateBotNodeInfoBroadcastAt(id uint64, t time.Time) error {
 	return nil
 }
 
-func (s *store) RegenerateBotNodeKeys(id uint64) (*botNodeRecord, error) {
+func (s *Store) RegenerateBotNodeKeys(id uint64) (*BotNodeRecord, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("bot node id is required")
 	}
@@ -188,16 +188,16 @@ func (s *store) RegenerateBotNodeKeys(id uint64) (*botNodeRecord, error) {
 		return nil, err
 	}
 	updates := map[string]any{"public_key": row.PublicKey, "private_key": row.PrivateKey, "updated_at": time.Now()}
-	if err := s.db.Model(&botNodeRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.Model(&BotNodeRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	return s.GetBotNode(id)
 }
 
-func (s *store) ListBotMessages(opts botMessageListOptions) ([]botMessageRecord, error) {
-	opts.listOptions = normalizeListOptions(opts.listOptions)
-	var rows []botMessageRecord
-	q := applyBotMessageFilters(s.db.Model(&botMessageRecord{}), opts).
+func (s *Store) ListBotMessages(opts BotMessageListOptions) ([]BotMessageRecord, error) {
+	opts.ListOptions = NormalizeListOptions(opts.ListOptions)
+	var rows []BotMessageRecord
+	q := applyBotMessageFilters(s.db.Model(&BotMessageRecord{}), opts).
 		Order("created_at DESC").
 		Order("id DESC").
 		Limit(opts.Limit).
@@ -205,13 +205,13 @@ func (s *store) ListBotMessages(opts botMessageListOptions) ([]botMessageRecord,
 	return rows, q.Find(&rows).Error
 }
 
-func (s *store) CountBotMessages(opts botMessageListOptions) (int64, error) {
+func (s *Store) CountBotMessages(opts BotMessageListOptions) (int64, error) {
 	var total int64
-	q := applyBotMessageFilters(s.db.Model(&botMessageRecord{}), opts)
+	q := applyBotMessageFilters(s.db.Model(&BotMessageRecord{}), opts)
 	return total, q.Count(&total).Error
 }
 
-func applyBotMessageFilters(q *gorm.DB, opts botMessageListOptions) *gorm.DB {
+func applyBotMessageFilters(q *gorm.DB, opts BotMessageListOptions) *gorm.DB {
 	if opts.BotID != 0 {
 		q = q.Where("bot_id = ?", opts.BotID)
 	}
@@ -230,20 +230,20 @@ func applyBotMessageFilters(q *gorm.DB, opts botMessageListOptions) *gorm.DB {
 	return q
 }
 
-func (s *store) normalizedBotNodeRecord(input botNodeInput) (*botNodeRecord, error) {
+func (s *Store) normalizedBotNodeRecord(input BotNodeInput) (*BotNodeRecord, error) {
 	longName := strings.TrimSpace(input.LongName)
 	shortName := strings.TrimSpace(input.ShortName)
 	channelID := strings.TrimSpace(input.DefaultChannelID)
 	psk := strings.TrimSpace(input.PSK)
 	if psk == "" {
-		psk = botDefaultPSK
+		psk = BotDefaultPSK
 	}
 	if _, err := mqtpp.ExpandPSK(psk); err != nil {
 		return nil, err
 	}
 	topicPrefix := strings.Trim(strings.TrimSpace(input.TopicPrefix), "/")
 	if topicPrefix == "" {
-		topicPrefix = botDefaultTopicPrefix
+		topicPrefix = BotDefaultTopicPrefix
 	}
 	if longName == "" {
 		return nil, fmt.Errorf("long name is required")
@@ -262,7 +262,7 @@ func (s *store) normalizedBotNodeRecord(input botNodeInput) (*botNodeRecord, err
 	}
 	interval := input.NodeInfoBroadcastIntervalSeconds
 	if interval <= 0 {
-		interval = botDefaultNodeInfoBroadcastSeconds
+		interval = BotDefaultNodeInfoBroadcastSeconds
 	}
 	if interval < 60 {
 		return nil, fmt.Errorf("nodeinfo broadcast interval must be at least 60 seconds")
@@ -277,13 +277,13 @@ func (s *store) normalizedBotNodeRecord(input botNodeInput) (*botNodeRecord, err
 	} else {
 		nodeNum = *input.NodeNum
 	}
-	if err := validateBotNodeNum(nodeNum); err != nil {
+	if err := ValidateBotNodeNum(nodeNum); err != nil {
 		return nil, err
 	}
-	return &botNodeRecord{NodeID: mqtpp.NodeNumToID(uint32(nodeNum)), NodeNum: nodeNum, LongName: longName, ShortName: shortName, Enabled: input.Enabled, DefaultChannelID: channelID, TopicPrefix: topicPrefix, PSK: psk, NodeInfoBroadcastEnabled: input.NodeInfoBroadcastEnabled, NodeInfoBroadcastIntervalSeconds: interval, LLMQueueEnabled: input.LLMQueueEnabled, LLMIncludeChannelMessages: input.LLMIncludeChannelMessages}, nil
+	return &BotNodeRecord{NodeID: mqtpp.NodeNumToID(uint32(nodeNum)), NodeNum: nodeNum, LongName: longName, ShortName: shortName, Enabled: input.Enabled, DefaultChannelID: channelID, TopicPrefix: topicPrefix, PSK: psk, NodeInfoBroadcastEnabled: input.NodeInfoBroadcastEnabled, NodeInfoBroadcastIntervalSeconds: interval, LLMQueueEnabled: input.LLMQueueEnabled, LLMIncludeChannelMessages: input.LLMIncludeChannelMessages}, nil
 }
 
-func populateBotNodeKeys(row *botNodeRecord) error {
+func populateBotNodeKeys(row *BotNodeRecord) error {
 	privateKey, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
 		return err
@@ -293,7 +293,7 @@ func populateBotNodeKeys(row *botNodeRecord) error {
 	return nil
 }
 
-func decodeBotPublicKey(row botNodeRecord) ([]byte, error) {
+func DecodeBotPublicKey(row BotNodeRecord) ([]byte, error) {
 	if strings.TrimSpace(row.PublicKey) == "" {
 		return nil, nil
 	}
@@ -304,31 +304,31 @@ func decodeBotPublicKey(row botNodeRecord) ([]byte, error) {
 	return key, nil
 }
 
-func validateBotNodeNum(nodeNum int64) error {
+func ValidateBotNodeNum(nodeNum int64) error {
 	if nodeNum <= 0 || nodeNum >= int64(mqtpp.NodeNumBroadcast) {
 		return fmt.Errorf("node num must be between 1 and 4294967294")
 	}
 	return nil
 }
 
-func (s *store) generateBotNodeNum() (int64, error) {
+func (s *Store) generateBotNodeNum() (int64, error) {
 	for i := 0; i < 32; i++ {
 		var buf [4]byte
 		if _, err := rand.Read(buf[:]); err != nil {
 			return 0, err
 		}
 		nodeNum := int64(binary.LittleEndian.Uint32(buf[:]) & 0x7fffffff)
-		if err := validateBotNodeNum(nodeNum); err != nil {
+		if err := ValidateBotNodeNum(nodeNum); err != nil {
 			continue
 		}
 		if err := s.ensureBotNodeUnique(0, mqtpp.NodeNumToID(uint32(nodeNum)), nodeNum); err != nil {
-			if errors.Is(err, errBotNodeAlreadyExists) {
+			if errors.Is(err, ErrBotNodeAlreadyExists) {
 				continue
 			}
 			return 0, err
 		}
 		if err := s.ensureBotNodeDoesNotConflictWithNodeInfo(nodeNum, mqtpp.NodeNumToID(uint32(nodeNum))); err != nil {
-			if errors.Is(err, errBotNodeAlreadyExists) {
+			if errors.Is(err, ErrBotNodeAlreadyExists) {
 				continue
 			}
 			return 0, err
@@ -338,15 +338,15 @@ func (s *store) generateBotNodeNum() (int64, error) {
 	return 0, fmt.Errorf("generate bot node num failed")
 }
 
-func (s *store) ensureBotNodeUnique(id uint64, nodeID string, nodeNum int64) error {
-	var existing botNodeRecord
+func (s *Store) ensureBotNodeUnique(id uint64, nodeID string, nodeNum int64) error {
+	var existing BotNodeRecord
 	q := s.db.Where("node_id = ? OR node_num = ?", nodeID, nodeNum)
 	if id != 0 {
 		q = q.Where("id <> ?", id)
 	}
 	err := q.Take(&existing).Error
 	if err == nil {
-		return errBotNodeAlreadyExists
+		return ErrBotNodeAlreadyExists
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
@@ -354,8 +354,8 @@ func (s *store) ensureBotNodeUnique(id uint64, nodeID string, nodeNum int64) err
 	return err
 }
 
-func (s *store) ensureBotNodeDoesNotConflictWithNodeInfo(nodeNum int64, selfNodeID string) error {
-	var existing nodeInfoRecord
+func (s *Store) ensureBotNodeDoesNotConflictWithNodeInfo(nodeNum int64, selfNodeID string) error {
+	var existing NodeInfoRecord
 	q := s.db.Where("node_num = ?", nodeNum)
 	if selfNodeID != "" {
 		// 机器人自己广播 NodeInfo 后会以同样的 node_id/node_num 回写 nodeinfo；
@@ -364,7 +364,7 @@ func (s *store) ensureBotNodeDoesNotConflictWithNodeInfo(nodeNum int64, selfNode
 	}
 	err := q.Take(&existing).Error
 	if err == nil {
-		return errBotNodeAlreadyExists
+		return ErrBotNodeAlreadyExists
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil

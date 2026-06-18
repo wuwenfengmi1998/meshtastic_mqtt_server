@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"encoding/json"
@@ -14,9 +14,9 @@ import (
 // ============================================
 
 // ListLLMProviders 列出所有 LLM Provider
-func (s *store) ListLLMProviders(includeInactive bool) ([]llmProviderRecord, error) {
-	var rows []llmProviderRecord
-	query := s.db.Model(&llmProviderRecord{})
+func (s *Store) ListLLMProviders(includeInactive bool) ([]LLMProviderRecord, error) {
+	var rows []LLMProviderRecord
+	query := s.db.Model(&LLMProviderRecord{})
 	if !includeInactive {
 		query = query.Where("active = ?", true)
 	}
@@ -27,8 +27,8 @@ func (s *store) ListLLMProviders(includeInactive bool) ([]llmProviderRecord, err
 }
 
 // GetLLMProvider 获取单个 LLM Provider
-func (s *store) GetLLMProvider(name string) (*llmProviderRecord, error) {
-	var record llmProviderRecord
+func (s *Store) GetLLMProvider(name string) (*LLMProviderRecord, error) {
+	var record LLMProviderRecord
 	if err := s.db.Where("name = ?", name).Take(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
@@ -39,7 +39,7 @@ func (s *store) GetLLMProvider(name string) (*llmProviderRecord, error) {
 }
 
 // CreateLLMProvider 创建 LLM Provider
-func (s *store) CreateLLMProvider(record *llmProviderRecord) error {
+func (s *Store) CreateLLMProvider(record *LLMProviderRecord) error {
 	if err := s.db.Create(record).Error; err != nil {
 		return fmt.Errorf("create llm provider %s: %w", record.Name, err)
 	}
@@ -47,16 +47,16 @@ func (s *store) CreateLLMProvider(record *llmProviderRecord) error {
 }
 
 // UpdateLLMProvider 更新 LLM Provider
-func (s *store) UpdateLLMProvider(name string, updates map[string]any) error {
-	if err := s.db.Model(&llmProviderRecord{}).Where("name = ?", name).Updates(updates).Error; err != nil {
+func (s *Store) UpdateLLMProvider(name string, updates map[string]any) error {
+	if err := s.db.Model(&LLMProviderRecord{}).Where("name = ?", name).Updates(updates).Error; err != nil {
 		return fmt.Errorf("update llm provider %s: %w", name, err)
 	}
 	return nil
 }
 
 // DeleteLLMProvider 删除 LLM Provider
-func (s *store) DeleteLLMProvider(name string) error {
-	if err := s.db.Where("name = ?", name).Delete(&llmProviderRecord{}).Error; err != nil {
+func (s *Store) DeleteLLMProvider(name string) error {
+	if err := s.db.Where("name = ?", name).Delete(&LLMProviderRecord{}).Error; err != nil {
 		return fmt.Errorf("delete llm provider %s: %w", name, err)
 	}
 	return nil
@@ -64,7 +64,7 @@ func (s *store) DeleteLLMProvider(name string) error {
 
 // EnsureDefaultLLMProvider 确保存在默认 LLM Provider 配置
 // 只有当数据库中完全没有任何 provider 配置时，才创建默认配置
-func (s *store) EnsureDefaultLLMProvider() error {
+func (s *Store) EnsureDefaultLLMProvider() error {
 	// 先检查是否已经有任何 provider 配置
 	providers, err := s.ListLLMProviders(true)
 	if err != nil {
@@ -74,7 +74,7 @@ func (s *store) EnsureDefaultLLMProvider() error {
 		return nil // 已有配置，不创建默认
 	}
 	// 创建默认配置
-	defaultConfig := &llmProviderRecord{
+	defaultConfig := &LLMProviderRecord{
 		Name:                "default",
 		Active:              true,
 		APIKey:              "",
@@ -91,8 +91,8 @@ func (s *store) EnsureDefaultLLMProvider() error {
 // ============================================
 
 // GetLLMToolRouter 获取当前激活的 Tool Router 配置
-func (s *store) GetLLMToolRouter() (*llmToolRouterRecord, error) {
-	var record llmToolRouterRecord
+func (s *Store) GetLLMToolRouter() (*LLMToolRouterRecord, error) {
+	var record LLMToolRouterRecord
 	// 默认取第一条记录（ID 最小的），因为通常只需要一个配置
 	if err := s.db.Order("id ASC").First(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -104,7 +104,7 @@ func (s *store) GetLLMToolRouter() (*llmToolRouterRecord, error) {
 }
 
 // CreateLLMToolRouter 创建 Tool Router 配置
-func (s *store) CreateLLMToolRouter(record *llmToolRouterRecord) error {
+func (s *Store) CreateLLMToolRouter(record *LLMToolRouterRecord) error {
 	if err := s.db.Create(record).Error; err != nil {
 		return fmt.Errorf("create llm tool router: %w", err)
 	}
@@ -112,15 +112,15 @@ func (s *store) CreateLLMToolRouter(record *llmToolRouterRecord) error {
 }
 
 // UpdateLLMToolRouter 更新 Tool Router 配置
-func (s *store) UpdateLLMToolRouter(id uint64, updates map[string]any) error {
-	if err := s.db.Model(&llmToolRouterRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+func (s *Store) UpdateLLMToolRouter(id uint64, updates map[string]any) error {
+	if err := s.db.Model(&LLMToolRouterRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return fmt.Errorf("update llm tool router %d: %w", id, err)
 	}
 	return nil
 }
 
 // EnsureDefaultLLMToolRouter 确保存在默认 Tool Router 配置
-func (s *store) EnsureDefaultLLMToolRouter() error {
+func (s *Store) EnsureDefaultLLMToolRouter() error {
 	_, err := s.GetLLMToolRouter()
 	if err == nil {
 		return nil // 已存在
@@ -129,7 +129,7 @@ func (s *store) EnsureDefaultLLMToolRouter() error {
 		return err
 	}
 	// 创建默认配置
-	defaultConfig := &llmToolRouterRecord{
+	defaultConfig := &LLMToolRouterRecord{
 		Enabled:      true,
 		OpenAIName:   "",
 		Timeout:      30,
@@ -144,8 +144,8 @@ func (s *store) EnsureDefaultLLMToolRouter() error {
 // ============================================
 
 // GetLLMPrimaryConfig 获取当前激活的主 AI 回复配置
-func (s *store) GetLLMPrimaryConfig() (*llmPrimaryConfigRecord, error) {
-	var record llmPrimaryConfigRecord
+func (s *Store) GetLLMPrimaryConfig() (*LLMPrimaryConfigRecord, error) {
+	var record LLMPrimaryConfigRecord
 	// 默认取第一条记录（ID 最小的），因为通常只需要一个配置
 	if err := s.db.Order("id ASC").First(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -158,7 +158,7 @@ func (s *store) GetLLMPrimaryConfig() (*llmPrimaryConfigRecord, error) {
 
 // GetLLMPrimaryConfigSystemPrompt 获取主 AI 回复配置中的系统提示词
 // 如果没有配置或出错，返回空字符串（autoreply service 会处理这种情况）
-func (s *store) GetLLMPrimaryConfigSystemPrompt() (string, error) {
+func (s *Store) GetLLMPrimaryConfigSystemPrompt() (string, error) {
 	record, err := s.GetLLMPrimaryConfig()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -171,7 +171,7 @@ func (s *store) GetLLMPrimaryConfigSystemPrompt() (string, error) {
 }
 
 // GetLLMPrimaryConfigEnableTool 获取是否启用工具调用
-func (s *store) GetLLMPrimaryConfigEnableTool() (bool, error) {
+func (s *Store) GetLLMPrimaryConfigEnableTool() (bool, error) {
 	record, err := s.GetLLMPrimaryConfig()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -183,7 +183,7 @@ func (s *store) GetLLMPrimaryConfigEnableTool() (bool, error) {
 }
 
 // CreateLLMPrimaryConfig 创建主 AI 回复配置
-func (s *store) CreateLLMPrimaryConfig(record *llmPrimaryConfigRecord) error {
+func (s *Store) CreateLLMPrimaryConfig(record *LLMPrimaryConfigRecord) error {
 	if err := s.db.Create(record).Error; err != nil {
 		return fmt.Errorf("create llm primary config: %w", err)
 	}
@@ -191,15 +191,15 @@ func (s *store) CreateLLMPrimaryConfig(record *llmPrimaryConfigRecord) error {
 }
 
 // UpdateLLMPrimaryConfig 更新主 AI 回复配置
-func (s *store) UpdateLLMPrimaryConfig(id uint64, updates map[string]any) error {
-	if err := s.db.Model(&llmPrimaryConfigRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+func (s *Store) UpdateLLMPrimaryConfig(id uint64, updates map[string]any) error {
+	if err := s.db.Model(&LLMPrimaryConfigRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return fmt.Errorf("update llm primary config %d: %w", id, err)
 	}
 	return nil
 }
 
 // EnsureDefaultLLMPrimaryConfig 确保存在默认主 AI 回复配置
-func (s *store) EnsureDefaultLLMPrimaryConfig() error {
+func (s *Store) EnsureDefaultLLMPrimaryConfig() error {
 	_, err := s.GetLLMPrimaryConfig()
 	if err == nil {
 		return nil // 已存在
@@ -208,7 +208,7 @@ func (s *store) EnsureDefaultLLMPrimaryConfig() error {
 		return err
 	}
 	// 创建默认配置
-	defaultConfig := &llmPrimaryConfigRecord{
+	defaultConfig := &LLMPrimaryConfigRecord{
 		Enabled:      false,
 		ProviderName: "",
 		Timeout:      120,
@@ -237,7 +237,7 @@ type LLMMessageQueueInput struct {
 }
 
 // EnqueueLLMMessage 将消息添加到 LLM 队列
-func (s *store) EnqueueLLMMessage(input LLMMessageQueueInput) (*llmMessageQueueRecord, error) {
+func (s *Store) EnqueueLLMMessage(input LLMMessageQueueInput) (*LLMMessageQueueRecord, error) {
 	var err error
 
 	if input.BotID == 0 {
@@ -269,16 +269,16 @@ func (s *store) EnqueueLLMMessage(input LLMMessageQueueInput) (*llmMessageQueueR
 	// packet_id > 0: 用 bot_id + packet_id 去重（频道消息）
 	// packet_id = 0: 用 bot_id + from_node_id + text 去重（私聊消息，可能没有 packet_id）
 	// 只排除 pending/processing 状态的消息，允许 error 状态的消息重新入队
-	var existing llmMessageQueueRecord
+	var existing LLMMessageQueueRecord
 	if input.PacketID > 0 {
 		// 频道消息：用 bot_id + packet_id 去重
 		err = s.db.Where("bot_id = ? AND packet_id = ? AND deleted_at IS NULL AND status IN (?, ?)",
-			input.BotID, input.PacketID, llmMessageStatusPending, llmMessageStatusProcessing).
+			input.BotID, input.PacketID, LLMMessageStatusPending, LLMMessageStatusProcessing).
 			Take(&existing).Error
 	} else {
 		// 私聊消息：用 bot_id + from_node_id + text 去重（避免同一人连续发相同内容被拒绝）
 		err = s.db.Where("bot_id = ? AND from_node_id = ? AND text = ? AND deleted_at IS NULL AND status IN (?, ?)",
-			input.BotID, input.FromNodeID, input.Text, llmMessageStatusPending, llmMessageStatusProcessing).
+			input.BotID, input.FromNodeID, input.Text, LLMMessageStatusPending, LLMMessageStatusProcessing).
 			Take(&existing).Error
 	}
 	if err == nil {
@@ -294,7 +294,7 @@ func (s *store) EnqueueLLMMessage(input LLMMessageQueueInput) (*llmMessageQueueR
 	if messageType == "" {
 		messageType = "direct"
 	}
-	record := &llmMessageQueueRecord{
+	record := &LLMMessageQueueRecord{
 		BotID:       input.BotID,
 		BotNodeID:   input.BotNodeID,
 		BotNodeNum:  input.BotNodeNum,
@@ -307,7 +307,7 @@ func (s *store) EnqueueLLMMessage(input LLMMessageQueueInput) (*llmMessageQueueR
 		ChannelID:   input.ChannelID,
 		Topic:       input.Topic,
 		MessageType: messageType,
-		Status:      llmMessageStatusPending,
+		Status:      LLMMessageStatusPending,
 		ReceivedAt:  now,
 		ContentJSON: input.ContentJSON,
 	}
@@ -319,9 +319,9 @@ func (s *store) EnqueueLLMMessage(input LLMMessageQueueInput) (*llmMessageQueueR
 }
 
 // ListLLMMessages 列出 LLM 队列消息
-func (s *store) ListLLMMessages(opts listOptions, botID uint64, includeDeleted bool) ([]llmMessageQueueRecord, int64, error) {
-	var rows []llmMessageQueueRecord
-	query := s.db.Model(&llmMessageQueueRecord{})
+func (s *Store) ListLLMMessages(opts ListOptions, botID uint64, includeDeleted bool) ([]LLMMessageQueueRecord, int64, error) {
+	var rows []LLMMessageQueueRecord
+	query := s.db.Model(&LLMMessageQueueRecord{})
 
 	if botID > 0 {
 		query = query.Where("bot_id = ?", botID)
@@ -352,8 +352,8 @@ func (s *store) ListLLMMessages(opts listOptions, botID uint64, includeDeleted b
 }
 
 // GetLLMMessage 获取单条 LLM 消息
-func (s *store) GetLLMMessage(id uint64) (*llmMessageQueueRecord, error) {
-	var record llmMessageQueueRecord
+func (s *Store) GetLLMMessage(id uint64) (*LLMMessageQueueRecord, error) {
+	var record LLMMessageQueueRecord
 	if err := s.db.Where("id = ?", id).Take(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
@@ -364,50 +364,50 @@ func (s *store) GetLLMMessage(id uint64) (*llmMessageQueueRecord, error) {
 }
 
 // UpdateLLMMessageStatus 更新 LLM 消息状态
-func (s *store) UpdateLLMMessageStatus(id uint64, status string, errorMsg string) error {
+func (s *Store) UpdateLLMMessageStatus(id uint64, status string, errorMsg string) error {
 	updates := map[string]any{
 		"status": status,
 		"error":  errorMsg,
 	}
-	if status == llmMessageStatusProcessed {
+	if status == LLMMessageStatusProcessed {
 		now := time.Now()
 		updates["processed_at"] = &now
 	}
-	if err := s.db.Model(&llmMessageQueueRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.Model(&LLMMessageQueueRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return fmt.Errorf("update llm message status %d: %w", id, err)
 	}
 	return nil
 }
 
 // SoftDeleteLLMMessage 软删除 LLM 消息
-func (s *store) SoftDeleteLLMMessage(id uint64) error {
+func (s *Store) SoftDeleteLLMMessage(id uint64) error {
 	now := time.Now()
-	if err := s.db.Model(&llmMessageQueueRecord{}).Where("id = ?", id).Update("deleted_at", &now).Error; err != nil {
+	if err := s.db.Model(&LLMMessageQueueRecord{}).Where("id = ?", id).Update("deleted_at", &now).Error; err != nil {
 		return fmt.Errorf("soft delete llm message %d: %w", id, err)
 	}
 	return nil
 }
 
 // SoftDeleteLLMMessagesByBot 软删除指定机器人的所有消息
-func (s *store) SoftDeleteLLMMessagesByBot(botID uint64) error {
+func (s *Store) SoftDeleteLLMMessagesByBot(botID uint64) error {
 	now := time.Now()
-	if err := s.db.Model(&llmMessageQueueRecord{}).Where("bot_id = ? AND deleted_at IS NULL", botID).Update("deleted_at", &now).Error; err != nil {
+	if err := s.db.Model(&LLMMessageQueueRecord{}).Where("bot_id = ? AND deleted_at IS NULL", botID).Update("deleted_at", &now).Error; err != nil {
 		return fmt.Errorf("soft delete llm messages for bot %d: %w", botID, err)
 	}
 	return nil
 }
 
 // CleanupDeletedLLMMessages 清理已软删除超过指定时间的消息
-func (s *store) CleanupDeletedLLMMessages(before time.Time) (int64, error) {
-	result := s.db.Where("deleted_at IS NOT NULL AND deleted_at < ?", before).Delete(&llmMessageQueueRecord{})
+func (s *Store) CleanupDeletedLLMMessages(before time.Time) (int64, error) {
+	result := s.db.Where("deleted_at IS NOT NULL AND deleted_at < ?", before).Delete(&LLMMessageQueueRecord{})
 	if result.Error != nil {
 		return 0, fmt.Errorf("cleanup deleted llm messages: %w", result.Error)
 	}
 	return result.RowsAffected, nil
 }
 
-// llmMessageDTO 将数据库记录转换为 API 响应格式
-func llmMessageDTO(row llmMessageQueueRecord) map[string]any {
+// LLMMessageDTO 将数据库记录转换为 API 响应格式
+func LLMMessageDTO(row LLMMessageQueueRecord) map[string]any {
 	return map[string]any{
 		"id":            row.ID,
 		"bot_id":        row.BotID,
@@ -432,7 +432,7 @@ func llmMessageDTO(row llmMessageQueueRecord) map[string]any {
 
 // enqueueChannelMessageToLLM 将频道消息添加到 LLM 队列
 // 为每个启用了「包含频道消息」的机器人都创建一条独立的队列记录
-func enqueueChannelMessageToLLM(s *store, record map[string]any) error {
+func enqueueChannelMessageToLLM(s *Store, record map[string]any) error {
 	if s == nil {
 		return nil
 	}
@@ -481,7 +481,7 @@ func enqueueChannelMessageToLLM(s *store, record map[string]any) error {
 
 	// 查询所有启用了 LLM 队列且包含频道消息的机器人
 	// SQLite 中 numeric 布尔值用 1/0 存储，必须用整数查询
-	var bots []botNodeRecord
+	var bots []BotNodeRecord
 	err = s.db.Where("llm_queue_enabled = ? AND llm_include_channel_messages = ?", 1, 1).Find(&bots).Error
 	if err != nil {
 		return fmt.Errorf("query bots for channel message enqueue: %w", err)

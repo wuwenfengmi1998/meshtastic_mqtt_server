@@ -1,4 +1,4 @@
-package main
+package store
 
 import "testing"
 
@@ -14,7 +14,7 @@ func TestRuntimeSettingsDefaultAndUpdates(t *testing.T) {
 		t.Fatalf("AllowEncryptedForwarding = true, want false")
 	}
 
-	if _, err := st.SetBoolRuntimeSetting(runtimeSettingAllowEncryptedForwarding, true, "test setting"); err != nil {
+	if _, err := st.SetBoolRuntimeSetting(RuntimeSettingAllowEncryptedForwarding, true, "test setting"); err != nil {
 		t.Fatalf("SetBoolRuntimeSetting(true) error = %v", err)
 	}
 	settings, err = st.GetRuntimeSettings()
@@ -25,7 +25,7 @@ func TestRuntimeSettingsDefaultAndUpdates(t *testing.T) {
 		t.Fatalf("AllowEncryptedForwarding = false, want true")
 	}
 
-	if _, err := st.SetBoolRuntimeSetting(runtimeSettingAllowEncryptedForwarding, false, "test setting"); err != nil {
+	if _, err := st.SetBoolRuntimeSetting(RuntimeSettingAllowEncryptedForwarding, false, "test setting"); err != nil {
 		t.Fatalf("SetBoolRuntimeSetting(false) error = %v", err)
 	}
 	settings, err = st.GetRuntimeSettings()

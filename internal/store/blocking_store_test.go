@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"errors"
@@ -20,8 +20,8 @@ func TestNodeBlockingCRUD(t *testing.T) {
 		t.Fatalf("created node rule = %+v, want normalized fields", rule)
 	}
 
-	if _, err := st.CreateNodeBlocking("!12345678", nil, "duplicate", true); !errors.Is(err, errBlockingAlreadyExists) {
-		t.Fatalf("duplicate CreateNodeBlocking() error = %v, want errBlockingAlreadyExists", err)
+	if _, err := st.CreateNodeBlocking("!12345678", nil, "duplicate", true); !errors.Is(err, ErrBlockingAlreadyExists) {
+		t.Fatalf("duplicate CreateNodeBlocking() error = %v, want ErrBlockingAlreadyExists", err)
 	}
 
 	updatedNum := int64(7)
@@ -33,14 +33,14 @@ func TestNodeBlockingCRUD(t *testing.T) {
 		t.Fatalf("updated node rule = %+v, want updated fields", updated)
 	}
 
-	rows, err := st.ListNodeBlocking(listOptions{})
+	rows, err := st.ListNodeBlocking(ListOptions{})
 	if err != nil {
 		t.Fatalf("ListNodeBlocking() error = %v", err)
 	}
 	if len(rows) != 1 || rows[0].ID != rule.ID {
 		t.Fatalf("ListNodeBlocking() = %+v, want one updated rule", rows)
 	}
-	total, err := st.CountNodeBlocking(listOptions{})
+	total, err := st.CountNodeBlocking(ListOptions{})
 	if err != nil || total != 1 {
 		t.Fatalf("CountNodeBlocking() = %d, %v, want 1, nil", total, err)
 	}
@@ -85,8 +85,8 @@ func TestIPBlockingCRUDAndValidation(t *testing.T) {
 		t.Fatalf("cidr IPValue = %q, want 192.168.1.0/24", cidr.IPValue)
 	}
 
-	if _, err := st.CreateIPBlocking("127.0.0.1", "duplicate", true); !errors.Is(err, errBlockingAlreadyExists) {
-		t.Fatalf("duplicate CreateIPBlocking() error = %v, want errBlockingAlreadyExists", err)
+	if _, err := st.CreateIPBlocking("127.0.0.1", "duplicate", true); !errors.Is(err, ErrBlockingAlreadyExists) {
+		t.Fatalf("duplicate CreateIPBlocking() error = %v, want ErrBlockingAlreadyExists", err)
 	}
 	if _, err := st.CreateIPBlocking("not-an-ip", "invalid", true); err == nil {
 		t.Fatal("CreateIPBlocking(invalid) error = nil, want error")
@@ -100,14 +100,14 @@ func TestIPBlockingCRUDAndValidation(t *testing.T) {
 		t.Fatalf("updated ip rule = %+v, want updated fields", updated)
 	}
 
-	rows, err := st.ListIPBlocking(listOptions{})
+	rows, err := st.ListIPBlocking(ListOptions{})
 	if err != nil {
 		t.Fatalf("ListIPBlocking() error = %v", err)
 	}
 	if len(rows) != 2 {
 		t.Fatalf("ListIPBlocking() length = %d, want 2", len(rows))
 	}
-	total, err := st.CountIPBlocking(listOptions{})
+	total, err := st.CountIPBlocking(ListOptions{})
 	if err != nil || total != 2 {
 		t.Fatalf("CountIPBlocking() = %d, %v, want 2, nil", total, err)
 	}
@@ -164,12 +164,12 @@ func TestForbiddenWordBlockingCRUDAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateForbiddenWordBlocking() error = %v", err)
 	}
-	if rule.Word != "spam" || rule.MatchType != forbiddenWordMatchContains || rule.CaseSensitive || rule.Reason != "junk" || !rule.Enabled {
+	if rule.Word != "spam" || rule.MatchType != ForbiddenWordMatchContains || rule.CaseSensitive || rule.Reason != "junk" || !rule.Enabled {
 		t.Fatalf("created word rule = %+v, want normalized fields", rule)
 	}
 
-	if _, err := st.CreateForbiddenWordBlocking("spam", "contains", false, "duplicate", true); !errors.Is(err, errBlockingAlreadyExists) {
-		t.Fatalf("duplicate CreateForbiddenWordBlocking() error = %v, want errBlockingAlreadyExists", err)
+	if _, err := st.CreateForbiddenWordBlocking("spam", "contains", false, "duplicate", true); !errors.Is(err, ErrBlockingAlreadyExists) {
+		t.Fatalf("duplicate CreateForbiddenWordBlocking() error = %v, want ErrBlockingAlreadyExists", err)
 	}
 	if _, err := st.CreateForbiddenWordBlocking("   ", "contains", false, "empty", true); err == nil {
 		t.Fatal("CreateForbiddenWordBlocking(empty) error = nil, want error")
@@ -186,14 +186,14 @@ func TestForbiddenWordBlockingCRUDAndValidation(t *testing.T) {
 		t.Fatalf("updated word rule = %+v, want updated fields", updated)
 	}
 
-	rows, err := st.ListForbiddenWordBlocking(listOptions{})
+	rows, err := st.ListForbiddenWordBlocking(ListOptions{})
 	if err != nil {
 		t.Fatalf("ListForbiddenWordBlocking() error = %v", err)
 	}
 	if len(rows) != 1 || rows[0].ID != rule.ID {
 		t.Fatalf("ListForbiddenWordBlocking() = %+v, want one updated rule", rows)
 	}
-	total, err := st.CountForbiddenWordBlocking(listOptions{})
+	total, err := st.CountForbiddenWordBlocking(ListOptions{})
 	if err != nil || total != 1 {
 		t.Fatalf("CountForbiddenWordBlocking() = %d, %v, want 1, nil", total, err)
 	}

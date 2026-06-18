@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type listOptions struct {
+type ListOptions struct {
 	Limit     int
 	Offset    int
 	NodeID    string
@@ -21,31 +21,31 @@ type listOptions struct {
 	MaxLng    *float64
 }
 
-type mapReportViewportOptions struct {
-	ListOptions      listOptions
+type MapReportViewportOptions struct {
+	ListOptions      ListOptions
 	Zoom             int
 	Limit            int
 	ClusterThreshold int
 	TargetCells      int
 }
 
-type mapReportViewportResult struct {
+type MapReportViewportResult struct {
 	Mode     string
 	Total    int64
-	Points   []mapReportRecord
-	Clusters []mapReportClusterRecord
+	Points   []MapReportRecord
+	Clusters []MapReportClusterRecord
 	Limit    int
 	Zoom     int
 }
 
-type mapReportClusterRecord struct {
+type MapReportClusterRecord struct {
 	ClusterID string
 	Latitude  float64
 	Longitude float64
 	Count     int64
 }
 
-func (s *store) Ping() error {
+func (s *Store) Ping() error {
 	db, err := s.db.DB()
 	if err != nil {
 		return err
@@ -53,7 +53,7 @@ func (s *store) Ping() error {
 	return db.Ping()
 }
 
-func normalizeListOptions(opts listOptions) listOptions {
+func NormalizeListOptions(opts ListOptions) ListOptions {
 	if opts.Limit <= 0 {
 		opts.Limit = 100
 	}
@@ -66,64 +66,64 @@ func normalizeListOptions(opts listOptions) listOptions {
 	return opts
 }
 
-func (s *store) ListNodeInfo(opts listOptions) ([]nodeInfoRecord, error) {
-	opts = normalizeListOptions(opts)
-	var rows []nodeInfoRecord
-	q := applyNodeFilters(s.db.Model(&nodeInfoRecord{}), opts).
+func (s *Store) ListNodeInfo(opts ListOptions) ([]NodeInfoRecord, error) {
+	opts = NormalizeListOptions(opts)
+	var rows []NodeInfoRecord
+	q := applyNodeFilters(s.db.Model(&NodeInfoRecord{}), opts).
 		Order("updated_at DESC").
 		Limit(opts.Limit).
 		Offset(opts.Offset)
 	return rows, q.Find(&rows).Error
 }
 
-func (s *store) CountNodeInfo(opts listOptions) (int64, error) {
+func (s *Store) CountNodeInfo(opts ListOptions) (int64, error) {
 	var total int64
-	q := applyNodeFilters(s.db.Model(&nodeInfoRecord{}), opts)
+	q := applyNodeFilters(s.db.Model(&NodeInfoRecord{}), opts)
 	return total, q.Count(&total).Error
 }
 
-func (s *store) GetNodeInfo(nodeID string) (*nodeInfoRecord, error) {
-	var row nodeInfoRecord
+func (s *Store) GetNodeInfo(nodeID string) (*NodeInfoRecord, error) {
+	var row NodeInfoRecord
 	if err := s.db.Where("node_id = ?", nodeID).Take(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) ListMapReports(opts listOptions) ([]mapReportRecord, error) {
-	opts = normalizeListOptions(opts)
-	var rows []mapReportRecord
-	q := applyMapReportFilters(s.db.Model(&mapReportRecord{}), opts).
+func (s *Store) ListMapReports(opts ListOptions) ([]MapReportRecord, error) {
+	opts = NormalizeListOptions(opts)
+	var rows []MapReportRecord
+	q := applyMapReportFilters(s.db.Model(&MapReportRecord{}), opts).
 		Order("updated_at DESC").
 		Limit(opts.Limit).
 		Offset(opts.Offset)
 	return rows, q.Find(&rows).Error
 }
 
-func (s *store) CountMapReports(opts listOptions) (int64, error) {
+func (s *Store) CountMapReports(opts ListOptions) (int64, error) {
 	var total int64
-	q := applyMapReportFilters(s.db.Model(&mapReportRecord{}), opts)
+	q := applyMapReportFilters(s.db.Model(&MapReportRecord{}), opts)
 	return total, q.Count(&total).Error
 }
 
-func (s *store) GetMapReport(nodeID string) (*mapReportRecord, error) {
-	var row mapReportRecord
+func (s *Store) GetMapReport(nodeID string) (*MapReportRecord, error) {
+	var row MapReportRecord
 	if err := s.db.Where("node_id = ?", nodeID).Take(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) ListMapReportViewport(opts mapReportViewportOptions) (*mapReportViewportResult, error) {
-	opts = normalizeMapReportViewportOptions(opts)
+func (s *Store) ListMapReportViewport(opts MapReportViewportOptions) (*MapReportViewportResult, error) {
+	opts = NormalizeMapReportViewportOptions(opts)
 	total, err := s.CountMapReports(opts.ListOptions)
 	if err != nil {
 		return nil, err
 	}
-	result := &mapReportViewportResult{Total: total, Limit: opts.Limit, Zoom: opts.Zoom}
+	result := &MapReportViewportResult{Total: total, Limit: opts.Limit, Zoom: opts.Zoom}
 	if total <= int64(opts.ClusterThreshold) {
-		var points []mapReportRecord
-		q := applyMapReportFilters(s.db.Model(&mapReportRecord{}), opts.ListOptions).
+		var points []MapReportRecord
+		q := applyMapReportFilters(s.db.Model(&MapReportRecord{}), opts.ListOptions).
 			Order("updated_at DESC").
 			Limit(opts.Limit)
 		if err := q.Find(&points).Error; err != nil {
@@ -142,8 +142,8 @@ func (s *store) ListMapReportViewport(opts mapReportViewportOptions) (*mapReport
 	return result, nil
 }
 
-func (s *store) ListMapReportClusters(opts mapReportViewportOptions) ([]mapReportClusterRecord, error) {
-	opts = normalizeMapReportViewportOptions(opts)
+func (s *Store) ListMapReportClusters(opts MapReportViewportOptions) ([]MapReportClusterRecord, error) {
+	opts = NormalizeMapReportViewportOptions(opts)
 	cellSize := mapReportClusterCellSize(opts.ListOptions, opts.TargetCells)
 	var rows []struct {
 		LatBucket int64
@@ -152,7 +152,7 @@ func (s *store) ListMapReportClusters(opts mapReportViewportOptions) ([]mapRepor
 		Longitude float64
 		Count     int64
 	}
-	q := applyMapReportFilters(s.db.Model(&mapReportRecord{}), opts.ListOptions).
+	q := applyMapReportFilters(s.db.Model(&MapReportRecord{}), opts.ListOptions).
 		Select("CAST((latitude + 90.0) / ? AS INTEGER) AS lat_bucket, CAST((longitude + 180.0) / ? AS INTEGER) AS lng_bucket, AVG(latitude) AS latitude, AVG(longitude) AS longitude, COUNT(*) AS count", cellSize, cellSize).
 		Group("lat_bucket, lng_bucket").
 		Order("count DESC").
@@ -160,9 +160,9 @@ func (s *store) ListMapReportClusters(opts mapReportViewportOptions) ([]mapRepor
 	if err := q.Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	clusters := make([]mapReportClusterRecord, 0, len(rows))
+	clusters := make([]MapReportClusterRecord, 0, len(rows))
 	for _, row := range rows {
-		clusters = append(clusters, mapReportClusterRecord{
+		clusters = append(clusters, MapReportClusterRecord{
 			ClusterID: fmt.Sprintf("%d:%d", row.LatBucket, row.LngBucket),
 			Latitude:  row.Latitude,
 			Longitude: row.Longitude,
@@ -172,7 +172,7 @@ func (s *store) ListMapReportClusters(opts mapReportViewportOptions) ([]mapRepor
 	return clusters, nil
 }
 
-func normalizeMapReportViewportOptions(opts mapReportViewportOptions) mapReportViewportOptions {
+func NormalizeMapReportViewportOptions(opts MapReportViewportOptions) MapReportViewportOptions {
 	if opts.Limit <= 0 {
 		opts.Limit = 1000
 	}
@@ -194,7 +194,7 @@ func normalizeMapReportViewportOptions(opts mapReportViewportOptions) mapReportV
 	return opts
 }
 
-func mapReportClusterCellSize(opts listOptions, targetCells int) float64 {
+func mapReportClusterCellSize(opts ListOptions, targetCells int) float64 {
 	latSpan := 180.0
 	if opts.MinLat != nil && opts.MaxLat != nil {
 		latSpan = *opts.MaxLat - *opts.MinLat
@@ -215,13 +215,13 @@ func mapReportClusterCellSize(opts listOptions, targetCells int) float64 {
 	return cellSize
 }
 
-func (s *store) DeleteNode(nodeID string) error {
+func (s *Store) DeleteNode(nodeID string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		nodeResult := tx.Where("node_id = ?", nodeID).Delete(&nodeInfoRecord{})
+		nodeResult := tx.Where("node_id = ?", nodeID).Delete(&NodeInfoRecord{})
 		if nodeResult.Error != nil {
 			return nodeResult.Error
 		}
-		reportResult := tx.Where("node_id = ?", nodeID).Delete(&mapReportRecord{})
+		reportResult := tx.Where("node_id = ?", nodeID).Delete(&MapReportRecord{})
 		if reportResult.Error != nil {
 			return reportResult.Error
 		}
@@ -232,7 +232,7 @@ func (s *store) DeleteNode(nodeID string) error {
 	})
 }
 
-func applyNodeFilters(q *gorm.DB, opts listOptions) *gorm.DB {
+func applyNodeFilters(q *gorm.DB, opts ListOptions) *gorm.DB {
 	if opts.NodeID != "" {
 		q = q.Where("node_id = ?", opts.NodeID)
 	}
@@ -245,7 +245,7 @@ func applyNodeFilters(q *gorm.DB, opts listOptions) *gorm.DB {
 	return q
 }
 
-func applyMapReportFilters(q *gorm.DB, opts listOptions) *gorm.DB {
+func applyMapReportFilters(q *gorm.DB, opts ListOptions) *gorm.DB {
 	q = applyNodeFilters(q, opts)
 	if opts.MinLat != nil && opts.MaxLat != nil {
 		q = q.Where("latitude IS NOT NULL AND latitude >= ? AND latitude <= ?", *opts.MinLat, *opts.MaxLat)
@@ -260,15 +260,15 @@ func applyMapReportFilters(q *gorm.DB, opts listOptions) *gorm.DB {
 	return q
 }
 
-func (s *store) ListTextMessages(opts listOptions) ([]textMessageRecord, error) {
-	var rows []textMessageRecord
+func (s *Store) ListTextMessages(opts ListOptions) ([]TextMessageRecord, error) {
+	var rows []TextMessageRecord
 	return rows, s.listAppendRows(opts, &rows).Error
 }
 
-func (s *store) ListDiscardDetails(opts listOptions) ([]discardDetailsRecord, error) {
-	opts = normalizeListOptions(opts)
-	var rows []discardDetailsRecord
-	q := applyDiscardDetailsFilters(s.db.Model(&discardDetailsRecord{}), opts).
+func (s *Store) ListDiscardDetails(opts ListOptions) ([]DiscardDetailsRecord, error) {
+	opts = NormalizeListOptions(opts)
+	var rows []DiscardDetailsRecord
+	q := applyDiscardDetailsFilters(s.db.Model(&DiscardDetailsRecord{}), opts).
 		Order("created_at DESC").
 		Order("id DESC").
 		Limit(opts.Limit).
@@ -276,13 +276,13 @@ func (s *store) ListDiscardDetails(opts listOptions) ([]discardDetailsRecord, er
 	return rows, q.Find(&rows).Error
 }
 
-func (s *store) CountDiscardDetails(opts listOptions) (int64, error) {
+func (s *Store) CountDiscardDetails(opts ListOptions) (int64, error) {
 	var total int64
-	q := applyDiscardDetailsFilters(s.db.Model(&discardDetailsRecord{}), opts)
+	q := applyDiscardDetailsFilters(s.db.Model(&DiscardDetailsRecord{}), opts)
 	return total, q.Count(&total).Error
 }
 
-func applyDiscardDetailsFilters(q *gorm.DB, opts listOptions) *gorm.DB {
+func applyDiscardDetailsFilters(q *gorm.DB, opts ListOptions) *gorm.DB {
 	if opts.Since != nil {
 		q = q.Where("created_at >= ?", *opts.Since)
 	}
@@ -292,8 +292,8 @@ func applyDiscardDetailsFilters(q *gorm.DB, opts listOptions) *gorm.DB {
 	return q
 }
 
-func (s *store) DeleteTextMessage(id uint64) error {
-	result := s.db.Where("id = ?", id).Delete(&textMessageRecord{})
+func (s *Store) DeleteTextMessage(id uint64) error {
+	result := s.db.Where("id = ?", id).Delete(&TextMessageRecord{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -303,28 +303,28 @@ func (s *store) DeleteTextMessage(id uint64) error {
 	return nil
 }
 
-func (s *store) ListPositions(opts listOptions) ([]positionRecord, error) {
-	var rows []positionRecord
+func (s *Store) ListPositions(opts ListOptions) ([]PositionRecord, error) {
+	var rows []PositionRecord
 	return rows, s.listAppendRows(opts, &rows).Error
 }
 
-func (s *store) ListTelemetry(opts listOptions) ([]telemetryRecord, error) {
-	var rows []telemetryRecord
+func (s *Store) ListTelemetry(opts ListOptions) ([]TelemetryRecord, error) {
+	var rows []TelemetryRecord
 	return rows, s.listAppendRows(opts, &rows).Error
 }
 
-func (s *store) ListRouting(opts listOptions) ([]routingRecord, error) {
-	var rows []routingRecord
+func (s *Store) ListRouting(opts ListOptions) ([]RoutingRecord, error) {
+	var rows []RoutingRecord
 	return rows, s.listAppendRows(opts, &rows).Error
 }
 
-func (s *store) ListTraceroute(opts listOptions) ([]tracerouteRecord, error) {
-	var rows []tracerouteRecord
+func (s *Store) ListTraceroute(opts ListOptions) ([]TracerouteRecord, error) {
+	var rows []TracerouteRecord
 	return rows, s.listAppendRows(opts, &rows).Error
 }
 
-func (s *store) listAppendRows(opts listOptions, dest any) *gorm.DB {
-	opts = normalizeListOptions(opts)
+func (s *Store) listAppendRows(opts ListOptions, dest any) *gorm.DB {
+	opts = NormalizeListOptions(opts)
 	q := s.db.Order("created_at DESC").Order("id DESC").Limit(opts.Limit).Offset(opts.Offset)
 	if opts.NodeID != "" {
 		q = q.Where("from_id = ?", opts.NodeID)

@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"errors"
@@ -10,14 +10,14 @@ import (
 	"gorm.io/gorm"
 )
 
-const forbiddenWordMatchContains = "contains"
+const ForbiddenWordMatchContains = "contains"
 
-var errBlockingAlreadyExists = errors.New("blocking rule already exists")
+var ErrBlockingAlreadyExists = errors.New("blocking rule already exists")
 
-func (s *store) ListNodeBlocking(opts listOptions) ([]nodeBlockingRecord, error) {
-	opts = normalizeListOptions(opts)
-	var rows []nodeBlockingRecord
-	q := s.db.Model(&nodeBlockingRecord{}).
+func (s *Store) ListNodeBlocking(opts ListOptions) ([]NodeBlockingRecord, error) {
+	opts = NormalizeListOptions(opts)
+	var rows []NodeBlockingRecord
+	q := s.db.Model(&NodeBlockingRecord{}).
 		Order("updated_at DESC").
 		Order("id DESC").
 		Limit(opts.Limit).
@@ -25,17 +25,17 @@ func (s *store) ListNodeBlocking(opts listOptions) ([]nodeBlockingRecord, error)
 	return rows, q.Find(&rows).Error
 }
 
-func (s *store) CountNodeBlocking(opts listOptions) (int64, error) {
+func (s *Store) CountNodeBlocking(opts ListOptions) (int64, error) {
 	var total int64
-	return total, s.db.Model(&nodeBlockingRecord{}).Count(&total).Error
+	return total, s.db.Model(&NodeBlockingRecord{}).Count(&total).Error
 }
 
-func (s *store) ListEnabledNodeBlocking() ([]nodeBlockingRecord, error) {
-	var rows []nodeBlockingRecord
+func (s *Store) ListEnabledNodeBlocking() ([]NodeBlockingRecord, error) {
+	var rows []NodeBlockingRecord
 	return rows, s.db.Where("enabled = ?", true).Find(&rows).Error
 }
 
-func (s *store) CreateNodeBlocking(nodeID string, nodeNum *int64, reason string, enabled bool) (*nodeBlockingRecord, error) {
+func (s *Store) CreateNodeBlocking(nodeID string, nodeNum *int64, reason string, enabled bool) (*NodeBlockingRecord, error) {
 	nodeID = strings.TrimSpace(nodeID)
 	if nodeID == "" {
 		return nil, fmt.Errorf("node id is required")
@@ -43,14 +43,14 @@ func (s *store) CreateNodeBlocking(nodeID string, nodeNum *int64, reason string,
 	if err := s.ensureNodeBlockingUnique(0, nodeID); err != nil {
 		return nil, err
 	}
-	row := nodeBlockingRecord{NodeID: nodeID, NodeNum: nodeNum, Reason: strings.TrimSpace(reason), Enabled: enabled}
+	row := NodeBlockingRecord{NodeID: nodeID, NodeNum: nodeNum, Reason: strings.TrimSpace(reason), Enabled: enabled}
 	if err := s.db.Create(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) UpdateNodeBlocking(id uint64, nodeID string, nodeNum *int64, reason string, enabled bool) (*nodeBlockingRecord, error) {
+func (s *Store) UpdateNodeBlocking(id uint64, nodeID string, nodeNum *int64, reason string, enabled bool) (*NodeBlockingRecord, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("blocking rule id is required")
 	}
@@ -65,14 +65,14 @@ func (s *store) UpdateNodeBlocking(id uint64, nodeID string, nodeNum *int64, rea
 		return nil, err
 	}
 	updates := map[string]any{"node_id": nodeID, "node_num": nodeNum, "reason": strings.TrimSpace(reason), "enabled": enabled, "updated_at": time.Now()}
-	if err := s.db.Model(&nodeBlockingRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.Model(&NodeBlockingRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	return s.getNodeBlockingByID(id)
 }
 
-func (s *store) DeleteNodeBlocking(id uint64) error {
-	result := s.db.Where("id = ?", id).Delete(&nodeBlockingRecord{})
+func (s *Store) DeleteNodeBlocking(id uint64) error {
+	result := s.db.Where("id = ?", id).Delete(&NodeBlockingRecord{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -82,10 +82,10 @@ func (s *store) DeleteNodeBlocking(id uint64) error {
 	return nil
 }
 
-func (s *store) ListIPBlocking(opts listOptions) ([]ipBlockingRecord, error) {
-	opts = normalizeListOptions(opts)
-	var rows []ipBlockingRecord
-	q := s.db.Model(&ipBlockingRecord{}).
+func (s *Store) ListIPBlocking(opts ListOptions) ([]IPBlockingRecord, error) {
+	opts = NormalizeListOptions(opts)
+	var rows []IPBlockingRecord
+	q := s.db.Model(&IPBlockingRecord{}).
 		Order("updated_at DESC").
 		Order("id DESC").
 		Limit(opts.Limit).
@@ -93,17 +93,17 @@ func (s *store) ListIPBlocking(opts listOptions) ([]ipBlockingRecord, error) {
 	return rows, q.Find(&rows).Error
 }
 
-func (s *store) CountIPBlocking(opts listOptions) (int64, error) {
+func (s *Store) CountIPBlocking(opts ListOptions) (int64, error) {
 	var total int64
-	return total, s.db.Model(&ipBlockingRecord{}).Count(&total).Error
+	return total, s.db.Model(&IPBlockingRecord{}).Count(&total).Error
 }
 
-func (s *store) ListEnabledIPBlocking() ([]ipBlockingRecord, error) {
-	var rows []ipBlockingRecord
+func (s *Store) ListEnabledIPBlocking() ([]IPBlockingRecord, error) {
+	var rows []IPBlockingRecord
 	return rows, s.db.Where("enabled = ?", true).Find(&rows).Error
 }
 
-func (s *store) CreateIPBlocking(ipValue string, reason string, enabled bool) (*ipBlockingRecord, error) {
+func (s *Store) CreateIPBlocking(ipValue string, reason string, enabled bool) (*IPBlockingRecord, error) {
 	value, err := normalizeIPBlockingValue(ipValue)
 	if err != nil {
 		return nil, err
@@ -111,14 +111,14 @@ func (s *store) CreateIPBlocking(ipValue string, reason string, enabled bool) (*
 	if err := s.ensureIPBlockingUnique(0, value); err != nil {
 		return nil, err
 	}
-	row := ipBlockingRecord{IPValue: value, Reason: strings.TrimSpace(reason), Enabled: enabled}
+	row := IPBlockingRecord{IPValue: value, Reason: strings.TrimSpace(reason), Enabled: enabled}
 	if err := s.db.Create(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) UpdateIPBlocking(id uint64, ipValue string, reason string, enabled bool) (*ipBlockingRecord, error) {
+func (s *Store) UpdateIPBlocking(id uint64, ipValue string, reason string, enabled bool) (*IPBlockingRecord, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("blocking rule id is required")
 	}
@@ -133,14 +133,14 @@ func (s *store) UpdateIPBlocking(id uint64, ipValue string, reason string, enabl
 		return nil, err
 	}
 	updates := map[string]any{"ip_value": value, "reason": strings.TrimSpace(reason), "enabled": enabled, "updated_at": time.Now()}
-	if err := s.db.Model(&ipBlockingRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.Model(&IPBlockingRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	return s.getIPBlockingByID(id)
 }
 
-func (s *store) DeleteIPBlocking(id uint64) error {
-	result := s.db.Where("id = ?", id).Delete(&ipBlockingRecord{})
+func (s *Store) DeleteIPBlocking(id uint64) error {
+	result := s.db.Where("id = ?", id).Delete(&IPBlockingRecord{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -150,10 +150,10 @@ func (s *store) DeleteIPBlocking(id uint64) error {
 	return nil
 }
 
-func (s *store) ListForbiddenWordBlocking(opts listOptions) ([]forbiddenWordBlockingRecord, error) {
-	opts = normalizeListOptions(opts)
-	var rows []forbiddenWordBlockingRecord
-	q := s.db.Model(&forbiddenWordBlockingRecord{}).
+func (s *Store) ListForbiddenWordBlocking(opts ListOptions) ([]ForbiddenWordBlockingRecord, error) {
+	opts = NormalizeListOptions(opts)
+	var rows []ForbiddenWordBlockingRecord
+	q := s.db.Model(&ForbiddenWordBlockingRecord{}).
 		Order("updated_at DESC").
 		Order("id DESC").
 		Limit(opts.Limit).
@@ -161,17 +161,17 @@ func (s *store) ListForbiddenWordBlocking(opts listOptions) ([]forbiddenWordBloc
 	return rows, q.Find(&rows).Error
 }
 
-func (s *store) CountForbiddenWordBlocking(opts listOptions) (int64, error) {
+func (s *Store) CountForbiddenWordBlocking(opts ListOptions) (int64, error) {
 	var total int64
-	return total, s.db.Model(&forbiddenWordBlockingRecord{}).Count(&total).Error
+	return total, s.db.Model(&ForbiddenWordBlockingRecord{}).Count(&total).Error
 }
 
-func (s *store) ListEnabledForbiddenWordBlocking() ([]forbiddenWordBlockingRecord, error) {
-	var rows []forbiddenWordBlockingRecord
+func (s *Store) ListEnabledForbiddenWordBlocking() ([]ForbiddenWordBlockingRecord, error) {
+	var rows []ForbiddenWordBlockingRecord
 	return rows, s.db.Where("enabled = ?", true).Find(&rows).Error
 }
 
-func (s *store) CreateForbiddenWordBlocking(word, matchType string, caseSensitive bool, reason string, enabled bool) (*forbiddenWordBlockingRecord, error) {
+func (s *Store) CreateForbiddenWordBlocking(word, matchType string, caseSensitive bool, reason string, enabled bool) (*ForbiddenWordBlockingRecord, error) {
 	word = strings.TrimSpace(word)
 	if word == "" {
 		return nil, fmt.Errorf("forbidden word is required")
@@ -183,14 +183,14 @@ func (s *store) CreateForbiddenWordBlocking(word, matchType string, caseSensitiv
 	if err := s.ensureForbiddenWordBlockingUnique(0, word); err != nil {
 		return nil, err
 	}
-	row := forbiddenWordBlockingRecord{Word: word, MatchType: matchType, CaseSensitive: caseSensitive, Reason: strings.TrimSpace(reason), Enabled: enabled}
+	row := ForbiddenWordBlockingRecord{Word: word, MatchType: matchType, CaseSensitive: caseSensitive, Reason: strings.TrimSpace(reason), Enabled: enabled}
 	if err := s.db.Create(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) UpdateForbiddenWordBlocking(id uint64, word, matchType string, caseSensitive bool, reason string, enabled bool) (*forbiddenWordBlockingRecord, error) {
+func (s *Store) UpdateForbiddenWordBlocking(id uint64, word, matchType string, caseSensitive bool, reason string, enabled bool) (*ForbiddenWordBlockingRecord, error) {
 	if id == 0 {
 		return nil, fmt.Errorf("blocking rule id is required")
 	}
@@ -209,14 +209,14 @@ func (s *store) UpdateForbiddenWordBlocking(id uint64, word, matchType string, c
 		return nil, err
 	}
 	updates := map[string]any{"word": word, "match_type": matchType, "case_sensitive": caseSensitive, "reason": strings.TrimSpace(reason), "enabled": enabled, "updated_at": time.Now()}
-	if err := s.db.Model(&forbiddenWordBlockingRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+	if err := s.db.Model(&ForbiddenWordBlockingRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	return s.getForbiddenWordBlockingByID(id)
 }
 
-func (s *store) DeleteForbiddenWordBlocking(id uint64) error {
-	result := s.db.Where("id = ?", id).Delete(&forbiddenWordBlockingRecord{})
+func (s *Store) DeleteForbiddenWordBlocking(id uint64) error {
+	result := s.db.Where("id = ?", id).Delete(&ForbiddenWordBlockingRecord{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -226,39 +226,39 @@ func (s *store) DeleteForbiddenWordBlocking(id uint64) error {
 	return nil
 }
 
-func (s *store) getNodeBlockingByID(id uint64) (*nodeBlockingRecord, error) {
-	var row nodeBlockingRecord
+func (s *Store) getNodeBlockingByID(id uint64) (*NodeBlockingRecord, error) {
+	var row NodeBlockingRecord
 	if err := s.db.Where("id = ?", id).Take(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) getIPBlockingByID(id uint64) (*ipBlockingRecord, error) {
-	var row ipBlockingRecord
+func (s *Store) getIPBlockingByID(id uint64) (*IPBlockingRecord, error) {
+	var row IPBlockingRecord
 	if err := s.db.Where("id = ?", id).Take(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) getForbiddenWordBlockingByID(id uint64) (*forbiddenWordBlockingRecord, error) {
-	var row forbiddenWordBlockingRecord
+func (s *Store) getForbiddenWordBlockingByID(id uint64) (*ForbiddenWordBlockingRecord, error) {
+	var row ForbiddenWordBlockingRecord
 	if err := s.db.Where("id = ?", id).Take(&row).Error; err != nil {
 		return nil, err
 	}
 	return &row, nil
 }
 
-func (s *store) ensureNodeBlockingUnique(id uint64, nodeID string) error {
-	var existing nodeBlockingRecord
+func (s *Store) ensureNodeBlockingUnique(id uint64, nodeID string) error {
+	var existing NodeBlockingRecord
 	q := s.db.Where("node_id = ?", nodeID)
 	if id != 0 {
 		q = q.Where("id <> ?", id)
 	}
 	err := q.Take(&existing).Error
 	if err == nil {
-		return errBlockingAlreadyExists
+		return ErrBlockingAlreadyExists
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
@@ -266,15 +266,15 @@ func (s *store) ensureNodeBlockingUnique(id uint64, nodeID string) error {
 	return err
 }
 
-func (s *store) ensureIPBlockingUnique(id uint64, ipValue string) error {
-	var existing ipBlockingRecord
+func (s *Store) ensureIPBlockingUnique(id uint64, ipValue string) error {
+	var existing IPBlockingRecord
 	q := s.db.Where("ip_value = ?", ipValue)
 	if id != 0 {
 		q = q.Where("id <> ?", id)
 	}
 	err := q.Take(&existing).Error
 	if err == nil {
-		return errBlockingAlreadyExists
+		return ErrBlockingAlreadyExists
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
@@ -282,15 +282,15 @@ func (s *store) ensureIPBlockingUnique(id uint64, ipValue string) error {
 	return err
 }
 
-func (s *store) ensureForbiddenWordBlockingUnique(id uint64, word string) error {
-	var existing forbiddenWordBlockingRecord
+func (s *Store) ensureForbiddenWordBlockingUnique(id uint64, word string) error {
+	var existing ForbiddenWordBlockingRecord
 	q := s.db.Where("word = ?", word)
 	if id != 0 {
 		q = q.Where("id <> ?", id)
 	}
 	err := q.Take(&existing).Error
 	if err == nil {
-		return errBlockingAlreadyExists
+		return ErrBlockingAlreadyExists
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
@@ -316,9 +316,9 @@ func normalizeIPBlockingValue(value string) (string, error) {
 func normalizeForbiddenWordMatchType(matchType string) (string, error) {
 	matchType = strings.TrimSpace(matchType)
 	if matchType == "" {
-		return forbiddenWordMatchContains, nil
+		return ForbiddenWordMatchContains, nil
 	}
-	if matchType != forbiddenWordMatchContains {
+	if matchType != ForbiddenWordMatchContains {
 		return "", fmt.Errorf("unsupported forbidden word match type")
 	}
 	return matchType, nil

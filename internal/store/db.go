@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"encoding/json"
@@ -11,19 +11,16 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+
+	"meshtastic_mqtt_server/internal/config"
 )
 
-const (
-	databaseDriverSQLite = "sqlite"
-	databaseDriverMySQL  = "mysql"
-)
-
-type store struct {
+type Store struct {
 	db     *gorm.DB
 	driver string
 }
 
-type mqttClientInfo struct {
+type MQTTClientInfo struct {
 	ClientID   string
 	Username   string
 	Listener   string
@@ -62,7 +59,7 @@ type MQTTClientRecordFields struct {
 	MQTTRemotePort *string `gorm:"column:mqtt_remote_port"`
 }
 
-type userRecord struct {
+type UserRecord struct {
 	ID           uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Username     string    `gorm:"column:username;not null;uniqueIndex"`
 	PasswordHash string    `gorm:"column:password_hash;not null"`
@@ -71,11 +68,11 @@ type userRecord struct {
 	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime"`
 }
 
-func (userRecord) TableName() string {
+func (UserRecord) TableName() string {
 	return "users"
 }
 
-type loginLogRecord struct {
+type LoginLogRecord struct {
 	ID         uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Username   string    `gorm:"column:username;index"`
 	UserID     *uint64   `gorm:"column:user_id;index"`
@@ -87,22 +84,22 @@ type loginLogRecord struct {
 	CreatedAt  time.Time `gorm:"column:created_at;autoCreateTime;index"`
 }
 
-func (loginLogRecord) TableName() string {
+func (LoginLogRecord) TableName() string {
 	return "login_log"
 }
 
-type helpContentRecord struct {
+type HelpContentRecord struct {
 	ID        uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Markdown  string    `gorm:"column:markdown;type:text;not null"`
 	CreatedBy string    `gorm:"column:created_by;index"`
 	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime;index"`
 }
 
-func (helpContentRecord) TableName() string {
+func (HelpContentRecord) TableName() string {
 	return "help_content"
 }
 
-type runtimeSettingRecord struct {
+type RuntimeSettingRecord struct {
 	Key       string    `gorm:"column:key;primaryKey;size:128;not null"`
 	Value     string    `gorm:"column:value;type:text;not null"`
 	ValueType string    `gorm:"column:value_type;size:32;not null;index"`
@@ -111,11 +108,11 @@ type runtimeSettingRecord struct {
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (runtimeSettingRecord) TableName() string {
+func (RuntimeSettingRecord) TableName() string {
 	return "runtime_settings"
 }
 
-type mapTileSourceRecord struct {
+type MapTileSourceRecord struct {
 	ID              uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Name            string    `gorm:"column:name;not null;uniqueIndex"`
 	URLTemplate     string    `gorm:"column:url_template;not null;uniqueIndex"`
@@ -129,11 +126,11 @@ type mapTileSourceRecord struct {
 	UpdatedAt       time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (mapTileSourceRecord) TableName() string {
+func (MapTileSourceRecord) TableName() string {
 	return "map_tile_sources"
 }
 
-type discardDetailsRecord struct {
+type DiscardDetailsRecord struct {
 	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Topic          string    `gorm:"column:topic"`
 	Error          string    `gorm:"column:error"`
@@ -149,11 +146,11 @@ type discardDetailsRecord struct {
 	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime;index"`
 }
 
-func (discardDetailsRecord) TableName() string {
+func (DiscardDetailsRecord) TableName() string {
 	return "discard_details"
 }
 
-type signRecord struct {
+type SignRecord struct {
 	ID        uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	NodeID    string    `gorm:"column:node_id;not null;index"`
 	LongName  *string   `gorm:"column:long_name"`
@@ -162,11 +159,11 @@ type signRecord struct {
 	SignTime  time.Time `gorm:"column:sign_time;not null;index"`
 }
 
-func (signRecord) TableName() string {
+func (SignRecord) TableName() string {
 	return "signs"
 }
 
-type nodeBlockingRecord struct {
+type NodeBlockingRecord struct {
 	ID        uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	NodeID    string    `gorm:"column:node_id;not null;uniqueIndex"`
 	NodeNum   *int64    `gorm:"column:node_num;index"`
@@ -176,11 +173,11 @@ type nodeBlockingRecord struct {
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (nodeBlockingRecord) TableName() string {
+func (NodeBlockingRecord) TableName() string {
 	return "node_blocking"
 }
 
-type ipBlockingRecord struct {
+type IPBlockingRecord struct {
 	ID        uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	IPValue   string    `gorm:"column:ip_value;not null;uniqueIndex"`
 	Reason    string    `gorm:"column:reason"`
@@ -189,11 +186,11 @@ type ipBlockingRecord struct {
 	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (ipBlockingRecord) TableName() string {
+func (IPBlockingRecord) TableName() string {
 	return "ip_blocking"
 }
 
-type forbiddenWordBlockingRecord struct {
+type ForbiddenWordBlockingRecord struct {
 	ID            uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Word          string    `gorm:"column:word;not null;uniqueIndex"`
 	MatchType     string    `gorm:"column:match_type;not null;index"`
@@ -204,11 +201,11 @@ type forbiddenWordBlockingRecord struct {
 	UpdatedAt     time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (forbiddenWordBlockingRecord) TableName() string {
+func (ForbiddenWordBlockingRecord) TableName() string {
 	return "forbidden_word_blocking"
 }
 
-type mqttForwarderRecord struct {
+type MQTTForwarderRecord struct {
 	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Name           string    `gorm:"column:name;not null;uniqueIndex"`
 	Enabled        bool      `gorm:"column:enabled;not null;index"`
@@ -228,11 +225,11 @@ type mqttForwarderRecord struct {
 	UpdatedAt      time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (mqttForwarderRecord) TableName() string {
+func (MQTTForwarderRecord) TableName() string {
 	return "mqtt_forwarders"
 }
 
-type mqttForwardTopicRecord struct {
+type MQTTForwardTopicRecord struct {
 	ID           uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	ForwarderID  uint64    `gorm:"column:forwarder_id;not null;index;uniqueIndex:idx_mqtt_forward_topic_unique,priority:1"`
 	Topic        string    `gorm:"column:topic;not null;uniqueIndex:idx_mqtt_forward_topic_unique,priority:2"`
@@ -246,11 +243,11 @@ type mqttForwardTopicRecord struct {
 	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (mqttForwardTopicRecord) TableName() string {
+func (MQTTForwardTopicRecord) TableName() string {
 	return "mqtt_forward_topics"
 }
 
-type botNodeRecord struct {
+type BotNodeRecord struct {
 	ID                               uint64     `gorm:"column:id;primaryKey;autoIncrement"`
 	NodeID                           string     `gorm:"column:node_id;not null;uniqueIndex"`
 	NodeNum                          int64      `gorm:"column:node_num;not null;uniqueIndex"`
@@ -272,11 +269,11 @@ type botNodeRecord struct {
 	UpdatedAt                        time.Time  `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (botNodeRecord) TableName() string {
+func (BotNodeRecord) TableName() string {
 	return "bot_nodes"
 }
 
-type botMessageRecord struct {
+type BotMessageRecord struct {
 	ID          uint64     `gorm:"column:id;primaryKey;autoIncrement"`
 	BotID       uint64     `gorm:"column:bot_id;not null;index:idx_bot_message_bot_created_at,priority:1"`
 	BotNodeID   string     `gorm:"column:bot_node_id;not null;index"`
@@ -297,18 +294,18 @@ type botMessageRecord struct {
 	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime;index:idx_bot_message_bot_created_at,priority:2"`
 }
 
-func (botMessageRecord) TableName() string {
+func (BotMessageRecord) TableName() string {
 	return "bot_messages"
 }
 
-// botDirectMessageRecord 专门保存机器人参与的 PKI 私聊（DM）。
+// BotDirectMessageRecord 专门保存机器人参与的 PKI 私聊（DM）。
 //
 //   - 设计原因：text_message 表只存频道消息；DM 是端到端的，逻辑上属于 “一对会话”，需要按
 //     bot+对端聚合渲染，与 text_message 全表浏览的形态不一样。
 //   - direction = "outbound" 表示 bot → device；"inbound" 表示 device → bot。
 //   - 出向消息在发送时插入 status=pending，发送成功后更新为 published；入向消息默认直接
 //     published。两种方向都通过 bot_id/peer_node_num 索引快速回放会话。
-type botDirectMessageRecord struct {
+type BotDirectMessageRecord struct {
 	ID           uint64     `gorm:"column:id;primaryKey;autoIncrement"`
 	BotID        uint64     `gorm:"column:bot_id;not null;index:idx_bot_dm_bot_peer,priority:1;index:idx_bot_dm_bot_created_at,priority:1"`
 	BotNodeID    string     `gorm:"column:bot_node_id;not null;index"`
@@ -336,21 +333,21 @@ type botDirectMessageRecord struct {
 	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime;index:idx_bot_dm_bot_created_at,priority:2"`
 }
 
-func (botDirectMessageRecord) TableName() string {
+func (BotDirectMessageRecord) TableName() string {
 	return "bot_direct_messages"
 }
 
 const (
-	botDirectMessageDirectionInbound  = "inbound"
-	botDirectMessageDirectionOutbound = "outbound"
+	BotDirectMessageDirectionInbound  = "inbound"
+	BotDirectMessageDirectionOutbound = "outbound"
 )
 
-// llmMessageQueueRecord 是 LLM 消息队列，用于暂存机器人收到的消息供 LLM 处理。
+// LLMMessageQueueRecord 是 LLM 消息队列，用于暂存机器人收到的消息供 LLM 处理。
 //
 //   - 每个队列绑定一个 BotID，消息包含节点信息和消息内容
 //   - deleted_at 用于标记软删除，实际保留一段时间供去重
 //   - received_at 是消息接收时间，processed_at 是 LLM 处理完成时间
-type llmMessageQueueRecord struct {
+type LLMMessageQueueRecord struct {
 	ID          uint64     `gorm:"column:id;primaryKey;autoIncrement"`
 	BotID       uint64     `gorm:"column:bot_id;not null;index:idx_llm_queue_bot_created,priority:1"`
 	BotNodeID   string     `gorm:"column:bot_node_id;not null;index"`
@@ -374,18 +371,18 @@ type llmMessageQueueRecord struct {
 	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime;index:idx_llm_queue_bot_created,priority:2"`
 }
 
-func (llmMessageQueueRecord) TableName() string {
+func (LLMMessageQueueRecord) TableName() string {
 	return "llm_message_queue"
 }
 
 const (
-	llmMessageStatusPending    = "pending"
-	llmMessageStatusProcessing = "processing"
-	llmMessageStatusProcessed  = "processed"
-	llmMessageStatusError      = "error"
+	LLMMessageStatusPending    = "pending"
+	LLMMessageStatusProcessing = "processing"
+	LLMMessageStatusProcessed  = "processed"
+	LLMMessageStatusError      = "error"
 )
 
-type nodeInfoRecord struct {
+type NodeInfoRecord struct {
 	NodeID      string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum     int64     `gorm:"column:node_num;not null;index"`
 	UserID      *string   `gorm:"column:user_id"`
@@ -400,11 +397,11 @@ type nodeInfoRecord struct {
 	UpdatedAt   time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (nodeInfoRecord) TableName() string {
+func (NodeInfoRecord) TableName() string {
 	return "nodeinfo"
 }
 
-type mapReportRecord struct {
+type MapReportRecord struct {
 	NodeID                 string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum                int64     `gorm:"column:node_num;not null;index"`
 	LongName               *string   `gorm:"column:long_name"`
@@ -425,11 +422,11 @@ type mapReportRecord struct {
 	UpdatedAt              time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (mapReportRecord) TableName() string {
+func (MapReportRecord) TableName() string {
 	return "map_report"
 }
 
-type textMessageRecord struct {
+type TextMessageRecord struct {
 	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	FromID         string    `gorm:"column:from_id;not null"`
 	FromNum        int64     `gorm:"column:from_num;not null;index:idx_text_message_from_num_created_at,priority:1"`
@@ -458,12 +455,12 @@ type textMessageRecord struct {
 	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime;index:idx_text_message_from_num_created_at,priority:2;index:idx_text_message_created_at"`
 }
 
-func (textMessageRecord) TableName() string {
+func (TextMessageRecord) TableName() string {
 	return "text_message"
 }
 
-// llmProviderRecord 保存 LLM API 配置，支持多个 AI 提供商
-type llmProviderRecord struct {
+// LLMProviderRecord 保存 LLM API 配置，支持多个 AI 提供商
+type LLMProviderRecord struct {
 	Name               string    `gorm:"column:name;primaryKey;size:64;not null"` // 配置名称，如 "default"、"openai"、"ark" 等
 	Active             bool      `gorm:"column:active;not null;index"`            // 是否启用此配置
 	APIKey             string    `gorm:"column:api_key;type:text;not null"`       // API 密钥
@@ -475,12 +472,12 @@ type llmProviderRecord struct {
 	UpdatedAt          time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (llmProviderRecord) TableName() string {
+func (LLMProviderRecord) TableName() string {
 	return "llm_providers"
 }
 
-// llmToolRouterRecord 保存工具路由的配置
-type llmToolRouterRecord struct {
+// LLMToolRouterRecord 保存工具路由的配置
+type LLMToolRouterRecord struct {
 	ID           uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Enabled      bool      `gorm:"column:enabled;not null;index"`           // 是否启用工具路由
 	OpenAIName   string    `gorm:"column:openai_name;size:64;not null"`     // 使用的 LLM 提供商名称（关联 llm_providers.name）
@@ -491,12 +488,12 @@ type llmToolRouterRecord struct {
 	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (llmToolRouterRecord) TableName() string {
+func (LLMToolRouterRecord) TableName() string {
 	return "llm_tool_router"
 }
 
-// llmPrimaryConfigRecord 保存主 AI 回复的配置
-type llmPrimaryConfigRecord struct {
+// LLMPrimaryConfigRecord 保存主 AI 回复的配置
+type LLMPrimaryConfigRecord struct {
 	ID            uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Enabled       bool      `gorm:"column:enabled;not null;index"`             // 是否启用 AI 回复
 	ProviderName  string    `gorm:"column:provider_name;size:64;not null"`     // 使用的 LLM 提供商名称（关联 llm_providers.name）
@@ -508,11 +505,11 @@ type llmPrimaryConfigRecord struct {
 	UpdatedAt     time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
 }
 
-func (llmPrimaryConfigRecord) TableName() string {
+func (LLMPrimaryConfigRecord) TableName() string {
 	return "llm_primary_config"
 }
 
-type positionRecord struct {
+type PositionRecord struct {
 	AppendPacketFields        `gorm:"embedded"`
 	MQTTClientRecordFields    `gorm:"embedded"`
 	Latitude                  *float64 `gorm:"column:latitude"`
@@ -540,11 +537,11 @@ type positionRecord struct {
 	PrecisionBits             *int64   `gorm:"column:precision_bits"`
 }
 
-func (positionRecord) TableName() string {
+func (PositionRecord) TableName() string {
 	return "position"
 }
 
-type telemetryRecord struct {
+type TelemetryRecord struct {
 	AppendPacketFields     `gorm:"embedded"`
 	MQTTClientRecordFields `gorm:"embedded"`
 	TelemetryTime          *int64  `gorm:"column:telemetry_time"`
@@ -552,37 +549,37 @@ type telemetryRecord struct {
 	MetricsJSON            *string `gorm:"column:metrics_json"`
 }
 
-func (telemetryRecord) TableName() string {
+func (TelemetryRecord) TableName() string {
 	return "telemetry"
 }
 
-type routingRecord struct {
+type RoutingRecord struct {
 	AppendPacketFields     `gorm:"embedded"`
 	MQTTClientRecordFields `gorm:"embedded"`
 }
 
-func (routingRecord) TableName() string {
+func (RoutingRecord) TableName() string {
 	return "routing"
 }
 
-type tracerouteRecord struct {
+type TracerouteRecord struct {
 	AppendPacketFields     `gorm:"embedded"`
 	MQTTClientRecordFields `gorm:"embedded"`
 }
 
-func (tracerouteRecord) TableName() string {
+func (TracerouteRecord) TableName() string {
 	return "traceroute"
 }
 
-func openStore(cfg databaseConfig) (*store, error) {
+func OpenStore(cfg config.DatabaseConfig) (*Store, error) {
 	var dialector gorm.Dialector
 	switch cfg.Driver {
-	case databaseDriverSQLite:
+	case config.DriverSQLite:
 		if err := os.MkdirAll(filepath.Dir(cfg.SQLite.Path), 0755); err != nil {
 			return nil, fmt.Errorf("create sqlite directory %s: %w", filepath.Dir(cfg.SQLite.Path), err)
 		}
 		dialector = sqlite.Open(cfg.SQLite.Path)
-	case databaseDriverMySQL:
+	case config.DriverMySQL:
 		dialector = mysql.Open(cfg.MySQL.DSN)
 	default:
 		return nil, fmt.Errorf("unsupported database driver %q", cfg.Driver)
@@ -601,7 +598,7 @@ func openStore(cfg databaseConfig) (*store, error) {
 		return nil, fmt.Errorf("ping %s database: %w", cfg.Driver, err)
 	}
 
-	s := &store{db: db, driver: cfg.Driver}
+	s := &Store{db: db, driver: cfg.Driver}
 	if err := s.migrate(); err != nil {
 		sqlDB.Close()
 		return nil, err
@@ -609,7 +606,18 @@ func openStore(cfg databaseConfig) (*store, error) {
 	return s, nil
 }
 
-func (s *store) Close() error {
+// DB 返回底层 gorm 句柄，供 ai 等子系统在受控范围内直接执行查询。
+// 应优先使用 Store 的高级方法；只有在确需新 schema 或自定义查询时才直接拿 DB。
+func (s *Store) DB() *gorm.DB {
+	return s.db
+}
+
+// Driver 返回当前使用的数据库驱动名（与 config.DriverSQLite/MySQL 一致）。
+func (s *Store) Driver() string {
+	return s.driver
+}
+
+func (s *Store) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
@@ -620,39 +628,39 @@ func (s *store) Close() error {
 	return sqlDB.Close()
 }
 
-func (s *store) migrate() error {
+func (s *Store) migrate() error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		migrator := tx.Migrator()
 		for _, item := range []struct {
 			label string
 			model any
 		}{
-			{label: "users", model: &userRecord{}},
-			{label: "login_log", model: &loginLogRecord{}},
-			{label: "help_content", model: &helpContentRecord{}},
-			{label: "runtime_settings", model: &runtimeSettingRecord{}},
-			{label: "map_tile_sources", model: &mapTileSourceRecord{}},
-			{label: "discard_details", model: &discardDetailsRecord{}},
-			{label: "signs", model: &signRecord{}},
-			{label: "node_blocking", model: &nodeBlockingRecord{}},
-			{label: "ip_blocking", model: &ipBlockingRecord{}},
-			{label: "forbidden_word_blocking", model: &forbiddenWordBlockingRecord{}},
-			{label: "mqtt_forwarders", model: &mqttForwarderRecord{}},
-			{label: "mqtt_forward_topics", model: &mqttForwardTopicRecord{}},
-			{label: "bot_nodes", model: &botNodeRecord{}},
-			{label: "bot_messages", model: &botMessageRecord{}},
-			{label: "bot_direct_messages", model: &botDirectMessageRecord{}},
-			{label: "llm_message_queue", model: &llmMessageQueueRecord{}},
-			{label: "llm_providers", model: &llmProviderRecord{}},
-			{label: "llm_tool_router", model: &llmToolRouterRecord{}},
-			{label: "llm_primary_config", model: &llmPrimaryConfigRecord{}},
-			{label: "nodeinfo", model: &nodeInfoRecord{}},
-			{label: "map_report", model: &mapReportRecord{}},
-			{label: "text_message", model: &textMessageRecord{}},
-			{label: "position", model: &positionRecord{}},
-			{label: "telemetry", model: &telemetryRecord{}},
-			{label: "routing", model: &routingRecord{}},
-			{label: "traceroute", model: &tracerouteRecord{}},
+			{label: "users", model: &UserRecord{}},
+			{label: "login_log", model: &LoginLogRecord{}},
+			{label: "help_content", model: &HelpContentRecord{}},
+			{label: "runtime_settings", model: &RuntimeSettingRecord{}},
+			{label: "map_tile_sources", model: &MapTileSourceRecord{}},
+			{label: "discard_details", model: &DiscardDetailsRecord{}},
+			{label: "signs", model: &SignRecord{}},
+			{label: "node_blocking", model: &NodeBlockingRecord{}},
+			{label: "ip_blocking", model: &IPBlockingRecord{}},
+			{label: "forbidden_word_blocking", model: &ForbiddenWordBlockingRecord{}},
+			{label: "mqtt_forwarders", model: &MQTTForwarderRecord{}},
+			{label: "mqtt_forward_topics", model: &MQTTForwardTopicRecord{}},
+			{label: "bot_nodes", model: &BotNodeRecord{}},
+			{label: "bot_messages", model: &BotMessageRecord{}},
+			{label: "bot_direct_messages", model: &BotDirectMessageRecord{}},
+			{label: "llm_message_queue", model: &LLMMessageQueueRecord{}},
+			{label: "llm_providers", model: &LLMProviderRecord{}},
+			{label: "llm_tool_router", model: &LLMToolRouterRecord{}},
+			{label: "llm_primary_config", model: &LLMPrimaryConfigRecord{}},
+			{label: "nodeinfo", model: &NodeInfoRecord{}},
+			{label: "map_report", model: &MapReportRecord{}},
+			{label: "text_message", model: &TextMessageRecord{}},
+			{label: "position", model: &PositionRecord{}},
+			{label: "telemetry", model: &TelemetryRecord{}},
+			{label: "routing", model: &RoutingRecord{}},
+			{label: "traceroute", model: &TracerouteRecord{}},
 		} {
 			if !migrator.HasTable(item.model) {
 				if err := migrator.CreateTable(item.model); err != nil {
@@ -665,9 +673,9 @@ func (s *store) migrate() error {
 			model   any
 			indexes []string
 		}{
-			{label: "text_message", model: &textMessageRecord{}, indexes: []string{"idx_text_message_from_num_created_at", "idx_text_message_created_at", "idx_text_message_packet_id"}},
-			{label: "bot_direct_messages", model: &botDirectMessageRecord{}, indexes: []string{"idx_bot_dm_bot_peer", "idx_bot_dm_bot_created_at"}},
-			{label: "llm_message_queue", model: &llmMessageQueueRecord{}, indexes: []string{"idx_llm_queue_bot_created"}},
+			{label: "text_message", model: &TextMessageRecord{}, indexes: []string{"idx_text_message_from_num_created_at", "idx_text_message_created_at", "idx_text_message_packet_id"}},
+			{label: "bot_direct_messages", model: &BotDirectMessageRecord{}, indexes: []string{"idx_bot_dm_bot_peer", "idx_bot_dm_bot_created_at"}},
+			{label: "llm_message_queue", model: &LLMMessageQueueRecord{}, indexes: []string{"idx_llm_queue_bot_created"}},
 		} {
 			if err := createMissingIndexes(migrator, item.model, item.label, item.indexes); err != nil {
 				return err
@@ -682,7 +690,7 @@ func (s *store) migrate() error {
 		if err := migrateMapTileSourceHash(tx, migrator, s.driver); err != nil {
 			return err
 		}
-		txStore := &store{db: tx, driver: s.driver}
+		txStore := &Store{db: tx, driver: s.driver}
 		if err := txStore.EnsureDefaultMapTileSource(); err != nil {
 			return err
 		}
@@ -700,11 +708,11 @@ func (s *store) migrate() error {
 }
 
 func migrateBotNodePSK(tx *gorm.DB, migrator gorm.Migrator, driver string) error {
-	if !migrator.HasTable(&botNodeRecord{}) {
+	if !migrator.HasTable(&BotNodeRecord{}) {
 		return nil
 	}
-	if !migrator.HasColumn(&botNodeRecord{}, "PSK") {
-		if driver == databaseDriverSQLite {
+	if !migrator.HasColumn(&BotNodeRecord{}, "PSK") {
+		if driver == config.DriverSQLite {
 			if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN psk TEXT NOT NULL DEFAULT 'AQ=='").Error; err != nil {
 				return fmt.Errorf("migrate bot_nodes psk column: %w", err)
 			}
@@ -712,49 +720,49 @@ func migrateBotNodePSK(tx *gorm.DB, migrator gorm.Migrator, driver string) error
 			return fmt.Errorf("migrate bot_nodes psk column: %w", err)
 		}
 	}
-	if !migrator.HasColumn(&botNodeRecord{}, "PublicKey") {
+	if !migrator.HasColumn(&BotNodeRecord{}, "PublicKey") {
 		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN public_key text").Error; err != nil {
 			return fmt.Errorf("migrate bot_nodes public_key column: %w", err)
 		}
 	}
-	if !migrator.HasColumn(&botNodeRecord{}, "PrivateKey") {
+	if !migrator.HasColumn(&BotNodeRecord{}, "PrivateKey") {
 		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN private_key text").Error; err != nil {
 			return fmt.Errorf("migrate bot_nodes private_key column: %w", err)
 		}
 	}
-	if !migrator.HasColumn(&botNodeRecord{}, "NodeInfoBroadcastEnabled") {
+	if !migrator.HasColumn(&BotNodeRecord{}, "NodeInfoBroadcastEnabled") {
 		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN nodeinfo_broadcast_enabled numeric NOT NULL DEFAULT true").Error; err != nil {
 			return fmt.Errorf("migrate bot_nodes nodeinfo_broadcast_enabled column: %w", err)
 		}
 	}
-	if !migrator.HasColumn(&botNodeRecord{}, "NodeInfoBroadcastIntervalSeconds") {
+	if !migrator.HasColumn(&BotNodeRecord{}, "NodeInfoBroadcastIntervalSeconds") {
 		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN nodeinfo_broadcast_interval_seconds bigint NOT NULL DEFAULT 3600").Error; err != nil {
 			return fmt.Errorf("migrate bot_nodes nodeinfo_broadcast_interval_seconds column: %w", err)
 		}
 	}
-	if !migrator.HasColumn(&botNodeRecord{}, "LastNodeInfoBroadcastAt") {
+	if !migrator.HasColumn(&BotNodeRecord{}, "LastNodeInfoBroadcastAt") {
 		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN last_nodeinfo_broadcast_at datetime NULL").Error; err != nil {
 			return fmt.Errorf("migrate bot_nodes last_nodeinfo_broadcast_at column: %w", err)
 		}
 	}
-	if !migrator.HasColumn(&botNodeRecord{}, "LLMQueueEnabled") {
+	if !migrator.HasColumn(&BotNodeRecord{}, "LLMQueueEnabled") {
 		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN llm_queue_enabled numeric NOT NULL DEFAULT 1").Error; err != nil {
 			return fmt.Errorf("migrate bot_nodes llm_queue_enabled column: %w", err)
 		}
 	}
-	if !migrator.HasColumn(&botNodeRecord{}, "LLMIncludeChannelMessages") {
+	if !migrator.HasColumn(&BotNodeRecord{}, "LLMIncludeChannelMessages") {
 		if err := tx.Exec("ALTER TABLE bot_nodes ADD COLUMN llm_include_channel_messages numeric NOT NULL DEFAULT 0").Error; err != nil {
 			return fmt.Errorf("migrate bot_nodes llm_include_channel_messages column: %w", err)
 		}
 	}
 	// 迁移 LLM 消息队列 reply 列
-	if migrator.HasTable(&llmMessageQueueRecord{}) && !migrator.HasColumn(&llmMessageQueueRecord{}, "Reply") {
+	if migrator.HasTable(&LLMMessageQueueRecord{}) && !migrator.HasColumn(&LLMMessageQueueRecord{}, "Reply") {
 		if err := tx.Exec("ALTER TABLE llm_message_queue ADD COLUMN reply text").Error; err != nil {
 			return fmt.Errorf("migrate llm_message_queue reply column: %w", err)
 		}
 	}
 	// 迁移 LLM 消息队列 message_type 列
-	if migrator.HasTable(&llmMessageQueueRecord{}) && !migrator.HasColumn(&llmMessageQueueRecord{}, "MessageType") {
+	if migrator.HasTable(&LLMMessageQueueRecord{}) && !migrator.HasColumn(&LLMMessageQueueRecord{}, "MessageType") {
 		if err := tx.Exec("ALTER TABLE llm_message_queue ADD COLUMN message_type text NOT NULL DEFAULT 'direct'").Error; err != nil {
 			return fmt.Errorf("migrate llm_message_queue message_type column: %w", err)
 		}
@@ -763,19 +771,19 @@ func migrateBotNodePSK(tx *gorm.DB, migrator gorm.Migrator, driver string) error
 }
 
 func migrateBotDirectMessages(tx *gorm.DB, migrator gorm.Migrator) error {
-	if !migrator.HasTable(&botDirectMessageRecord{}) {
+	if !migrator.HasTable(&BotDirectMessageRecord{}) {
 		return nil
 	}
-	if !migrator.HasColumn(&botDirectMessageRecord{}, "ReadAt") {
+	if !migrator.HasColumn(&BotDirectMessageRecord{}, "ReadAt") {
 		if err := tx.Exec("ALTER TABLE bot_direct_messages ADD COLUMN read_at datetime").Error; err != nil {
 			return fmt.Errorf("migrate bot_direct_messages read_at column: %w", err)
 		}
 	}
 	// 历史 outbound 消息默认视为已读，避免出现在未读统计里。
-	if err := tx.Exec("UPDATE bot_direct_messages SET read_at = created_at WHERE direction = ? AND read_at IS NULL", botDirectMessageDirectionOutbound).Error; err != nil {
+	if err := tx.Exec("UPDATE bot_direct_messages SET read_at = created_at WHERE direction = ? AND read_at IS NULL", BotDirectMessageDirectionOutbound).Error; err != nil {
 		return fmt.Errorf("backfill bot_direct_messages outbound read_at: %w", err)
 	}
-	if !migrator.HasIndex(&botDirectMessageRecord{}, "idx_bot_direct_messages_read_at") {
+	if !migrator.HasIndex(&BotDirectMessageRecord{}, "idx_bot_direct_messages_read_at") {
 		// HasIndex 用 struct 字段名映射的索引名匹配，column 标签写的 read_at 不一定生成此名，
 		// 所以直接 IF NOT EXISTS 创建（SQLite + MySQL 都支持）。
 		if err := tx.Exec("CREATE INDEX IF NOT EXISTS idx_bot_direct_messages_read_at ON bot_direct_messages(read_at)").Error; err != nil {
@@ -786,36 +794,36 @@ func migrateBotDirectMessages(tx *gorm.DB, migrator gorm.Migrator) error {
 }
 
 func migrateMapTileSourceHash(tx *gorm.DB, migrator gorm.Migrator, driver string) error {
-	if !migrator.HasColumn(&mapTileSourceRecord{}, "ProxyEnabled") {
-		if driver == databaseDriverSQLite {
+	if !migrator.HasColumn(&MapTileSourceRecord{}, "ProxyEnabled") {
+		if driver == config.DriverSQLite {
 			if err := tx.Exec("ALTER TABLE map_tile_sources ADD COLUMN proxy_enabled numeric NOT NULL DEFAULT true").Error; err != nil {
 				return fmt.Errorf("migrate map_tile_sources proxy_enabled column: %w", err)
 			}
-		} else if err := migrator.AddColumn(&mapTileSourceRecord{}, "ProxyEnabled"); err != nil {
+		} else if err := migrator.AddColumn(&MapTileSourceRecord{}, "ProxyEnabled"); err != nil {
 			return fmt.Errorf("migrate map_tile_sources proxy_enabled column: %w", err)
 		}
 	}
-	if !migrator.HasColumn(&mapTileSourceRecord{}, "URLTemplateHash") {
-		if driver == databaseDriverSQLite {
+	if !migrator.HasColumn(&MapTileSourceRecord{}, "URLTemplateHash") {
+		if driver == config.DriverSQLite {
 			if err := tx.Exec("ALTER TABLE map_tile_sources ADD COLUMN url_template_hash TEXT NOT NULL DEFAULT ''").Error; err != nil {
 				return fmt.Errorf("migrate map_tile_sources url_template_hash column: %w", err)
 			}
-		} else if err := migrator.AddColumn(&mapTileSourceRecord{}, "URLTemplateHash"); err != nil {
+		} else if err := migrator.AddColumn(&MapTileSourceRecord{}, "URLTemplateHash"); err != nil {
 			return fmt.Errorf("migrate map_tile_sources url_template_hash column: %w", err)
 		}
 	}
 
-	var rows []mapTileSourceRecord
-	if err := tx.Model(&mapTileSourceRecord{}).Where("url_template_hash = '' OR url_template_hash IS NULL").Find(&rows).Error; err != nil {
+	var rows []MapTileSourceRecord
+	if err := tx.Model(&MapTileSourceRecord{}).Where("url_template_hash = '' OR url_template_hash IS NULL").Find(&rows).Error; err != nil {
 		return fmt.Errorf("list map_tile_sources missing url_template_hash: %w", err)
 	}
 	for _, row := range rows {
-		if err := tx.Model(&mapTileSourceRecord{}).Where("id = ?", row.ID).Update("url_template_hash", mapTileSourceHash(row.URLTemplate)).Error; err != nil {
+		if err := tx.Model(&MapTileSourceRecord{}).Where("id = ?", row.ID).Update("url_template_hash", MapTileSourceHash(row.URLTemplate)).Error; err != nil {
 			return fmt.Errorf("backfill map_tile_sources url_template_hash: %w", err)
 		}
 	}
-	if !migrator.HasIndex(&mapTileSourceRecord{}, "idx_map_tile_sources_url_template_hash") {
-		if err := migrator.CreateIndex(&mapTileSourceRecord{}, "idx_map_tile_sources_url_template_hash"); err != nil {
+	if !migrator.HasIndex(&MapTileSourceRecord{}, "idx_map_tile_sources_url_template_hash") {
+		if err := migrator.CreateIndex(&MapTileSourceRecord{}, "idx_map_tile_sources_url_template_hash"); err != nil {
 			return fmt.Errorf("migrate map_tile_sources index idx_map_tile_sources_url_template_hash: %w", err)
 		}
 	}
@@ -833,7 +841,7 @@ func createMissingIndexes(migrator gorm.Migrator, model any, label string, index
 	return nil
 }
 
-func (s *store) UpsertNodeInfo(record map[string]any) error {
+func (s *Store) UpsertNodeInfo(record map[string]any) error {
 	node, err := nodeInfoFromRecord(record)
 	if err != nil {
 		return err
@@ -847,7 +855,7 @@ func (s *store) UpsertNodeInfo(record map[string]any) error {
 	return nil
 }
 
-func (s *store) UpsertMapReport(record map[string]any) error {
+func (s *Store) UpsertMapReport(record map[string]any) error {
 	report, err := mapReportFromRecord(record)
 	if err != nil {
 		return err
@@ -861,9 +869,9 @@ func (s *store) UpsertMapReport(record map[string]any) error {
 	return nil
 }
 
-func (s *store) upsertNodeInfoRecord(node *nodeInfoRecord) error {
+func (s *Store) upsertNodeInfoRecord(node *NodeInfoRecord) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		var existing nodeInfoRecord
+		var existing NodeInfoRecord
 		err := tx.Where("node_id = ?", node.NodeID).Take(&existing).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if err := tx.Create(node).Error; err != nil {
@@ -878,14 +886,14 @@ func (s *store) upsertNodeInfoRecord(node *nodeInfoRecord) error {
 	})
 }
 
-func (s *store) upsertMapReportRecord(report *mapReportRecord) error {
+func (s *Store) upsertMapReportRecord(report *MapReportRecord) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		return s.upsertMapReportRecordTx(tx, report)
 	})
 }
 
-func (s *store) upsertMapReportRecordTx(tx *gorm.DB, report *mapReportRecord) error {
-	var existing mapReportRecord
+func (s *Store) upsertMapReportRecordTx(tx *gorm.DB, report *MapReportRecord) error {
+	var existing MapReportRecord
 	err := tx.Where("node_id = ?", report.NodeID).Take(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		if err := tx.Create(report).Error; err != nil {
@@ -899,17 +907,17 @@ func (s *store) upsertMapReportRecordTx(tx *gorm.DB, report *mapReportRecord) er
 	return s.updateMapReportRecord(tx, report)
 }
 
-func (s *store) updateNodeInfoRecord(tx *gorm.DB, node *nodeInfoRecord) error {
+func (s *Store) updateNodeInfoRecord(tx *gorm.DB, node *NodeInfoRecord) error {
 	updates := nodeInfoUpdates(node)
-	return tx.Model(&nodeInfoRecord{}).Where("node_id = ?", node.NodeID).Updates(updates).Error
+	return tx.Model(&NodeInfoRecord{}).Where("node_id = ?", node.NodeID).Updates(updates).Error
 }
 
-func (s *store) updateMapReportRecord(tx *gorm.DB, report *mapReportRecord) error {
+func (s *Store) updateMapReportRecord(tx *gorm.DB, report *MapReportRecord) error {
 	updates := mapReportUpdates(report)
-	return tx.Model(&mapReportRecord{}).Where("node_id = ?", report.NodeID).Updates(updates).Error
+	return tx.Model(&MapReportRecord{}).Where("node_id = ?", report.NodeID).Updates(updates).Error
 }
 
-func (s *store) updateMapReportFromNodeInfo(node *nodeInfoRecord) error {
+func (s *Store) updateMapReportFromNodeInfo(node *NodeInfoRecord) error {
 	updates := map[string]any{
 		"node_num":   node.NodeNum,
 		"updated_at": time.Now(),
@@ -918,10 +926,10 @@ func (s *store) updateMapReportFromNodeInfo(node *nodeInfoRecord) error {
 	addStringUpdate(updates, "short_name", node.ShortName)
 	addStringUpdate(updates, "hw_model", node.HWModel)
 	addStringUpdate(updates, "role", node.Role)
-	return s.db.Model(&mapReportRecord{}).Where("node_id = ?", node.NodeID).Updates(updates).Error
+	return s.db.Model(&MapReportRecord{}).Where("node_id = ?", node.NodeID).Updates(updates).Error
 }
 
-func (s *store) updateNodeInfoFromMapReport(report *mapReportRecord) error {
+func (s *Store) updateNodeInfoFromMapReport(report *MapReportRecord) error {
 	updates := map[string]any{
 		"node_num":   report.NodeNum,
 		"updated_at": time.Now(),
@@ -930,10 +938,10 @@ func (s *store) updateNodeInfoFromMapReport(report *mapReportRecord) error {
 	addStringUpdate(updates, "short_name", report.ShortName)
 	addStringUpdate(updates, "hw_model", report.HWModel)
 	addStringUpdate(updates, "role", report.Role)
-	return s.db.Model(&nodeInfoRecord{}).Where("node_id = ?", report.NodeID).Updates(updates).Error
+	return s.db.Model(&NodeInfoRecord{}).Where("node_id = ?", report.NodeID).Updates(updates).Error
 }
 
-func nodeInfoUpdates(node *nodeInfoRecord) map[string]any {
+func nodeInfoUpdates(node *NodeInfoRecord) map[string]any {
 	updates := map[string]any{
 		"node_num":     node.NodeNum,
 		"content_json": node.ContentJSON,
@@ -949,7 +957,7 @@ func nodeInfoUpdates(node *nodeInfoRecord) map[string]any {
 	return updates
 }
 
-func mapReportUpdates(report *mapReportRecord) map[string]any {
+func mapReportUpdates(report *MapReportRecord) map[string]any {
 	updates := map[string]any{
 		"node_num":     report.NodeNum,
 		"content_json": report.ContentJSON,
@@ -971,7 +979,7 @@ func mapReportUpdates(report *mapReportRecord) map[string]any {
 	return updates
 }
 
-func (s *store) InsertTextMessage(record map[string]any, clientInfo mqttClientInfo) error {
+func (s *Store) InsertTextMessage(record map[string]any, clientInfo MQTTClientInfo) error {
 	message, err := textMessageFromRecord(record, clientInfo)
 	if err != nil {
 		return err
@@ -982,7 +990,7 @@ func (s *store) InsertTextMessage(record map[string]any, clientInfo mqttClientIn
 	return nil
 }
 
-func (s *store) InsertPosition(record map[string]any, clientInfo mqttClientInfo) error {
+func (s *Store) InsertPosition(record map[string]any, clientInfo MQTTClientInfo) error {
 	position, err := positionFromRecord(record, clientInfo)
 	if err != nil {
 		return err
@@ -998,8 +1006,8 @@ func (s *store) InsertPosition(record map[string]any, clientInfo mqttClientInfo)
 	})
 }
 
-func (s *store) upsertMapReportFromPosition(tx *gorm.DB, position *positionRecord) error {
-	report := &mapReportRecord{
+func (s *Store) upsertMapReportFromPosition(tx *gorm.DB, position *PositionRecord) error {
+	report := &MapReportRecord{
 		NodeID:            position.FromID,
 		NodeNum:           position.FromNum,
 		Latitude:          position.Latitude,
@@ -1009,7 +1017,7 @@ func (s *store) upsertMapReportFromPosition(tx *gorm.DB, position *positionRecor
 		ContentJSON:       position.ContentJSON,
 	}
 
-	var existing mapReportRecord
+	var existing MapReportRecord
 	err := tx.Where("node_id = ?", position.FromID).Take(&existing).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return tx.Create(report).Error
@@ -1022,10 +1030,10 @@ func (s *store) upsertMapReportFromPosition(tx *gorm.DB, position *positionRecor
 	addFloat64Update(updates, "longitude", position.Longitude)
 	addInt64Update(updates, "altitude", position.Altitude)
 	addInt64Update(updates, "position_precision", position.PrecisionBits)
-	return tx.Model(&mapReportRecord{}).Where("node_id = ?", position.FromID).Updates(updates).Error
+	return tx.Model(&MapReportRecord{}).Where("node_id = ?", position.FromID).Updates(updates).Error
 }
 
-func (s *store) InsertTelemetry(record map[string]any, clientInfo mqttClientInfo) error {
+func (s *Store) InsertTelemetry(record map[string]any, clientInfo MQTTClientInfo) error {
 	telemetry, err := telemetryFromRecord(record, clientInfo)
 	if err != nil {
 		return err
@@ -1036,7 +1044,7 @@ func (s *store) InsertTelemetry(record map[string]any, clientInfo mqttClientInfo
 	return nil
 }
 
-func (s *store) InsertRouting(record map[string]any, clientInfo mqttClientInfo) error {
+func (s *Store) InsertRouting(record map[string]any, clientInfo MQTTClientInfo) error {
 	routing, err := routingFromRecord(record, clientInfo)
 	if err != nil {
 		return err
@@ -1047,7 +1055,7 @@ func (s *store) InsertRouting(record map[string]any, clientInfo mqttClientInfo) 
 	return nil
 }
 
-func (s *store) InsertTraceroute(record map[string]any, clientInfo mqttClientInfo) error {
+func (s *Store) InsertTraceroute(record map[string]any, clientInfo MQTTClientInfo) error {
 	traceroute, err := tracerouteFromRecord(record, clientInfo)
 	if err != nil {
 		return err
@@ -1058,7 +1066,7 @@ func (s *store) InsertTraceroute(record map[string]any, clientInfo mqttClientInf
 	return nil
 }
 
-func nodeInfoFromRecord(record map[string]any) (*nodeInfoRecord, error) {
+func nodeInfoFromRecord(record map[string]any) (*NodeInfoRecord, error) {
 	recordType, ok := record["type"].(string)
 	if !ok || recordType != "nodeinfo" {
 		return nil, fmt.Errorf("record type %v is not nodeinfo", record["type"])
@@ -1068,21 +1076,21 @@ func nodeInfoFromRecord(record map[string]any) (*nodeInfoRecord, error) {
 		return nil, err
 	}
 
-	return &nodeInfoRecord{
+	return &NodeInfoRecord{
 		NodeID:      nodeID,
 		NodeNum:     nodeNum,
-		UserID:      nullableString(record["user_id"]),
-		LongName:    nullableString(record["long_name"]),
-		ShortName:   nullableString(record["short_name"]),
-		HWModel:     nullableString(record["hw_model"]),
-		Role:        nullableString(record["role"]),
+		UserID:      NullableString(record["user_id"]),
+		LongName:    NullableString(record["long_name"]),
+		ShortName:   NullableString(record["short_name"]),
+		HWModel:     NullableString(record["hw_model"]),
+		Role:        NullableString(record["role"]),
 		IsLicensed:  nullableBool(record["is_licensed"]),
-		PublicKey:   nullableString(record["public_key"]),
+		PublicKey:   NullableString(record["public_key"]),
 		ContentJSON: contentJSON,
 	}, nil
 }
 
-func mapReportFromRecord(record map[string]any) (*mapReportRecord, error) {
+func mapReportFromRecord(record map[string]any) (*MapReportRecord, error) {
 	recordType, ok := record["type"].(string)
 	if !ok || recordType != "map_report" {
 		return nil, fmt.Errorf("record type %v is not map_report", record["type"])
@@ -1092,16 +1100,16 @@ func mapReportFromRecord(record map[string]any) (*mapReportRecord, error) {
 		return nil, err
 	}
 
-	return &mapReportRecord{
+	return &MapReportRecord{
 		NodeID:                 nodeID,
 		NodeNum:                nodeNum,
-		LongName:               nullableString(record["long_name"]),
-		ShortName:              nullableString(record["short_name"]),
-		HWModel:                nullableString(record["hw_model"]),
-		Role:                   nullableString(record["role"]),
-		FirmwareVersion:        nullableString(record["firmware_version"]),
-		Region:                 nullableString(record["region"]),
-		ModemPreset:            nullableString(record["modem_preset"]),
+		LongName:               NullableString(record["long_name"]),
+		ShortName:              NullableString(record["short_name"]),
+		HWModel:                NullableString(record["hw_model"]),
+		Role:                   NullableString(record["role"]),
+		FirmwareVersion:        NullableString(record["firmware_version"]),
+		Region:                 NullableString(record["region"]),
+		ModemPreset:            NullableString(record["modem_preset"]),
 		Latitude:               nullableFloat64(record["latitude"]),
 		Longitude:              nullableFloat64(record["longitude"]),
 		Altitude:               nullableInt64(record["altitude"]),
@@ -1128,7 +1136,7 @@ func nodeRecordBase(record map[string]any, label string) (string, int64, string,
 	return nodeID, nodeNum, string(contentJSON), nil
 }
 
-func textMessageFromRecord(record map[string]any, clientInfo mqttClientInfo) (*textMessageRecord, error) {
+func textMessageFromRecord(record map[string]any, clientInfo MQTTClientInfo) (*TextMessageRecord, error) {
 	recordType, ok := record["type"].(string)
 	if !ok || recordType != "text_message" {
 		return nil, fmt.Errorf("record type %v is not text_message", record["type"])
@@ -1137,11 +1145,11 @@ func textMessageFromRecord(record map[string]any, clientInfo mqttClientInfo) (*t
 	if err != nil {
 		return nil, err
 	}
-	return &textMessageRecord{
+	return &TextMessageRecord{
 		FromID:         common.FromID,
 		FromNum:        common.FromNum,
-		Text:           nullableString(record["text"]),
-		PayloadHex:     nullableString(record["payload_hex"]),
+		Text:           NullableString(record["text"]),
+		PayloadHex:     NullableString(record["payload_hex"]),
 		Topic:          common.Topic,
 		ChannelID:      common.ChannelID,
 		GatewayID:      common.GatewayID,
@@ -1165,20 +1173,20 @@ func textMessageFromRecord(record map[string]any, clientInfo mqttClientInfo) (*t
 	}, nil
 }
 
-func positionFromRecord(record map[string]any, clientInfo mqttClientInfo) (*positionRecord, error) {
+func positionFromRecord(record map[string]any, clientInfo MQTTClientInfo) (*PositionRecord, error) {
 	common, clientFields, err := AppendPacketFieldsFromRecord(record, "position", clientInfo)
 	if err != nil {
 		return nil, err
 	}
-	return &positionRecord{
+	return &PositionRecord{
 		AppendPacketFields:        common,
 		MQTTClientRecordFields:    clientFields,
 		Latitude:                  nullableFloat64(record["latitude"]),
 		Longitude:                 nullableFloat64(record["longitude"]),
 		Altitude:                  nullableInt64(record["altitude"]),
 		PositionTime:              nullableInt64(record["time"]),
-		LocationSource:            nullableStringValue(record["location_source"]),
-		AltitudeSource:            nullableStringValue(record["altitude_source"]),
+		LocationSource:            NullableStringValue(record["location_source"]),
+		AltitudeSource:            NullableStringValue(record["altitude_source"]),
 		Timestamp:                 nullableInt64(record["timestamp"]),
 		TimestampMillisAdjust:     nullableInt64(record["timestamp_millis_adjust"]),
 		AltitudeHAE:               nullableInt64(record["altitude_hae"]),
@@ -1199,7 +1207,7 @@ func positionFromRecord(record map[string]any, clientInfo mqttClientInfo) (*posi
 	}, nil
 }
 
-func telemetryFromRecord(record map[string]any, clientInfo mqttClientInfo) (*telemetryRecord, error) {
+func telemetryFromRecord(record map[string]any, clientInfo MQTTClientInfo) (*TelemetryRecord, error) {
 	common, clientFields, err := AppendPacketFieldsFromRecord(record, "telemetry", clientInfo)
 	if err != nil {
 		return nil, err
@@ -1208,32 +1216,32 @@ func telemetryFromRecord(record map[string]any, clientInfo mqttClientInfo) (*tel
 	if err != nil {
 		return nil, fmt.Errorf("encode telemetry metrics_json: %w", err)
 	}
-	return &telemetryRecord{
+	return &TelemetryRecord{
 		AppendPacketFields:     common,
 		MQTTClientRecordFields: clientFields,
 		TelemetryTime:          nullableInt64(record["time"]),
-		TelemetryType:          nullableString(record["telemetry_type"]),
+		TelemetryType:          NullableString(record["telemetry_type"]),
 		MetricsJSON:            metricsJSON,
 	}, nil
 }
 
-func routingFromRecord(record map[string]any, clientInfo mqttClientInfo) (*routingRecord, error) {
+func routingFromRecord(record map[string]any, clientInfo MQTTClientInfo) (*RoutingRecord, error) {
 	common, clientFields, err := AppendPacketFieldsFromRecord(record, "routing", clientInfo)
 	if err != nil {
 		return nil, err
 	}
-	return &routingRecord{AppendPacketFields: common, MQTTClientRecordFields: clientFields}, nil
+	return &RoutingRecord{AppendPacketFields: common, MQTTClientRecordFields: clientFields}, nil
 }
 
-func tracerouteFromRecord(record map[string]any, clientInfo mqttClientInfo) (*tracerouteRecord, error) {
+func tracerouteFromRecord(record map[string]any, clientInfo MQTTClientInfo) (*TracerouteRecord, error) {
 	common, clientFields, err := AppendPacketFieldsFromRecord(record, "traceroute", clientInfo)
 	if err != nil {
 		return nil, err
 	}
-	return &tracerouteRecord{AppendPacketFields: common, MQTTClientRecordFields: clientFields}, nil
+	return &TracerouteRecord{AppendPacketFields: common, MQTTClientRecordFields: clientFields}, nil
 }
 
-func AppendPacketFieldsFromRecord(record map[string]any, wantType string, clientInfo mqttClientInfo) (AppendPacketFields, MQTTClientRecordFields, error) {
+func AppendPacketFieldsFromRecord(record map[string]any, wantType string, clientInfo MQTTClientInfo) (AppendPacketFields, MQTTClientRecordFields, error) {
 	recordType, ok := record["type"].(string)
 	if !ok || recordType != wantType {
 		return AppendPacketFields{}, MQTTClientRecordFields{}, fmt.Errorf("record type %v is not %s", record["type"], wantType)
@@ -1259,26 +1267,26 @@ func AppendPacketFieldsFromRecord(record map[string]any, wantType string, client
 			FromID:         fromID,
 			FromNum:        fromNum,
 			Topic:          topic,
-			ChannelID:      nullableString(record["channel_id"]),
-			GatewayID:      nullableString(record["gateway_id"]),
+			ChannelID:      NullableString(record["channel_id"]),
+			GatewayID:      NullableString(record["gateway_id"]),
 			PacketID:       nullableInt64(record["packet_id"]),
-			PacketTo:       nullableString(record["packet_to"]),
+			PacketTo:       NullableString(record["packet_to"]),
 			PacketToNum:    nullableInt64(record["packet_to_num"]),
-			Portnum:        nullableString(record["portnum"]),
+			Portnum:        NullableString(record["portnum"]),
 			PayloadLen:     nullableInt64(record["payload_len"]),
-			PayloadVariant: nullableString(record["payload_variant"]),
+			PayloadVariant: NullableString(record["payload_variant"]),
 			ViaMQTT:        nullableBool(record["via_mqtt"]),
 			PKIEncrypted:   nullableBool(record["pki_encrypted"]),
 			DecryptSuccess: nullableBool(record["decrypt_success"]),
-			DecryptStatus:  nullableString(record["decrypt_status"]),
+			DecryptStatus:  NullableString(record["decrypt_status"]),
 			ContentJSON:    string(contentJSON),
 		}, MQTTClientRecordFields{
-			MQTTClientID:   nullableString(clientInfo.ClientID),
-			MQTTUsername:   nullableString(clientInfo.Username),
-			MQTTListener:   nullableString(clientInfo.Listener),
-			MQTTRemoteAddr: nullableString(clientInfo.RemoteAddr),
-			MQTTRemoteHost: nullableString(clientInfo.RemoteHost),
-			MQTTRemotePort: nullableString(clientInfo.RemotePort),
+			MQTTClientID:   NullableString(clientInfo.ClientID),
+			MQTTUsername:   NullableString(clientInfo.Username),
+			MQTTListener:   NullableString(clientInfo.Listener),
+			MQTTRemoteAddr: NullableString(clientInfo.RemoteAddr),
+			MQTTRemoteHost: NullableString(clientInfo.RemoteHost),
+			MQTTRemotePort: NullableString(clientInfo.RemotePort),
 		}, nil
 }
 
@@ -1311,7 +1319,7 @@ func int64FromAny(value any) (int64, error) {
 	}
 }
 
-func nullableString(value any) *string {
+func NullableString(value any) *string {
 	if value == nil {
 		return nil
 	}
@@ -1322,7 +1330,7 @@ func nullableString(value any) *string {
 	return &s
 }
 
-func nullableStringValue(value any) *string {
+func NullableStringValue(value any) *string {
 	if value == nil {
 		return nil
 	}

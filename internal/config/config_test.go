@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"os"
@@ -8,11 +8,11 @@ import (
 )
 
 func TestLoadConfigCreatesDefaultFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mesh_mqtt_go", configFileName)
+	path := filepath.Join(t.TempDir(), "mesh_mqtt_go", FileName)
 
-	cfg, err := loadConfig(path)
+	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 	if cfg.MQTT.Host != "0.0.0.0" {
 		t.Fatalf("host = %q, want 0.0.0.0", cfg.MQTT.Host)
@@ -60,7 +60,7 @@ func TestLoadConfigCreatesDefaultFile(t *testing.T) {
 }
 
 func TestLoadConfigFillsMissingFields(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mesh_mqtt_go", configFileName)
+	path := filepath.Join(t.TempDir(), "mesh_mqtt_go", FileName)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -68,9 +68,9 @@ func TestLoadConfigFillsMissingFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := loadConfig(path)
+	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 	if cfg.MQTT.Port != 1884 {
 		t.Fatalf("port = %d, want 1884", cfg.MQTT.Port)
@@ -98,7 +98,7 @@ func TestLoadConfigFillsMissingFields(t *testing.T) {
 }
 
 func TestLoadConfigPreservesExplicitFalse(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mesh_mqtt_go", configFileName)
+	path := filepath.Join(t.TempDir(), "mesh_mqtt_go", FileName)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -107,9 +107,9 @@ func TestLoadConfigPreservesExplicitFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := loadConfig(path)
+	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 	if cfg.MQTT.TLS.Enabled {
 		t.Fatalf("tls enabled = true, want explicit false")
@@ -120,7 +120,7 @@ func TestLoadConfigPreservesExplicitFalse(t *testing.T) {
 }
 
 func TestLoadConfigPreservesExplicitWebFalse(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mesh_mqtt_go", configFileName)
+	path := filepath.Join(t.TempDir(), "mesh_mqtt_go", FileName)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -129,9 +129,9 @@ func TestLoadConfigPreservesExplicitWebFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg, err := loadConfig(path)
+	cfg, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 	if cfg.Web.Enabled {
 		t.Fatalf("web enabled = true, want explicit false")
@@ -145,7 +145,7 @@ func TestLoadConfigPreservesExplicitWebFalse(t *testing.T) {
 }
 
 func TestLoadConfigMalformedYAMLDoesNotOverwrite(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mesh_mqtt_go", configFileName)
+	path := filepath.Join(t.TempDir(), "mesh_mqtt_go", FileName)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -154,9 +154,9 @@ func TestLoadConfigMalformedYAMLDoesNotOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := loadConfig(path)
+	_, err := Load(path)
 	if err == nil {
-		t.Fatalf("loadConfig() error = nil, want parse error")
+		t.Fatalf("Load() error = nil, want parse error")
 	}
 	data, readErr := os.ReadFile(path)
 	if readErr != nil {
@@ -218,10 +218,10 @@ func TestDefaultWebSocketPathForGOOS(t *testing.T) {
 }
 
 func TestClearWebSocketPathOnUnsupportedGOOS(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := Default()
 	cfg.Web.SocketPath = filepath.Join(".", "win", "opt", "mesh_mqtt_go", "web.sock")
-	if !clearWebSocketPathOnUnsupportedGOOS(cfg, "windows") {
-		t.Fatalf("clearWebSocketPathOnUnsupportedGOOS() = false, want true")
+	if !ClearWebSocketPathOnUnsupportedGOOS(cfg, "windows") {
+		t.Fatalf("ClearWebSocketPathOnUnsupportedGOOS() = false, want true")
 	}
 	if cfg.Web.SocketPath != "" {
 		t.Fatalf("windows web socket path = %q, want empty", cfg.Web.SocketPath)
@@ -231,8 +231,8 @@ func TestClearWebSocketPathOnUnsupportedGOOS(t *testing.T) {
 	}
 
 	cfg.Web.SocketPath = "/opt/mesh_mqtt_go/web.sock"
-	if clearWebSocketPathOnUnsupportedGOOS(cfg, "linux") {
-		t.Fatalf("linux clearWebSocketPathOnUnsupportedGOOS() = true, want false")
+	if ClearWebSocketPathOnUnsupportedGOOS(cfg, "linux") {
+		t.Fatalf("linux ClearWebSocketPathOnUnsupportedGOOS() = true, want false")
 	}
 	if cfg.Web.SocketPath == "" {
 		t.Fatalf("linux web socket path was cleared")
@@ -256,102 +256,102 @@ func TestDefaultSQLitePathForGOOS(t *testing.T) {
 }
 
 func TestValidateConfigDatabase(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := Default()
 	cfg.Database.Driver = "postgres"
-	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "database.driver") {
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "database.driver") {
 		t.Fatalf("invalid driver error = %v, want database.driver error", err)
 	}
 
-	cfg = defaultConfig()
+	cfg = Default()
 	cfg.Database.SQLite.Path = ""
-	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "database.sqlite.path") {
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "database.sqlite.path") {
 		t.Fatalf("missing sqlite path error = %v, want database.sqlite.path error", err)
 	}
 
-	cfg = defaultConfig()
+	cfg = Default()
 	cfg.Database.Driver = "mysql"
 	cfg.Database.MySQL.DSN = ""
-	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "database.mysql.dsn") {
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "database.mysql.dsn") {
 		t.Fatalf("missing mysql dsn error = %v, want database.mysql.dsn error", err)
 	}
 }
 
 func TestValidateConfigWeb(t *testing.T) {
-	cfg := defaultConfig()
+	cfg := Default()
 	cfg.Web.Port = 0
-	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "web port") {
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "web port") {
 		t.Fatalf("invalid web port error = %v, want web port error", err)
 	}
 
-	cfg = defaultConfig()
+	cfg = Default()
 	cfg.Web.PortEnabled = false
 	cfg.Web.Port = 0
-	if err := validateConfig(cfg); err != nil {
+	if err := Validate(cfg); err != nil {
 		t.Fatalf("disabled web port with invalid port error = %v, want nil", err)
 	}
 
-	cfg = defaultConfig()
+	cfg = Default()
 	cfg.Web.SocketEnabled = false
 	cfg.Web.SocketPath = ""
-	if err := validateConfig(cfg); err != nil {
+	if err := Validate(cfg); err != nil {
 		t.Fatalf("disabled web socket with empty path error = %v, want nil", err)
 	}
 
-	cfg = defaultConfig()
+	cfg = Default()
 	cfg.Web.PortEnabled = false
 	cfg.Web.SocketEnabled = true
 	cfg.Web.SocketPath = ""
-	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "web.socket_path") {
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "web.socket_path") {
 		t.Fatalf("missing web socket path error = %v, want web.socket_path error", err)
 	}
 
-	cfg = defaultConfig()
+	cfg = Default()
 	cfg.Web.PortEnabled = false
 	cfg.Web.SocketEnabled = false
-	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "web.port_enabled") {
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "web.port_enabled") {
 		t.Fatalf("disabled web listeners error = %v, want web.port_enabled error", err)
 	}
 
-	cfg = defaultConfig()
+	cfg = Default()
 	cfg.Web.StaticDir = ""
-	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "web.static_dir") {
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "web.static_dir") {
 		t.Fatalf("missing web static dir error = %v, want web.static_dir error", err)
 	}
 
-	cfg = defaultConfig()
+	cfg = Default()
 	cfg.Web.MapTileCacheDir = ""
-	if err := validateConfig(cfg); err == nil || !strings.Contains(err.Error(), "web.map_tile_cache_dir") {
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "web.map_tile_cache_dir") {
 		t.Fatalf("missing map tile cache dir error = %v, want web.map_tile_cache_dir error", err)
 	}
 
-	cfg = defaultConfig()
+	cfg = Default()
 	cfg.Web.Enabled = false
 	cfg.Web.PortEnabled = false
 	cfg.Web.SocketEnabled = false
 	cfg.Web.Port = 0
 	cfg.Web.StaticDir = ""
-	if err := validateConfig(cfg); err != nil {
+	if err := Validate(cfg); err != nil {
 		t.Fatalf("disabled web validate error = %v, want nil", err)
 	}
 }
 
 func TestBuildTLSConfigDisabled(t *testing.T) {
-	cfg, err := buildTLSConfig(tlsConfig{})
+	cfg, err := BuildTLS(TLSConfig{})
 	if err != nil {
-		t.Fatalf("buildTLSConfig() error = %v", err)
+		t.Fatalf("BuildTLS() error = %v", err)
 	}
 	if cfg != nil {
-		t.Fatalf("buildTLSConfig() = %#v, want nil", cfg)
+		t.Fatalf("BuildTLS() = %#v, want nil", cfg)
 	}
 }
 
 func TestBuildTLSConfigRequiresCertAndKey(t *testing.T) {
-	_, err := buildTLSConfig(tlsConfig{Enabled: true})
+	_, err := BuildTLS(TLSConfig{Enabled: true})
 	if err == nil || !strings.Contains(err.Error(), "cert_file") {
 		t.Fatalf("missing cert error = %v, want cert_file error", err)
 	}
 
-	_, err = buildTLSConfig(tlsConfig{Enabled: true, CertFile: "cert.pem"})
+	_, err = BuildTLS(TLSConfig{Enabled: true, CertFile: "cert.pem"})
 	if err == nil || !strings.Contains(err.Error(), "key_file") {
 		t.Fatalf("missing key error = %v, want key_file error", err)
 	}

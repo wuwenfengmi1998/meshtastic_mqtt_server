@@ -1,4 +1,4 @@
-package main
+package store
 
 import (
 	"database/sql"
@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"meshtastic_mqtt_server/internal/config"
 )
 
 func TestOpenStoreCreatesTables(t *testing.T) {
@@ -49,7 +51,7 @@ func TestCountSignsByDayFormatsDateString(t *testing.T) {
 		t.Fatalf("CreateSign() error = %v", err)
 	}
 
-	rows, err := st.CountSignsByDay(listOptions{})
+	rows, err := st.CountSignsByDay(ListOptions{})
 	if err != nil {
 		t.Fatalf("CountSignsByDay() error = %v", err)
 	}
@@ -164,7 +166,7 @@ func TestListMapReportsFiltersByBounds(t *testing.T) {
 
 	minLat, maxLat := 10.0, 11.0
 	minLng, maxLng := 20.0, 21.0
-	opts := listOptions{Limit: 100, MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng}
+	opts := ListOptions{Limit: 100, MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng}
 	rows, err := st.ListMapReports(opts)
 	if err != nil {
 		t.Fatalf("ListMapReports() error = %v", err)
@@ -206,7 +208,7 @@ func TestListMapReportsFiltersAcrossAntimeridian(t *testing.T) {
 
 	minLat, maxLat := -10.0, 10.0
 	minLng, maxLng := 170.0, -170.0
-	rows, err := st.ListMapReports(listOptions{Limit: 100, MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng})
+	rows, err := st.ListMapReports(ListOptions{Limit: 100, MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng})
 	if err != nil {
 		t.Fatalf("ListMapReports() error = %v", err)
 	}
@@ -239,8 +241,8 @@ func TestListMapReportViewportReturnsPointsBelowThreshold(t *testing.T) {
 
 	minLat, maxLat := -1.0, 5.0
 	minLng, maxLng := -1.0, 5.0
-	result, err := st.ListMapReportViewport(mapReportViewportOptions{
-		ListOptions:      listOptions{MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng},
+	result, err := st.ListMapReportViewport(MapReportViewportOptions{
+		ListOptions:      ListOptions{MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng},
 		Zoom:             8,
 		Limit:            1000,
 		ClusterThreshold: 10,
@@ -271,8 +273,8 @@ func TestListMapReportViewportReturnsClustersAboveThreshold(t *testing.T) {
 
 	minLat, maxLat := 9.0, 11.0
 	minLng, maxLng := 19.0, 21.0
-	result, err := st.ListMapReportViewport(mapReportViewportOptions{
-		ListOptions:      listOptions{MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng},
+	result, err := st.ListMapReportViewport(MapReportViewportOptions{
+		ListOptions:      ListOptions{MinLat: &minLat, MaxLat: &maxLat, MinLng: &minLng, MaxLng: &maxLng},
 		Zoom:             4,
 		Limit:            1000,
 		ClusterThreshold: 2,
@@ -498,7 +500,7 @@ func TestEnsureDefaultAdminCreatesAdminUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUserByUsername() error = %v", err)
 	}
-	if user.Role != adminRole {
+	if user.Role != AdminRole {
 		t.Fatalf("role = %q, want admin", user.Role)
 	}
 	if user.PasswordHash == "admin" || user.PasswordHash == "" {
@@ -536,7 +538,7 @@ func TestCreateAdminUserCreatesHashedAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAdminUser() error = %v", err)
 	}
-	if user.Username != "new-admin" || user.Role != adminRole {
+	if user.Username != "new-admin" || user.Role != AdminRole {
 		t.Fatalf("user = %#v, want new-admin admin", user)
 	}
 	if user.PasswordHash == "secret" || !verifyPassword(user.PasswordHash, "secret") {
@@ -551,8 +553,8 @@ func TestCreateAdminUserRejectsDuplicateUsername(t *testing.T) {
 	if _, err := st.CreateAdminUser("new-admin", "secret"); err != nil {
 		t.Fatalf("first CreateAdminUser() error = %v", err)
 	}
-	if _, err := st.CreateAdminUser("new-admin", "secret"); !errors.Is(err, errUserAlreadyExists) {
-		t.Fatalf("duplicate CreateAdminUser() error = %v, want errUserAlreadyExists", err)
+	if _, err := st.CreateAdminUser("new-admin", "secret"); !errors.Is(err, ErrUserAlreadyExists) {
+		t.Fatalf("duplicate CreateAdminUser() error = %v, want ErrUserAlreadyExists", err)
 	}
 }
 
@@ -591,14 +593,14 @@ func TestInsertAndListLoginLogs(t *testing.T) {
 	defer st.Close()
 
 	userID := uint64(1)
-	if err := st.InsertLoginLog(loginLogRecord{Username: "admin", UserID: &userID, Success: true, Reason: "success", RemoteAddr: "127.0.0.1:1234", RemoteHost: "127.0.0.1", UserAgent: "test-agent"}); err != nil {
+	if err := st.InsertLoginLog(LoginLogRecord{Username: "admin", UserID: &userID, Success: true, Reason: "success", RemoteAddr: "127.0.0.1:1234", RemoteHost: "127.0.0.1", UserAgent: "test-agent"}); err != nil {
 		t.Fatalf("InsertLoginLog(success) error = %v", err)
 	}
-	if err := st.InsertLoginLog(loginLogRecord{Username: "admin", Success: false, Reason: "invalid username or password", RemoteAddr: "127.0.0.1:1235", RemoteHost: "127.0.0.1", UserAgent: "test-agent"}); err != nil {
+	if err := st.InsertLoginLog(LoginLogRecord{Username: "admin", Success: false, Reason: "invalid username or password", RemoteAddr: "127.0.0.1:1235", RemoteHost: "127.0.0.1", UserAgent: "test-agent"}); err != nil {
 		t.Fatalf("InsertLoginLog(failure) error = %v", err)
 	}
 
-	logs, err := st.ListLoginLogs(listOptions{Limit: 10})
+	logs, err := st.ListLoginLogs(ListOptions{Limit: 10})
 	if err != nil {
 		t.Fatalf("ListLoginLogs() error = %v", err)
 	}
@@ -621,7 +623,7 @@ func TestInsertDiscardDetailsStoresRawBase64AndClientInfo(t *testing.T) {
 	defer st.Close()
 
 	raw := []byte{0xff, 0x00, 0x01}
-	clientInfo := mqttClientInfo{ClientID: "client-1", Username: "user-1", Listener: "tcp", RemoteAddr: "127.0.0.1:54321", RemoteHost: "127.0.0.1", RemotePort: "54321"}
+	clientInfo := MQTTClientInfo{ClientID: "client-1", Username: "user-1", Listener: "tcp", RemoteAddr: "127.0.0.1:54321", RemoteHost: "127.0.0.1", RemotePort: "54321"}
 	record := map[string]any{"topic": "msh/US/test", "error": "protobuf decode failed", "payload_len": len(raw)}
 	if err := st.InsertDiscardDetails(record, raw, clientInfo); err != nil {
 		t.Fatalf("InsertDiscardDetails() error = %v", err)
@@ -647,13 +649,13 @@ func TestListDiscardDetailsOrdersNewestFirst(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	if err := st.InsertDiscardDetails(map[string]any{"topic": "first", "error": "first"}, []byte{1}, mqttClientInfo{}); err != nil {
+	if err := st.InsertDiscardDetails(map[string]any{"topic": "first", "error": "first"}, []byte{1}, MQTTClientInfo{}); err != nil {
 		t.Fatalf("first InsertDiscardDetails() error = %v", err)
 	}
-	if err := st.InsertDiscardDetails(map[string]any{"topic": "second", "error": "second"}, []byte{2}, mqttClientInfo{}); err != nil {
+	if err := st.InsertDiscardDetails(map[string]any{"topic": "second", "error": "second"}, []byte{2}, MQTTClientInfo{}); err != nil {
 		t.Fatalf("second InsertDiscardDetails() error = %v", err)
 	}
-	rows, err := st.ListDiscardDetails(listOptions{Limit: 10})
+	rows, err := st.ListDiscardDetails(ListOptions{Limit: 10})
 	if err != nil {
 		t.Fatalf("ListDiscardDetails() error = %v", err)
 	}
@@ -669,7 +671,7 @@ func TestInsertTextMessageAppendsRows(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	clientInfo := mqttClientInfo{ClientID: "client-1", Username: "user-1", Listener: "tcp", RemoteAddr: "127.0.0.1:54321", RemoteHost: "127.0.0.1", RemotePort: "54321"}
+	clientInfo := MQTTClientInfo{ClientID: "client-1", Username: "user-1", Listener: "tcp", RemoteAddr: "127.0.0.1:54321", RemoteHost: "127.0.0.1", RemotePort: "54321"}
 	if err := st.InsertTextMessage(textMessageTestRecord("hello"), clientInfo); err != nil {
 		t.Fatalf("first InsertTextMessage() error = %v", err)
 	}
@@ -710,7 +712,7 @@ func TestDeleteTextMessageDeletesRows(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	if err := st.InsertTextMessage(textMessageTestRecord("hello"), mqttClientInfo{}); err != nil {
+	if err := st.InsertTextMessage(textMessageTestRecord("hello"), MQTTClientInfo{}); err != nil {
 		t.Fatalf("InsertTextMessage() error = %v", err)
 	}
 	var id uint64
@@ -736,7 +738,7 @@ func TestInsertTextMessageStoresClientInfo(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	clientInfo := mqttClientInfo{ClientID: "client-1", Username: "user-1", Listener: "tcp", RemoteAddr: "127.0.0.1:54321", RemoteHost: "127.0.0.1", RemotePort: "54321"}
+	clientInfo := MQTTClientInfo{ClientID: "client-1", Username: "user-1", Listener: "tcp", RemoteAddr: "127.0.0.1:54321", RemoteHost: "127.0.0.1", RemotePort: "54321"}
 	if err := st.InsertTextMessage(textMessageTestRecord("hello"), clientInfo); err != nil {
 		t.Fatalf("InsertTextMessage() error = %v", err)
 	}
@@ -756,7 +758,7 @@ func TestInsertTextMessageStoresPayloadHex(t *testing.T) {
 
 	record := textMessageTestRecord(nil)
 	record["payload_hex"] = "fffefd"
-	if err := st.InsertTextMessage(record, mqttClientInfo{}); err != nil {
+	if err := st.InsertTextMessage(record, MQTTClientInfo{}); err != nil {
 		t.Fatalf("InsertTextMessage() error = %v", err)
 	}
 
@@ -777,16 +779,16 @@ func TestInsertTextMessageRequiresFields(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	if err := st.InsertTextMessage(map[string]any{"type": "nodeinfo"}, mqttClientInfo{}); err == nil || !strings.Contains(err.Error(), "text_message") {
+	if err := st.InsertTextMessage(map[string]any{"type": "nodeinfo"}, MQTTClientInfo{}); err == nil || !strings.Contains(err.Error(), "text_message") {
 		t.Fatalf("wrong type error = %v, want text_message error", err)
 	}
-	if err := st.InsertTextMessage(map[string]any{"type": "text_message", "from_num": 1, "topic": "msh/test"}, mqttClientInfo{}); err == nil || !strings.Contains(err.Error(), "from") {
+	if err := st.InsertTextMessage(map[string]any{"type": "text_message", "from_num": 1, "topic": "msh/test"}, MQTTClientInfo{}); err == nil || !strings.Contains(err.Error(), "from") {
 		t.Fatalf("missing from error = %v, want from error", err)
 	}
-	if err := st.InsertTextMessage(map[string]any{"type": "text_message", "from": "!00000001", "topic": "msh/test"}, mqttClientInfo{}); err == nil || !strings.Contains(err.Error(), "from_num") {
+	if err := st.InsertTextMessage(map[string]any{"type": "text_message", "from": "!00000001", "topic": "msh/test"}, MQTTClientInfo{}); err == nil || !strings.Contains(err.Error(), "from_num") {
 		t.Fatalf("missing from_num error = %v, want from_num error", err)
 	}
-	if err := st.InsertTextMessage(map[string]any{"type": "text_message", "from": "!00000001", "from_num": 1}, mqttClientInfo{}); err == nil || !strings.Contains(err.Error(), "topic") {
+	if err := st.InsertTextMessage(map[string]any{"type": "text_message", "from": "!00000001", "from_num": 1}, MQTTClientInfo{}); err == nil || !strings.Contains(err.Error(), "topic") {
 		t.Fatalf("missing topic error = %v, want topic error", err)
 	}
 }
@@ -795,7 +797,7 @@ func TestInsertPositionAppendsRows(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	clientInfo := mqttClientInfo{ClientID: "client-1", RemoteAddr: "127.0.0.1:54321", RemoteHost: "127.0.0.1", RemotePort: "54321"}
+	clientInfo := MQTTClientInfo{ClientID: "client-1", RemoteAddr: "127.0.0.1:54321", RemoteHost: "127.0.0.1", RemotePort: "54321"}
 	if err := st.InsertPosition(positionTestRecord(), clientInfo); err != nil {
 		t.Fatalf("first InsertPosition() error = %v", err)
 	}
@@ -826,7 +828,7 @@ func TestInsertPositionCreatesMapReportWhenMissing(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	if err := st.InsertPosition(positionTestRecord(), mqttClientInfo{}); err != nil {
+	if err := st.InsertPosition(positionTestRecord(), MQTTClientInfo{}); err != nil {
 		t.Fatalf("InsertPosition() error = %v", err)
 	}
 
@@ -854,7 +856,7 @@ func TestInsertPositionUpdatesExistingMapReportCoordinates(t *testing.T) {
 	position["longitude"] = 120.75
 	position["altitude"] = int32(88)
 	position["precision_bits"] = uint32(10)
-	if err := st.InsertPosition(position, mqttClientInfo{}); err != nil {
+	if err := st.InsertPosition(position, MQTTClientInfo{}); err != nil {
 		t.Fatalf("InsertPosition() error = %v", err)
 	}
 
@@ -873,7 +875,7 @@ func TestInsertTelemetryAppendsRowsAndStoresMetricsJSON(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	if err := st.InsertTelemetry(telemetryTestRecord(), mqttClientInfo{}); err != nil {
+	if err := st.InsertTelemetry(telemetryTestRecord(), MQTTClientInfo{}); err != nil {
 		t.Fatalf("InsertTelemetry() error = %v", err)
 	}
 
@@ -896,16 +898,16 @@ func TestInsertRoutingAndTracerouteAppendRows(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	if err := st.InsertRouting(routingTestRecord(), mqttClientInfo{}); err != nil {
+	if err := st.InsertRouting(routingTestRecord(), MQTTClientInfo{}); err != nil {
 		t.Fatalf("first InsertRouting() error = %v", err)
 	}
-	if err := st.InsertRouting(routingTestRecord(), mqttClientInfo{}); err != nil {
+	if err := st.InsertRouting(routingTestRecord(), MQTTClientInfo{}); err != nil {
 		t.Fatalf("second InsertRouting() error = %v", err)
 	}
-	if err := st.InsertTraceroute(tracerouteTestRecord(), mqttClientInfo{}); err != nil {
+	if err := st.InsertTraceroute(tracerouteTestRecord(), MQTTClientInfo{}); err != nil {
 		t.Fatalf("first InsertTraceroute() error = %v", err)
 	}
-	if err := st.InsertTraceroute(tracerouteTestRecord(), mqttClientInfo{}); err != nil {
+	if err := st.InsertTraceroute(tracerouteTestRecord(), MQTTClientInfo{}); err != nil {
 		t.Fatalf("second InsertTraceroute() error = %v", err)
 	}
 
@@ -938,10 +940,10 @@ func TestInsertPacketTablesRequireFields(t *testing.T) {
 		insert func(map[string]any) error
 		record map[string]any
 	}{
-		{name: "position", insert: func(r map[string]any) error { return st.InsertPosition(r, mqttClientInfo{}) }, record: positionTestRecord()},
-		{name: "telemetry", insert: func(r map[string]any) error { return st.InsertTelemetry(r, mqttClientInfo{}) }, record: telemetryTestRecord()},
-		{name: "routing", insert: func(r map[string]any) error { return st.InsertRouting(r, mqttClientInfo{}) }, record: routingTestRecord()},
-		{name: "traceroute", insert: func(r map[string]any) error { return st.InsertTraceroute(r, mqttClientInfo{}) }, record: tracerouteTestRecord()},
+		{name: "position", insert: func(r map[string]any) error { return st.InsertPosition(r, MQTTClientInfo{}) }, record: positionTestRecord()},
+		{name: "telemetry", insert: func(r map[string]any) error { return st.InsertTelemetry(r, MQTTClientInfo{}) }, record: telemetryTestRecord()},
+		{name: "routing", insert: func(r map[string]any) error { return st.InsertRouting(r, MQTTClientInfo{}) }, record: routingTestRecord()},
+		{name: "traceroute", insert: func(r map[string]any) error { return st.InsertTraceroute(r, MQTTClientInfo{}) }, record: tracerouteTestRecord()},
 	}
 
 	for _, tt := range tests {
@@ -971,19 +973,19 @@ func TestInsertPacketTablesRequireFields(t *testing.T) {
 	}
 }
 
-func openTestStore(t *testing.T) *store {
+func openTestStore(t *testing.T) *Store {
 	t.Helper()
-	st, err := openStore(databaseConfig{
-		Driver: databaseDriverSQLite,
-		SQLite: sqliteConfig{Path: filepath.Join(t.TempDir(), "mesh_mqtt_go.db")},
+	st, err := OpenStore(config.DatabaseConfig{
+		Driver: config.DriverSQLite,
+		SQLite: config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "mesh_mqtt_go.db")},
 	})
 	if err != nil {
-		t.Fatalf("openStore() error = %v", err)
+		t.Fatalf("OpenStore() error = %v", err)
 	}
 	return st
 }
 
-func rawTestDB(t *testing.T, st *store) *sql.DB {
+func rawTestDB(t *testing.T, st *Store) *sql.DB {
 	t.Helper()
 	db, err := st.db.DB()
 	if err != nil {
