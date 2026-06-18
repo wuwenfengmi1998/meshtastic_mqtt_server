@@ -32,6 +32,7 @@ desktop.ini
 win/etc/
 win/srv/
 win/var/
+win/opt/
 
 # 数据库文件
 *.db
