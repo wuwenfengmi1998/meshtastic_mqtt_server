@@ -4,11 +4,15 @@ import (
 	"testing"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
+
+	blockingpkg "meshtastic_mqtt_server/internal/blocking"
+	storepkg "meshtastic_mqtt_server/internal/store"
+	"meshtastic_mqtt_server/internal/store/testutil"
 )
 
 func TestMQTTClientInfoFromClientNil(t *testing.T) {
 	info := mqttClientInfoFromClient(nil)
-	if info != (mqttClientInfo{}) {
+	if info != (storepkg.MQTTClientInfo{}) {
 		t.Fatalf("info = %#v, want zero value", info)
 	}
 }
@@ -42,10 +46,21 @@ func TestMQTTClientInfoFromClientUnsplitRemote(t *testing.T) {
 	}
 }
 
-func TestBlockingViolationForRecordNode(t *testing.T) {
-	cache := &blockingCache{nodes: map[string]struct{}{"!12345678": {}}, nodeNums: map[int64]struct{}{}, ips: map[string]struct{}{}}
-	record := map[string]any{"type": "position", "from": "!12345678", "from_num": uint32(305419896)}
+// blockingViolationForRecord 的测试用真实 *Store + blocking.Cache 走完整路径，
+// 不依赖 cache 的未导出字段。
 
+func TestBlockingViolationForRecordNode(t *testing.T) {
+	st := testutil.OpenStore(t)
+	defer st.Close()
+	nodeNum := int64(305419896)
+	if _, err := st.CreateNodeBlocking("!12345678", &nodeNum, "blocked", true); err != nil {
+		t.Fatalf("CreateNodeBlocking() error = %v", err)
+	}
+	cache, err := blockingpkg.New(st)
+	if err != nil {
+		t.Fatalf("blocking.New() error = %v", err)
+	}
+	record := map[string]any{"type": "position", "from": "!12345678", "from_num": uint32(305419896)}
 	violation := blockingViolationForRecord(cache, record)
 	if violation == nil || violation["blocking_type"] != "node" {
 		t.Fatalf("blockingViolationForRecord() = %#v, want node violation", violation)
@@ -53,7 +68,15 @@ func TestBlockingViolationForRecordNode(t *testing.T) {
 }
 
 func TestBlockingViolationForRecordForbiddenWordFields(t *testing.T) {
-	cache := &blockingCache{nodes: map[string]struct{}{}, nodeNums: map[int64]struct{}{}, ips: map[string]struct{}{}, words: []forbiddenWordRule{{word: "spam", foldedWord: "spam", matchType: forbiddenWordMatchContains}}}
+	st := testutil.OpenStore(t)
+	defer st.Close()
+	if _, err := st.CreateForbiddenWordBlocking("spam", "contains", false, "blocked", true); err != nil {
+		t.Fatalf("CreateForbiddenWordBlocking() error = %v", err)
+	}
+	cache, err := blockingpkg.New(st)
+	if err != nil {
+		t.Fatalf("blocking.New() error = %v", err)
+	}
 
 	for _, tc := range []struct {
 		name   string
@@ -74,7 +97,15 @@ func TestBlockingViolationForRecordForbiddenWordFields(t *testing.T) {
 }
 
 func TestBlockingViolationForRecordAllowed(t *testing.T) {
-	cache := &blockingCache{nodes: map[string]struct{}{}, nodeNums: map[int64]struct{}{}, ips: map[string]struct{}{}, words: []forbiddenWordRule{{word: "spam", foldedWord: "spam", matchType: forbiddenWordMatchContains}}}
+	st := testutil.OpenStore(t)
+	defer st.Close()
+	if _, err := st.CreateForbiddenWordBlocking("spam", "contains", false, "blocked", true); err != nil {
+		t.Fatalf("CreateForbiddenWordBlocking() error = %v", err)
+	}
+	cache, err := blockingpkg.New(st)
+	if err != nil {
+		t.Fatalf("blocking.New() error = %v", err)
+	}
 	record := map[string]any{"type": "text_message", "from": "!1", "text": "hello"}
 	if violation := blockingViolationForRecord(cache, record); violation != nil {
 		t.Fatalf("blockingViolationForRecord() = %#v, want nil", violation)

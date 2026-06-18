@@ -1,0 +1,98 @@
+package store
+
+import (
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+const (
+	RuntimeSettingAllowEncryptedForwarding = "mqtt.allow_encrypted_forwarding"
+	RuntimeSettingLLMQueueEnabled         = "llm.queue_enabled"
+	RuntimeSettingLLMQueueIncludeChannel  = "llm.include_channel_messages"
+	runtimeSettingTypeBool                 = "bool"
+)
+
+type RuntimeSettingsSnapshot struct {
+	AllowEncryptedForwarding bool
+	LLMQueueEnabled          bool
+	LLMIncludeChannel        bool
+}
+
+func (s *Store) GetRuntimeSettings() (RuntimeSettingsSnapshot, error) {
+	allowEncrypted, err := s.GetBoolRuntimeSetting(RuntimeSettingAllowEncryptedForwarding, false)
+	if err != nil {
+		return RuntimeSettingsSnapshot{}, err
+	}
+	llmQueueEnabled, err := s.GetBoolRuntimeSetting(RuntimeSettingLLMQueueEnabled, true)
+	if err != nil {
+		return RuntimeSettingsSnapshot{}, err
+	}
+	llmIncludeChannel, err := s.GetBoolRuntimeSetting(RuntimeSettingLLMQueueIncludeChannel, false)
+	if err != nil {
+		return RuntimeSettingsSnapshot{}, err
+	}
+	return RuntimeSettingsSnapshot{
+		AllowEncryptedForwarding: allowEncrypted,
+		LLMQueueEnabled:          llmQueueEnabled,
+		LLMIncludeChannel:        llmIncludeChannel,
+	}, nil
+}
+
+func (s *Store) GetBoolRuntimeSetting(key string, defaultValue bool) (bool, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return false, fmt.Errorf("runtime setting key is required")
+	}
+
+	var row RuntimeSettingRecord
+	err := s.db.Where("`key` = ?", key).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return defaultValue, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if row.ValueType != "" && row.ValueType != runtimeSettingTypeBool {
+		return false, fmt.Errorf("runtime setting %s has type %s, want %s", key, row.ValueType, runtimeSettingTypeBool)
+	}
+	value, err := strconv.ParseBool(strings.TrimSpace(row.Value))
+	if err != nil {
+		return false, fmt.Errorf("parse runtime setting %s: %w", key, err)
+	}
+	return value, nil
+}
+
+func (s *Store) SetBoolRuntimeSetting(key string, value bool, label string) (*RuntimeSettingRecord, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, fmt.Errorf("runtime setting key is required")
+	}
+
+	row := RuntimeSettingRecord{
+		Key:       key,
+		Value:     strconv.FormatBool(value),
+		ValueType: runtimeSettingTypeBool,
+		Label:     strings.TrimSpace(label),
+	}
+	if err := s.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "key"}},
+		DoUpdates: clause.Assignments(map[string]any{
+			"value":      row.Value,
+			"value_type": row.ValueType,
+			"label":      row.Label,
+			"updated_at": time.Now(),
+		}),
+	}).Create(&row).Error; err != nil {
+		return nil, err
+	}
+	if err := s.db.Where("`key` = ?", key).Take(&row).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
