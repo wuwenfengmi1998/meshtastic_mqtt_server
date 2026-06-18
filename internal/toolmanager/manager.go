@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"meshtastic_mqtt_server/agenttool"
+	"meshtastic_mqtt_server/internal/agenttool"
 )
 
 // Manager manages loaded AI tools

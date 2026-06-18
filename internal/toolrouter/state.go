@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"meshtastic_mqtt_server/llm"
+	"meshtastic_mqtt_server/internal/llm"
 )
 
 // Config holds the tool router configuration

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"meshtastic_mqtt_server/message"
+	"meshtastic_mqtt_server/internal/message"
 )
 
 // Store manages conversations stored as JSON files

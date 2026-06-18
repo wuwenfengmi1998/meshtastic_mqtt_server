@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	storepkg "meshtastic_mqtt_server/internal/store"
-	"meshtastic_mqtt_server/mqtpp"
+	"meshtastic_mqtt_server/internal/mqtpp"
 )
 
 const botMaxTextBytes = 200

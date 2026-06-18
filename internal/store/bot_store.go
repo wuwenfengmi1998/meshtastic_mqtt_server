@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"meshtastic_mqtt_server/mqtpp"
+	"meshtastic_mqtt_server/internal/mqtpp"
 
 	"gorm.io/gorm"
 )

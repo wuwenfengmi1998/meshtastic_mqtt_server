@@ -19,8 +19,8 @@ import (
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"github.com/mochi-mqtt/server/v2/packets"
 
-	"meshtastic_mqtt_server/ai"
-	"meshtastic_mqtt_server/autoreply"
+	"meshtastic_mqtt_server/internal/ai"
+	"meshtastic_mqtt_server/internal/autoreply"
 	"meshtastic_mqtt_server/internal/auth"
 	blockingpkg "meshtastic_mqtt_server/internal/blocking"
 	botpkg "meshtastic_mqtt_server/internal/bot"
@@ -29,8 +29,8 @@ import (
 	rspkg "meshtastic_mqtt_server/internal/runtimesettings"
 	storepkg "meshtastic_mqtt_server/internal/store"
 	webpkg "meshtastic_mqtt_server/internal/web"
-	"meshtastic_mqtt_server/llm"
-	"meshtastic_mqtt_server/mqtpp"
+	"meshtastic_mqtt_server/internal/llm"
+	"meshtastic_mqtt_server/internal/mqtpp"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"meshtastic_mqtt_server/agenttool"
+	"meshtastic_mqtt_server/internal/agenttool"
 
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )

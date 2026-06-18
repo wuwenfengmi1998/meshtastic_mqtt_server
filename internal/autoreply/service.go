@@ -8,12 +8,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"meshtastic_mqtt_server/completion"
-	"meshtastic_mqtt_server/conversation"
-	"meshtastic_mqtt_server/llm"
-	"meshtastic_mqtt_server/message"
-	"meshtastic_mqtt_server/toolmanager"
-	"meshtastic_mqtt_server/toolrouter"
+	"meshtastic_mqtt_server/internal/completion"
+	"meshtastic_mqtt_server/internal/conversation"
+	"meshtastic_mqtt_server/internal/llm"
+	"meshtastic_mqtt_server/internal/message"
+	"meshtastic_mqtt_server/internal/toolmanager"
+	"meshtastic_mqtt_server/internal/toolrouter"
 
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )

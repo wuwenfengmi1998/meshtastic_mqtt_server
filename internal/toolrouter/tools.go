@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"meshtastic_mqtt_server/agenttool"
-	"meshtastic_mqtt_server/llm"
-	"meshtastic_mqtt_server/stream"
-	"meshtastic_mqtt_server/toolmanager"
+	"meshtastic_mqtt_server/internal/agenttool"
+	"meshtastic_mqtt_server/internal/llm"
+	"meshtastic_mqtt_server/internal/stream"
+	"meshtastic_mqtt_server/internal/toolmanager"
 
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )

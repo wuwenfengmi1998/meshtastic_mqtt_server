@@ -6,14 +6,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"meshtastic_mqtt_server/agenttool"
-	_ "meshtastic_mqtt_server/agents/calculator"
-	_ "meshtastic_mqtt_server/agents/time"
-	"meshtastic_mqtt_server/autoreply"
-	"meshtastic_mqtt_server/conversation"
-	"meshtastic_mqtt_server/llm"
-	"meshtastic_mqtt_server/toolmanager"
-	"meshtastic_mqtt_server/toolrouter"
+	"meshtastic_mqtt_server/internal/agenttool"
+	_ "meshtastic_mqtt_server/internal/agents/calculator"
+	_ "meshtastic_mqtt_server/internal/agents/time"
+	"meshtastic_mqtt_server/internal/autoreply"
+	"meshtastic_mqtt_server/internal/conversation"
+	"meshtastic_mqtt_server/internal/llm"
+	"meshtastic_mqtt_server/internal/toolmanager"
+	"meshtastic_mqtt_server/internal/toolrouter"
 
 	"gorm.io/gorm"
 )
