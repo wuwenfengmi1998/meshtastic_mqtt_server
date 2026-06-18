@@ -1,4 +1,4 @@
-package main
+package web
 
 import (
 	"errors"
@@ -12,16 +12,29 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	"meshtastic_mqtt_server/internal/auth"
+	blockingpkg "meshtastic_mqtt_server/internal/blocking"
+	botpkg "meshtastic_mqtt_server/internal/bot"
+	configpkg "meshtastic_mqtt_server/internal/config"
+	helppkg "meshtastic_mqtt_server/internal/help"
+	llmadminpkg "meshtastic_mqtt_server/internal/llmadmin"
+	mappkg "meshtastic_mqtt_server/internal/mapsource"
+	mqttforwardpkg "meshtastic_mqtt_server/internal/mqttforward"
+	rspkg "meshtastic_mqtt_server/internal/runtimesettings"
+	signpkg "meshtastic_mqtt_server/internal/sign"
+	storepkg "meshtastic_mqtt_server/internal/store"
+	"meshtastic_mqtt_server/internal/webutil"
 )
 
-func newHTTPServer(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache, forwarder mqttForwardReloader, settings *runtimeSettingsCache, botSender botTextSender) *http.Server {
+func NewHTTPServer(cfg configpkg.WebConfig, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender) *http.Server {
 	return &http.Server{
 		Addr:    net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
-		Handler: newRouter(cfg, store, sessions, mqttStatus, blocking, forwarder, settings, botSender),
+		Handler: NewRouter(cfg, store, sessions, mqttStatus, blocking, forwarder, settings, botSender),
 	}
 }
 
-func serveHTTPUnixSocket(server *http.Server, socketPath string) error {
+func ServeUnixSocket(server *http.Server, socketPath string) error {
 	if err := os.MkdirAll(filepath.Dir(socketPath), 0755); err != nil {
 		return err
 	}
@@ -47,7 +60,7 @@ func serveHTTPUnixSocket(server *http.Server, socketPath string) error {
 	return server.Serve(listener)
 }
 
-func newRouter(cfg webConfig, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache, forwarder mqttForwardReloader, settings *runtimeSettingsCache, botSender botTextSender) *gin.Engine {
+func NewRouter(cfg configpkg.WebConfig, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	api := r.Group("/api")
@@ -57,7 +70,7 @@ func newRouter(cfg webConfig, store *store, sessions *sessionManager, mqttStatus
 	return r
 }
 
-func registerAPIRoutes(r gin.IRouter, store *store, mapTileCacheDir string) {
+func registerAPIRoutes(r gin.IRouter, store *storepkg.Store, mapTileCacheDir string) {
 	r.GET("/health", func(c *gin.Context) {
 		status := gin.H{"status": "ok", "database": "ok"}
 		if err := store.Ping(); err != nil {
@@ -72,9 +85,9 @@ func registerAPIRoutes(r gin.IRouter, store *store, mapTileCacheDir string) {
 	registerNodeInfoRoutes(r, store, "/nodeinfo")
 	registerNodeInfoRoutes(r, store, "/nodes")
 	registerMapReportRoutes(r, store)
-	registerMapSourceRoutes(r, store)
+	mappkg.RegisterPublicRoutes(r, store)
 	registerMapTileProxyRoutes(r, store, mapTileCacheDir)
-	registerHelpRoutes(r, store)
+	helppkg.RegisterPublicRoutes(r, store)
 	r.GET("/signs", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
 		if !ok {
@@ -82,11 +95,11 @@ func registerAPIRoutes(r gin.IRouter, store *store, mapTileCacheDir string) {
 		}
 		rows, err := store.ListSigns(opts)
 		if err != nil {
-			writeListResponse(c, rows, opts, err, signDTO)
+			writeListResponse(c, rows, opts, err, signpkg.SignDTO)
 			return
 		}
 		total, err := store.CountSigns(opts)
-		writeListResponseWithTotal(c, rows, opts, total, err, signDTO)
+		writeListResponseWithTotal(c, rows, opts, total, err, signpkg.SignDTO)
 	})
 	r.GET("/signs/daily", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
@@ -94,7 +107,7 @@ func registerAPIRoutes(r gin.IRouter, store *store, mapTileCacheDir string) {
 			return
 		}
 		rows, err := store.CountSignsByDay(opts)
-		writeListResponse(c, rows, opts, err, signDayCountDTO)
+		writeListResponse(c, rows, opts, err, signpkg.SignDayCountDTO)
 	})
 	r.GET("/text-messages", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
@@ -146,7 +159,7 @@ func registerAPIRoutes(r gin.IRouter, store *store, mapTileCacheDir string) {
 	})
 }
 
-func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, mqttStatus mqttStatusProvider, blocking *blockingCache, forwarder mqttForwardReloader, settings *runtimeSettingsCache, botSender botTextSender) {
+func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender) {
 	type loginRequest struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -158,10 +171,10 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 	type updatePasswordRequest struct {
 		Password string `json:"password"`
 	}
-	userDTO := func(user userRecord) gin.H {
+	userDTO := func(user storepkg.UserRecord) gin.H {
 		return gin.H{"id": user.ID, "username": user.Username, "role": user.Role, "created_at": user.CreatedAt, "updated_at": user.UpdatedAt}
 	}
-	loginLogDTO := func(row loginLogRecord) gin.H {
+	loginLogDTO := func(row storepkg.LoginLogRecord) gin.H {
 		return gin.H{"id": row.ID, "username": row.Username, "user_id": ptrUint64(row.UserID), "success": row.Success, "reason": row.Reason, "remote_addr": row.RemoteAddr, "remote_host": row.RemoteHost, "user_agent": row.UserAgent, "created_at": row.CreatedAt}
 	}
 	remoteInfo := func(c *gin.Context) (string, string) {
@@ -174,7 +187,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 	}
 	recordLogin := func(c *gin.Context, username string, userID *uint64, success bool, reason string) {
 		remoteAddr, remoteHost := remoteInfo(c)
-		_ = store.InsertLoginLog(loginLogRecord{Username: username, UserID: userID, Success: success, Reason: reason, RemoteAddr: remoteAddr, RemoteHost: remoteHost, UserAgent: c.GetHeader("User-Agent")})
+		_ = store.InsertLoginLog(storepkg.LoginLogRecord{Username: username, UserID: userID, Success: success, Reason: reason, RemoteAddr: remoteAddr, RemoteHost: remoteHost, UserAgent: c.GetHeader("User-Agent")})
 	}
 
 	r.POST("/login", func(c *gin.Context) {
@@ -185,7 +198,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 			return
 		}
 		user, err := store.GetUserByUsername(req.Username)
-		if err != nil || user.Role != adminRole || !verifyPassword(user.PasswordHash, req.Password) {
+		if err != nil || user.Role != auth.AdminRole || !auth.VerifyPassword(user.PasswordHash, req.Password) {
 			recordLogin(c, req.Username, nil, false, "invalid username or password")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 			return
@@ -197,7 +210,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 		}
 		recordLogin(c, req.Username, &user.ID, true, "success")
 		http.SetCookie(c.Writer, cookie)
-		c.JSON(http.StatusOK, gin.H{"user": adminUserResponse(*user)})
+		c.JSON(http.StatusOK, gin.H{"user": auth.AdminUserResponse(*user)})
 	})
 	r.POST("/logout", func(c *gin.Context) {
 		http.SetCookie(c.Writer, sessions.ClearCookie())
@@ -205,26 +218,26 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 	})
 
 	protected := r.Group("")
-	protected.Use(requireAdmin(sessions))
-	registerAdminBlockingRoutes(protected, store, blocking)
-	registerAdminSignRoutes(protected, store)
-	registerAdminMQTTForwardRoutes(protected, store, forwarder)
-	registerAdminRuntimeSettingsRoutes(protected, store, settings)
-	registerAdminMapSourceRoutes(protected, store)
-	registerAdminHelpRoutes(protected, store)
-	registerAdminBotRoutes(protected, store, botSender)
-	registerAdminLLMRoutes(protected, store)
+	protected.Use(auth.RequireAdmin(sessions))
+	blockingpkg.RegisterRoutes(protected, store, blocking)
+	signpkg.RegisterAdminRoutes(protected, store)
+	mqttforwardpkg.RegisterRoutes(protected, store, forwarder)
+	rspkg.RegisterRoutes(protected, store, settings)
+	mappkg.RegisterAdminRoutes(protected, store)
+	helppkg.RegisterAdminRoutes(protected, store)
+	botpkg.RegisterRoutes(protected, store, botSender)
+	llmadminpkg.RegisterRoutes(protected, store)
 	protected.GET("/me", func(c *gin.Context) {
-		claims := c.MustGet("admin_claims").(*sessionClaims)
-		c.JSON(http.StatusOK, gin.H{"user": adminUserDTO{Username: claims.Username, Role: claims.Role}})
+		claims := c.MustGet("admin_claims").(*auth.SessionClaims)
+		c.JSON(http.StatusOK, gin.H{"user": auth.AdminUserDTO{Username: claims.Username, Role: claims.Role}})
 	})
 	protected.GET("/mqtt/status", func(c *gin.Context) {
 		if mqttStatus == nil {
-			c.JSON(http.StatusOK, adminMqttStatus{Running: false})
+			c.JSON(http.StatusOK, AdminMQTTStatus{Running: false})
 			return
 		}
 		status := mqttStatus.Status()
-		discardCount, err := store.CountDiscardDetails(listOptions{})
+		discardCount, err := store.CountDiscardDetails(storepkg.ListOptions{})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -251,7 +264,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 			return
 		}
 		user, err := store.CreateAdminUser(req.Username, req.Password)
-		if errors.Is(err, errUserAlreadyExists) {
+		if errors.Is(err, storepkg.ErrUserAlreadyExists) {
 			c.JSON(http.StatusConflict, gin.H{"error": "username already exists"})
 			return
 		}
@@ -323,7 +336,7 @@ func registerAdminRoutes(r gin.IRouter, store *store, sessions *sessionManager, 
 	})
 }
 
-func registerNodeInfoRoutes(r gin.IRouter, store *store, path string) {
+func registerNodeInfoRoutes(r gin.IRouter, store *storepkg.Store, path string) {
 	r.GET(path, func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
 		if !ok {
@@ -351,7 +364,7 @@ func registerNodeInfoRoutes(r gin.IRouter, store *store, path string) {
 	})
 }
 
-func registerMapReportRoutes(r gin.IRouter, store *store) {
+func registerMapReportRoutes(r gin.IRouter, store *storepkg.Store) {
 	r.GET("/map-reports/viewport", func(c *gin.Context) {
 		opts, ok := parseMapReportViewportOptions(c)
 		if !ok {
@@ -431,226 +444,69 @@ func serveIndex(c *gin.Context, staticDir string) {
 	c.File(indexPath)
 }
 
-func parseListOptions(c *gin.Context) (listOptions, bool) {
-	limit, ok := parseIntQuery(c, "limit", 100)
-	if !ok {
-		return listOptions{}, false
-	}
-	offset, ok := parseIntQuery(c, "offset", 0)
-	if !ok {
-		return listOptions{}, false
-	}
-	nodeID := c.Query("node_id")
-	if nodeID == "" {
-		nodeID = c.Query("from")
-	}
-	channelID := c.Query("channel_id")
-	var since, until *time.Time
-	if value := c.Query("since"); value != "" {
-		parsed, err := time.Parse(time.RFC3339, value)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid since: use RFC3339"})
-			return listOptions{}, false
-		}
-		since = &parsed
-	}
-	if value := c.Query("until"); value != "" {
-		parsed, err := time.Parse(time.RFC3339, value)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid until: use RFC3339"})
-			return listOptions{}, false
-		}
-		until = &parsed
-	}
-	return normalizeListOptions(listOptions{Limit: limit, Offset: offset, NodeID: nodeID, ChannelID: channelID, Since: since, Until: until}), true
+func parseListOptions(c *gin.Context) (storepkg.ListOptions, bool) {
+	return webutil.ParseListOptions(c)
 }
 
-func parseMapReportListOptions(c *gin.Context) (listOptions, bool) {
-	opts, ok := parseListOptions(c)
-	if !ok {
-		return listOptions{}, false
-	}
-	minLat, hasMinLat, ok := parseOptionalFloatQuery(c, "min_lat")
-	if !ok {
-		return listOptions{}, false
-	}
-	maxLat, hasMaxLat, ok := parseOptionalFloatQuery(c, "max_lat")
-	if !ok {
-		return listOptions{}, false
-	}
-	minLng, hasMinLng, ok := parseOptionalFloatQuery(c, "min_lng")
-	if !ok {
-		return listOptions{}, false
-	}
-	maxLng, hasMaxLng, ok := parseOptionalFloatQuery(c, "max_lng")
-	if !ok {
-		return listOptions{}, false
-	}
-	boundsCount := 0
-	for _, present := range []bool{hasMinLat, hasMaxLat, hasMinLng, hasMaxLng} {
-		if present {
-			boundsCount++
-		}
-	}
-	if boundsCount == 0 {
-		return opts, true
-	}
-	if boundsCount != 4 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "map bounds require min_lat, max_lat, min_lng, and max_lng"})
-		return listOptions{}, false
-	}
-	if minLat < -90 || minLat > 90 || maxLat < -90 || maxLat > 90 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude bounds must be between -90 and 90"})
-		return listOptions{}, false
-	}
-	if minLat > maxLat {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "min_lat must be <= max_lat"})
-		return listOptions{}, false
-	}
-	if minLng < -180 || minLng > 180 || maxLng < -180 || maxLng > 180 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "longitude bounds must be between -180 and 180"})
-		return listOptions{}, false
-	}
-	opts.MinLat = &minLat
-	opts.MaxLat = &maxLat
-	opts.MinLng = &minLng
-	opts.MaxLng = &maxLng
-	return opts, true
+func parseMapReportListOptions(c *gin.Context) (storepkg.ListOptions, bool) {
+	return webutil.ParseMapReportListOptions(c)
 }
 
-func parseMapReportViewportOptions(c *gin.Context) (mapReportViewportOptions, bool) {
-	opts, ok := parseMapReportListOptions(c)
-	if !ok {
-		return mapReportViewportOptions{}, false
-	}
-	if opts.MinLat == nil || opts.MaxLat == nil || opts.MinLng == nil || opts.MaxLng == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "viewport bounds are required"})
-		return mapReportViewportOptions{}, false
-	}
-	zoom, ok := parseIntQuery(c, "zoom", 0)
-	if !ok {
-		return mapReportViewportOptions{}, false
-	}
-	if zoom < 0 || zoom > 24 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "zoom must be between 0 and 24"})
-		return mapReportViewportOptions{}, false
-	}
-	limit, ok := parseIntQuery(c, "limit", 1000)
-	if !ok {
-		return mapReportViewportOptions{}, false
-	}
-	clusterThreshold, ok := parseIntQuery(c, "cluster_threshold", 500)
-	if !ok {
-		return mapReportViewportOptions{}, false
-	}
-	targetCells, ok := parseIntQuery(c, "target_cells", 64)
-	if !ok {
-		return mapReportViewportOptions{}, false
-	}
-	if limit <= 0 || clusterThreshold <= 0 || targetCells <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "limit, cluster_threshold, and target_cells must be positive"})
-		return mapReportViewportOptions{}, false
-	}
-	return normalizeMapReportViewportOptions(mapReportViewportOptions{ListOptions: opts, Zoom: zoom, Limit: limit, ClusterThreshold: clusterThreshold, TargetCells: targetCells}), true
-}
-
-func parseOptionalFloatQuery(c *gin.Context, name string) (float64, bool, bool) {
-	value := c.Query(name)
-	if value == "" {
-		return 0, false, true
-	}
-	parsed, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid " + name})
-		return 0, true, false
-	}
-	return parsed, true, true
+func parseMapReportViewportOptions(c *gin.Context) (storepkg.MapReportViewportOptions, bool) {
+	return webutil.ParseMapReportViewportOptions(c)
 }
 
 func parseIntQuery(c *gin.Context, name string, defaultValue int) (int, bool) {
-	value := c.Query(name)
-	if value == "" {
-		return defaultValue, true
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid " + name})
-		return 0, false
-	}
-	return parsed, true
+	return webutil.ParseIntQuery(c, name, defaultValue)
 }
 
-func writeListResponse[T any](c *gin.Context, rows []T, opts listOptions, err error, convert func(T) gin.H) {
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	items := make([]gin.H, 0, len(rows))
-	for _, row := range rows {
-		items = append(items, convert(row))
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "limit": opts.Limit, "offset": opts.Offset})
+func writeListResponse[T any](c *gin.Context, rows []T, opts storepkg.ListOptions, err error, convert func(T) gin.H) {
+	webutil.WriteListResponse(c, rows, opts, err, convert)
 }
 
-func writeListResponseWithTotal[T any](c *gin.Context, rows []T, opts listOptions, total int64, err error, convert func(T) gin.H) {
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	items := make([]gin.H, 0, len(rows))
-	for _, row := range rows {
-		items = append(items, convert(row))
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "limit": opts.Limit, "offset": opts.Offset, "total": total})
+func writeListResponseWithTotal[T any](c *gin.Context, rows []T, opts storepkg.ListOptions, total int64, err error, convert func(T) gin.H) {
+	webutil.WriteListResponseWithTotal(c, rows, opts, total, err, convert)
 }
 
-func nodeInfoDTO(row nodeInfoRecord) gin.H {
+func nodeInfoDTO(row storepkg.NodeInfoRecord) gin.H {
 	return gin.H{"node_id": row.NodeID, "node_num": row.NodeNum, "user_id": ptrString(row.UserID), "long_name": ptrString(row.LongName), "short_name": ptrString(row.ShortName), "hw_model": ptrString(row.HWModel), "role": ptrString(row.Role), "is_licensed": ptrBool(row.IsLicensed), "public_key": ptrString(row.PublicKey), "updated_at": row.UpdatedAt, "content_json": row.ContentJSON}
 }
 
-func mapReportDTO(row mapReportRecord) gin.H {
+func mapReportDTO(row storepkg.MapReportRecord) gin.H {
 	return gin.H{"node_id": row.NodeID, "node_num": row.NodeNum, "long_name": ptrString(row.LongName), "short_name": ptrString(row.ShortName), "hw_model": ptrString(row.HWModel), "role": ptrString(row.Role), "firmware_version": ptrString(row.FirmwareVersion), "region": ptrString(row.Region), "modem_preset": ptrString(row.ModemPreset), "latitude": ptrFloat64(row.Latitude), "longitude": ptrFloat64(row.Longitude), "altitude": ptrInt64(row.Altitude), "position_precision": ptrInt64(row.PositionPrecision), "num_online_local_nodes": ptrInt64(row.NumOnlineLocalNodes), "has_opted_report_location": ptrBool(row.HasOptedReportLocation), "updated_at": row.UpdatedAt, "content_json": row.ContentJSON}
 }
 
-func mapReportViewportPointDTO(row mapReportRecord) gin.H {
+func mapReportViewportPointDTO(row storepkg.MapReportRecord) gin.H {
 	item := mapReportDTO(row)
 	item["type"] = "point"
 	return item
 }
 
-func mapReportClusterDTO(row mapReportClusterRecord) gin.H {
+func mapReportClusterDTO(row storepkg.MapReportClusterRecord) gin.H {
 	return gin.H{"type": "cluster", "cluster_id": row.ClusterID, "latitude": row.Latitude, "longitude": row.Longitude, "count": row.Count}
 }
 
-func signDTO(row signRecord) gin.H {
-	return gin.H{"id": row.ID, "node_id": row.NodeID, "long_name": ptrString(row.LongName), "short_name": ptrString(row.ShortName), "sign_text": row.SignText, "sign_time": row.SignTime}
-}
-
-func signDayCountDTO(row signDayCount) gin.H {
-	return gin.H{"date": row.Date, "count": row.Count}
-}
-
-func textMessageDTO(row textMessageRecord) gin.H {
+func textMessageDTO(row storepkg.TextMessageRecord) gin.H {
 	return gin.H{"id": row.ID, "from_id": row.FromID, "from_num": row.FromNum, "packet_id": ptrInt64(row.PacketID), "text": ptrString(row.Text), "topic": row.Topic, "channel_id": ptrString(row.ChannelID), "created_at": row.CreatedAt, "mqtt_remote_host": ptrString(row.MQTTRemoteHost), "content_json": row.ContentJSON}
 }
 
-func discardDetailsDTO(row discardDetailsRecord) gin.H {
+func discardDetailsDTO(row storepkg.DiscardDetailsRecord) gin.H {
 	return gin.H{"id": row.ID, "topic": row.Topic, "error": row.Error, "payload_len": row.PayloadLen, "raw_base64": row.RawBase64, "mqtt_client_id": ptrString(row.MQTTClientID), "mqtt_username": ptrString(row.MQTTUsername), "mqtt_listener": ptrString(row.MQTTListener), "mqtt_remote_addr": ptrString(row.MQTTRemoteAddr), "mqtt_remote_host": ptrString(row.MQTTRemoteHost), "mqtt_remote_port": ptrString(row.MQTTRemotePort), "created_at": row.CreatedAt, "content_json": row.ContentJSON}
 }
 
-func positionDTO(row positionRecord) gin.H {
+func positionDTO(row storepkg.PositionRecord) gin.H {
 	return gin.H{"id": row.ID, "from_id": row.FromID, "from_num": row.FromNum, "latitude": ptrFloat64(row.Latitude), "longitude": ptrFloat64(row.Longitude), "altitude": ptrInt64(row.Altitude), "created_at": row.CreatedAt, "content_json": row.ContentJSON}
 }
 
-func telemetryDTO(row telemetryRecord) gin.H {
+func telemetryDTO(row storepkg.TelemetryRecord) gin.H {
 	return gin.H{"id": row.ID, "from_id": row.FromID, "from_num": row.FromNum, "telemetry_type": ptrString(row.TelemetryType), "metrics_json": ptrString(row.MetricsJSON), "created_at": row.CreatedAt, "content_json": row.ContentJSON}
 }
 
-func routingDTO(row routingRecord) gin.H {
+func routingDTO(row storepkg.RoutingRecord) gin.H {
 	return appendPacketDTO(row.ID, row.FromID, row.FromNum, row.PacketID, row.Portnum, row.CreatedAt, row.ContentJSON)
 }
 
-func tracerouteDTO(row tracerouteRecord) gin.H {
+func tracerouteDTO(row storepkg.TracerouteRecord) gin.H {
 	return appendPacketDTO(row.ID, row.FromID, row.FromNum, row.PacketID, row.Portnum, row.CreatedAt, row.ContentJSON)
 }
 
@@ -658,37 +514,8 @@ func appendPacketDTO(id uint64, fromID string, fromNum int64, packetID *int64, p
 	return gin.H{"id": id, "from_id": fromID, "from_num": fromNum, "packet_id": ptrInt64(packetID), "portnum": ptrString(portnum), "created_at": createdAt, "content_json": contentJSON}
 }
 
-func ptrString(value *string) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func ptrInt64(value *int64) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func ptrUint64(value *uint64) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func ptrFloat64(value *float64) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
-
-func ptrBool(value *bool) any {
-	if value == nil {
-		return nil
-	}
-	return *value
-}
+func ptrString(value *string) any  { return webutil.PtrString(value) }
+func ptrInt64(value *int64) any    { return webutil.PtrInt64(value) }
+func ptrUint64(value *uint64) any  { return webutil.PtrUint64(value) }
+func ptrFloat64(value *float64) any { return webutil.PtrFloat64(value) }
+func ptrBool(value *bool) any      { return webutil.PtrBool(value) }

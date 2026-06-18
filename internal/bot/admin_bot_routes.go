@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"errors"
@@ -7,6 +7,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	"meshtastic_mqtt_server/internal/auth"
+	storepkg "meshtastic_mqtt_server/internal/store"
+	"meshtastic_mqtt_server/internal/webutil"
 )
 
 type botNodeRequest struct {
@@ -32,19 +36,19 @@ type botSendMessageRequest struct {
 	Text        string `json:"text"`
 }
 
-func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
+func RegisterRoutes(r gin.IRouter, store *storepkg.Store, sender TextSender) {
 	r.GET("/bot/nodes", func(c *gin.Context) {
-		opts, ok := parseListOptions(c)
+		opts, ok := webutil.ParseListOptions(c)
 		if !ok {
 			return
 		}
 		rows, err := store.ListBotNodes(opts)
 		if err != nil {
-			writeListResponse(c, rows, opts, err, botNodeDTO)
+			webutil.WriteListResponse(c, rows, opts, err, botNodeDTO)
 			return
 		}
 		total, err := store.CountBotNodes(opts)
-		writeListResponseWithTotal(c, rows, opts, total, err, botNodeDTO)
+		webutil.WriteListResponseWithTotal(c, rows, opts, total, err, botNodeDTO)
 	})
 	r.POST("/bot/nodes", func(c *gin.Context) {
 		var req botNodeRequest
@@ -125,14 +129,14 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 		}
 		rows, err := store.ListBotMessages(opts)
 		if err != nil {
-			writeListResponse(c, rows, opts.ListOptions, err, botMessageDTO)
+			webutil.WriteListResponse(c, rows, opts.ListOptions, err, botMessageDTO)
 			return
 		}
 		total, err := store.CountBotMessages(opts)
-		writeListResponseWithTotal(c, rows, opts.ListOptions, total, err, botMessageDTO)
+		webutil.WriteListResponseWithTotal(c, rows, opts.ListOptions, total, err, botMessageDTO)
 	})
 	r.GET("/bot/direct-messages", func(c *gin.Context) {
-		opts, ok := parseListOptions(c)
+		opts, ok := webutil.ParseListOptions(c)
 		if !ok {
 			return
 		}
@@ -153,19 +157,19 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid target node num"})
 			return
 		}
-		dmOpts := botDirectMessageListOptions{ListOptions: opts, BotID: botID, PeerNodeNum: target, Direction: c.Query("direction")}
+		dmOpts := storepkg.BotDirectMessageListOptions{ListOptions: opts, BotID: botID, PeerNodeNum: target, Direction: c.Query("direction")}
 		rows, err := store.ListBotDirectMessagesByConversation(dmOpts)
 		if err != nil {
-			writeListResponse(c, rows, opts, err, botDirectMessageDTO)
+			webutil.WriteListResponse(c, rows, opts, err, botDirectMessageDTO)
 			return
 		}
 		total, err := store.CountBotDirectMessagesByConversation(dmOpts)
-		writeListResponseWithTotal(c, rows, opts, total, err, botDirectMessageDTO)
+		webutil.WriteListResponseWithTotal(c, rows, opts, total, err, botDirectMessageDTO)
 	})
 	// /bot/conversations 返回某个 bot 下所有会话的概要（最后一条消息 + 未读数），
 	// 给前端侧边栏渲染会话列表使用。
 	r.GET("/bot/conversations", func(c *gin.Context) {
-		opts, ok := parseListOptions(c)
+		opts, ok := webutil.ParseListOptions(c)
 		if !ok {
 			return
 		}
@@ -235,8 +239,8 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bot message request"})
 			return
 		}
-		claims := c.MustGet("admin_claims").(*sessionClaims)
-		row, err := sender.SendText(c.Request.Context(), botSendTextRequest{BotID: req.BotID, MessageType: req.MessageType, ChannelID: req.ChannelID, ToNodeID: req.ToNodeID, ToNodeNum: req.ToNodeNum, Text: req.Text, CreatedBy: claims.Username})
+		claims := c.MustGet("admin_claims").(*auth.SessionClaims)
+		row, err := sender.SendText(c.Request.Context(), SendTextRequest{BotID: req.BotID, MessageType: req.MessageType, ChannelID: req.ChannelID, ToNodeID: req.ToNodeID, ToNodeNum: req.ToNodeNum, Text: req.Text, CreatedBy: claims.Username})
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "bot node not found"})
 			return
@@ -254,8 +258,8 @@ func registerAdminBotRoutes(r gin.IRouter, store *store, sender botTextSender) {
 	})
 }
 
-func botNodeInputFromRequest(req botNodeRequest) botNodeInput {
-	return botNodeInput{NodeNum: req.NodeNum, LongName: req.LongName, ShortName: req.ShortName, Enabled: req.Enabled, DefaultChannelID: req.DefaultChannelID, TopicPrefix: req.TopicPrefix, PSK: req.PSK, NodeInfoBroadcastEnabled: req.NodeInfoBroadcastEnabled, NodeInfoBroadcastIntervalSeconds: req.NodeInfoBroadcastIntervalSeconds, LLMQueueEnabled: req.LLMQueueEnabled, LLMIncludeChannelMessages: req.LLMIncludeChannelMessages}
+func botNodeInputFromRequest(req botNodeRequest) storepkg.BotNodeInput {
+	return storepkg.BotNodeInput{NodeNum: req.NodeNum, LongName: req.LongName, ShortName: req.ShortName, Enabled: req.Enabled, DefaultChannelID: req.DefaultChannelID, TopicPrefix: req.TopicPrefix, PSK: req.PSK, NodeInfoBroadcastEnabled: req.NodeInfoBroadcastEnabled, NodeInfoBroadcastIntervalSeconds: req.NodeInfoBroadcastIntervalSeconds, LLMQueueEnabled: req.LLMQueueEnabled, LLMIncludeChannelMessages: req.LLMIncludeChannelMessages}
 }
 
 func parseBotID(c *gin.Context, message string) (uint64, bool) {
@@ -267,25 +271,25 @@ func parseBotID(c *gin.Context, message string) (uint64, bool) {
 	return id, true
 }
 
-func parseBotMessageListOptions(c *gin.Context) (botMessageListOptions, bool) {
-	listOpts, ok := parseListOptions(c)
+func parseBotMessageListOptions(c *gin.Context) (storepkg.BotMessageListOptions, bool) {
+	listOpts, ok := webutil.ParseListOptions(c)
 	if !ok {
-		return botMessageListOptions{}, false
+		return storepkg.BotMessageListOptions{}, false
 	}
-	opts := botMessageListOptions{ListOptions: listOpts, MessageType: c.Query("message_type"), ChannelID: c.Query("channel_id")}
+	opts := storepkg.BotMessageListOptions{ListOptions: listOpts, MessageType: c.Query("message_type"), ChannelID: c.Query("channel_id")}
 	if value := c.Query("bot_id"); value != "" {
 		id, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid bot id"})
-			return botMessageListOptions{}, false
+			return storepkg.BotMessageListOptions{}, false
 		}
 		opts.BotID = id
 	}
 	return opts, true
 }
 
-func writeBotNodeMutationResponse(c *gin.Context, status int, row *botNodeRecord, err error) {
-	if errors.Is(err, errBotNodeAlreadyExists) {
+func writeBotNodeMutationResponse(c *gin.Context, status int, row *storepkg.BotNodeRecord, err error) {
+	if errors.Is(err, storepkg.ErrBotNodeAlreadyExists) {
 		c.JSON(http.StatusConflict, gin.H{"error": "bot node already exists or conflicts with existing node"})
 		return
 	}
@@ -300,15 +304,15 @@ func writeBotNodeMutationResponse(c *gin.Context, status int, row *botNodeRecord
 	c.JSON(status, gin.H{"item": botNodeDTO(*row)})
 }
 
-func botNodeDTO(row botNodeRecord) gin.H {
+func botNodeDTO(row storepkg.BotNodeRecord) gin.H {
 	return gin.H{"id": row.ID, "node_id": row.NodeID, "node_num": row.NodeNum, "long_name": row.LongName, "short_name": row.ShortName, "enabled": row.Enabled, "default_channel_id": row.DefaultChannelID, "topic_prefix": row.TopicPrefix, "psk": row.PSK, "public_key": row.PublicKey, "private_key_set": row.PrivateKey != "", "nodeinfo_broadcast_enabled": row.NodeInfoBroadcastEnabled, "nodeinfo_broadcast_interval_seconds": row.NodeInfoBroadcastIntervalSeconds, "last_nodeinfo_broadcast_at": row.LastNodeInfoBroadcastAt, "llm_queue_enabled": row.LLMQueueEnabled, "llm_include_channel_messages": row.LLMIncludeChannelMessages, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
 }
 
-func botMessageDTO(row botMessageRecord) gin.H {
+func botMessageDTO(row storepkg.BotMessageRecord) gin.H {
 	return gin.H{"id": row.ID, "bot_id": row.BotID, "bot_node_id": row.BotNodeID, "bot_node_num": row.BotNodeNum, "message_type": row.MessageType, "channel_id": row.ChannelID, "to_node_id": row.ToNodeID, "to_node_num": row.ToNodeNum, "topic": row.Topic, "packet_id": row.PacketID, "text": row.Text, "payload_len": row.PayloadLen, "encrypted": row.Encrypted, "status": row.Status, "error": row.Error, "published_at": row.PublishedAt, "created_by": row.CreatedBy, "created_at": row.CreatedAt}
 }
 
-func botDirectMessageDTO(row botDirectMessageRecord) gin.H {
+func botDirectMessageDTO(row storepkg.BotDirectMessageRecord) gin.H {
 	return gin.H{
 		"id":             row.ID,
 		"bot_id":         row.BotID,
@@ -335,7 +339,7 @@ func botDirectMessageDTO(row botDirectMessageRecord) gin.H {
 	}
 }
 
-func botDirectConversationDTO(row botDirectConversation) gin.H {
+func botDirectConversationDTO(row storepkg.BotDirectConversation) gin.H {
 	return gin.H{
 		"bot_id":          row.BotID,
 		"peer_node_id":    row.PeerNodeID,

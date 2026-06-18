@@ -1,4 +1,4 @@
-package main
+package web
 
 import (
 	"errors"
@@ -13,6 +13,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	storepkg "meshtastic_mqtt_server/internal/store"
 )
 
 const (
@@ -21,12 +23,12 @@ const (
 )
 
 type mapTileProxy struct {
-	store    *store
+	store    *storepkg.Store
 	cacheDir string
 	client   *http.Client
 }
 
-func registerMapTileProxyRoutes(r gin.IRouter, store *store, cacheDir string) {
+func registerMapTileProxyRoutes(r gin.IRouter, store *storepkg.Store, cacheDir string) {
 	proxy := &mapTileProxy{
 		store:    store,
 		cacheDir: cacheDir,

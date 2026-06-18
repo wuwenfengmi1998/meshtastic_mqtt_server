@@ -1,4 +1,5 @@
-package main
+// Package mapsource 提供地图瓦片源的 admin 与公开路由。
+package mapsource
 
 import (
 	"errors"
@@ -7,6 +8,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	storepkg "meshtastic_mqtt_server/internal/store"
+	"meshtastic_mqtt_server/internal/webutil"
 )
 
 type mapTileSourceRequest struct {
@@ -19,14 +23,15 @@ type mapTileSourceRequest struct {
 	ProxyEnabled bool   `json:"proxy_enabled"`
 }
 
-func registerMapSourceRoutes(r gin.IRouter, store *store) {
+// RegisterPublicRoutes 把对外可见的 GET /map-source/{default,enabled} 挂上去。
+func RegisterPublicRoutes(r gin.IRouter, store *storepkg.Store) {
 	r.GET("/map-source/default", func(c *gin.Context) {
 		row, err := store.GetDefaultMapTileSource()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"item": publicMapTileSourceDTO(*row)})
+		c.JSON(http.StatusOK, gin.H{"item": PublicDTO(*row)})
 	})
 	r.GET("/map-source/enabled", func(c *gin.Context) {
 		rows, err := store.ListEnabledMapTileSources()
@@ -36,25 +41,26 @@ func registerMapSourceRoutes(r gin.IRouter, store *store) {
 		}
 		items := make([]gin.H, 0, len(rows))
 		for _, row := range rows {
-			items = append(items, publicMapTileSourceDTO(row))
+			items = append(items, PublicDTO(row))
 		}
 		c.JSON(http.StatusOK, gin.H{"items": items})
 	})
 }
 
-func registerAdminMapSourceRoutes(r gin.IRouter, store *store) {
+// RegisterAdminRoutes 注册管理员侧 CRUD 与设默认。
+func RegisterAdminRoutes(r gin.IRouter, store *storepkg.Store) {
 	r.GET("/map-source", func(c *gin.Context) {
-		opts, ok := parseListOptions(c)
+		opts, ok := webutil.ParseListOptions(c)
 		if !ok {
 			return
 		}
 		rows, err := store.ListMapTileSources(opts)
 		if err != nil {
-			writeListResponse(c, rows, opts, err, mapTileSourceDTO)
+			webutil.WriteListResponse(c, rows, opts, err, AdminDTO)
 			return
 		}
 		total, err := store.CountMapTileSources(opts)
-		writeListResponseWithTotal(c, rows, opts, total, err, mapTileSourceDTO)
+		webutil.WriteListResponseWithTotal(c, rows, opts, total, err, AdminDTO)
 	})
 	r.POST("/map-source", func(c *gin.Context) {
 		var req mapTileSourceRequest
@@ -95,8 +101,8 @@ func registerAdminMapSourceRoutes(r gin.IRouter, store *store) {
 	})
 }
 
-func mapTileSourceInputFromRequest(req mapTileSourceRequest) mapTileSourceInput {
-	return mapTileSourceInput{
+func mapTileSourceInputFromRequest(req mapTileSourceRequest) storepkg.MapTileSourceInput {
+	return storepkg.MapTileSourceInput{
 		Name:         req.Name,
 		URLTemplate:  req.URLTemplate,
 		Attribution:  req.Attribution,
@@ -116,8 +122,8 @@ func parseMapTileSourceID(c *gin.Context) (uint64, bool) {
 	return id, true
 }
 
-func writeMapTileSourceMutationResponse(c *gin.Context, status int, row *mapTileSourceRecord, err error) {
-	if errors.Is(err, errMapTileSourceAlreadyExists) {
+func writeMapTileSourceMutationResponse(c *gin.Context, status int, row *storepkg.MapTileSourceRecord, err error) {
+	if errors.Is(err, storepkg.ErrMapTileSourceAlreadyExists) {
 		c.JSON(http.StatusConflict, gin.H{"error": "map source already exists"})
 		return
 	}
@@ -125,7 +131,7 @@ func writeMapTileSourceMutationResponse(c *gin.Context, status int, row *mapTile
 		c.JSON(http.StatusNotFound, gin.H{"error": "map source not found"})
 		return
 	}
-	if errors.Is(err, errMapTileSourceCannotDeleteDefault) || errors.Is(err, errMapTileSourceCannotDisableDefault) || errors.Is(err, errMapTileSourceDefaultMustBeEnabled) {
+	if errors.Is(err, storepkg.ErrMapTileSourceCannotDeleteDefault) || errors.Is(err, storepkg.ErrMapTileSourceCannotDisableDefault) || errors.Is(err, storepkg.ErrMapTileSourceDefaultMustBeEnabled) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -133,7 +139,7 @@ func writeMapTileSourceMutationResponse(c *gin.Context, status int, row *mapTile
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(status, gin.H{"item": mapTileSourceDTO(*row)})
+	c.JSON(status, gin.H{"item": AdminDTO(*row)})
 }
 
 func writeMapTileSourceDeleteResponse(c *gin.Context, err error) {
@@ -141,7 +147,7 @@ func writeMapTileSourceDeleteResponse(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "map source not found"})
 		return
 	}
-	if errors.Is(err, errMapTileSourceCannotDeleteDefault) {
+	if errors.Is(err, storepkg.ErrMapTileSourceCannotDeleteDefault) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -152,16 +158,19 @@ func writeMapTileSourceDeleteResponse(c *gin.Context, err error) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-func mapTileSourceDTO(row mapTileSourceRecord) gin.H {
+// AdminDTO 是管理后台展示的全字段视图。
+func AdminDTO(row storepkg.MapTileSourceRecord) gin.H {
 	return gin.H{"id": row.ID, "name": row.Name, "url_template": row.URLTemplate, "attribution": row.Attribution, "max_zoom": row.MaxZoom, "enabled": row.Enabled, "is_default": row.IsDefault, "proxy_enabled": row.ProxyEnabled, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
 }
 
-func publicMapTileSourceDTO(row mapTileSourceRecord) gin.H {
+// PublicDTO 是给前端用户使用的视图：当 ProxyEnabled 为 true 时，url 改写为
+// 通过本服务的 /api/map/{hash} 代理路径，避免暴露上游瓦片地址。
+func PublicDTO(row storepkg.MapTileSourceRecord) gin.H {
 	urlTemplate := row.URLTemplate
 	if row.ProxyEnabled {
 		hash := row.URLTemplateHash
 		if hash == "" {
-			hash = mapTileSourceHash(row.URLTemplate)
+			hash = storepkg.MapTileSourceHash(row.URLTemplate)
 		}
 		urlTemplate = "/api/map/" + hash + "?x={x}&y={y}&z={z}"
 	}

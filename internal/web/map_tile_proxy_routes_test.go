@@ -1,4 +1,4 @@
-package main
+package web
 
 import (
 	"net/http"
@@ -7,7 +7,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	configpkg "meshtastic_mqtt_server/internal/config"
+	storepkg "meshtastic_mqtt_server/internal/store"
+	"meshtastic_mqtt_server/internal/store/testutil"
 )
+
+func openTestStore(t *testing.T) *storepkg.Store {
+	return testutil.OpenStore(t)
+}
 
 func TestMapTileProxyFetchesAndCaches(t *testing.T) {
 	st := openTestStore(t)
@@ -24,13 +32,13 @@ func TestMapTileProxyFetchesAndCaches(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Tiles", URLTemplate: upstream.URL + "/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
+	row, err := st.CreateMapTileSource(storepkg.MapTileSourceInput{Name: "Tiles", URLTemplate: upstream.URL + "/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource() error = %v", err)
 	}
 
 	cacheDir := t.TempDir()
-	router := newRouter(webConfig{StaticDir: t.TempDir(), MapTileCacheDir: cacheDir}, st, nil, nil, nil, nil, nil, nil)
+	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: cacheDir}, st, nil, nil, nil, nil, nil, nil)
 
 	url := "/api/map/" + row.URLTemplateHash + "?x=1&y=2&z=3"
 	for i := 0; i < 2; i++ {
@@ -62,12 +70,12 @@ func TestMapTileProxyRejectsInvalidCoordinates(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	row, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Tiles", URLTemplate: "https://tiles.example.com/{z}/{x}/{y}.png", MaxZoom: 3, Enabled: true, ProxyEnabled: true})
+	row, err := st.CreateMapTileSource(storepkg.MapTileSourceInput{Name: "Tiles", URLTemplate: "https://tiles.example.com/{z}/{x}/{y}.png", MaxZoom: 3, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource() error = %v", err)
 	}
 
-	router := newRouter(webConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, st, nil, nil, nil, nil, nil, nil)
+	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, st, nil, nil, nil, nil, nil, nil)
 
 	cases := []string{
 		"/api/map/" + row.URLTemplateHash + "?y=0&z=0",
@@ -89,16 +97,16 @@ func TestMapTileProxyUnknownAndDisabledSource(t *testing.T) {
 	st := openTestStore(t)
 	defer st.Close()
 
-	disabled, err := st.CreateMapTileSource(mapTileSourceInput{Name: "Disabled", URLTemplate: "https://disabled.example.com/{z}/{x}/{y}.png", MaxZoom: 3, Enabled: false})
+	disabled, err := st.CreateMapTileSource(storepkg.MapTileSourceInput{Name: "Disabled", URLTemplate: "https://disabled.example.com/{z}/{x}/{y}.png", MaxZoom: 3, Enabled: false})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource(disabled) error = %v", err)
 	}
-	proxyDisabled, err := st.CreateMapTileSource(mapTileSourceInput{Name: "ProxyDisabled", URLTemplate: "https://proxy-disabled.example.com/{z}/{x}/{y}.png", MaxZoom: 3, Enabled: true, ProxyEnabled: false})
+	proxyDisabled, err := st.CreateMapTileSource(storepkg.MapTileSourceInput{Name: "ProxyDisabled", URLTemplate: "https://proxy-disabled.example.com/{z}/{x}/{y}.png", MaxZoom: 3, Enabled: true, ProxyEnabled: false})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource(proxy disabled) error = %v", err)
 	}
 
-	router := newRouter(webConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, st, nil, nil, nil, nil, nil, nil)
+	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, st, nil, nil, nil, nil, nil, nil)
 
 	cases := []string{
 		"/api/map/not-a-hash?x=0&y=0&z=0",
@@ -130,16 +138,16 @@ func TestMapTileProxyUpstreamStatus(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	row404, err := st.CreateMapTileSource(mapTileSourceInput{Name: "NotFoundTiles", URLTemplate: upstream.URL + "/404/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
+	row404, err := st.CreateMapTileSource(storepkg.MapTileSourceInput{Name: "NotFoundTiles", URLTemplate: upstream.URL + "/404/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource(404) error = %v", err)
 	}
-	row500, err := st.CreateMapTileSource(mapTileSourceInput{Name: "StatusTiles", URLTemplate: upstream.URL + "/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
+	row500, err := st.CreateMapTileSource(storepkg.MapTileSourceInput{Name: "StatusTiles", URLTemplate: upstream.URL + "/{z}/{x}/{y}.png", MaxZoom: 18, Enabled: true, ProxyEnabled: true})
 	if err != nil {
 		t.Fatalf("CreateMapTileSource(500) error = %v", err)
 	}
 
-	router := newRouter(webConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, st, nil, nil, nil, nil, nil, nil)
+	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, st, nil, nil, nil, nil, nil, nil)
 
 	cases := []struct {
 		url  string

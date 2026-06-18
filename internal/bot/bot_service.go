@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"context"
@@ -12,15 +12,16 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"meshtastic_mqtt_server/mqtpp"
-
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"gorm.io/gorm"
+
+	storepkg "meshtastic_mqtt_server/internal/store"
+	"meshtastic_mqtt_server/mqtpp"
 )
 
 const botMaxTextBytes = 200
 
-type botSendTextRequest struct {
+type SendTextRequest struct {
 	BotID       uint64
 	MessageType string
 	ChannelID   string
@@ -30,22 +31,22 @@ type botSendTextRequest struct {
 	CreatedBy   string
 }
 
-type botTextSender interface {
-	SendText(ctx context.Context, req botSendTextRequest) (*botMessageRecord, error)
-	PublishNodeInfoByID(ctx context.Context, id uint64) (*botNodeRecord, error)
+type TextSender interface {
+	SendText(ctx context.Context, req SendTextRequest) (*storepkg.BotMessageRecord, error)
+	PublishNodeInfoByID(ctx context.Context, id uint64) (*storepkg.BotNodeRecord, error)
 }
 
-type botService struct {
-	store  *store
+type Service struct {
+	store  *storepkg.Store
 	server *mqtt.Server
 	key    []byte
 }
 
-func newBotService(store *store, server *mqtt.Server, key []byte) *botService {
-	return &botService{store: store, server: server, key: key}
+func NewService(store *storepkg.Store, server *mqtt.Server, key []byte) *Service {
+	return &Service{store: store, server: server, key: key}
 }
 
-func (s *botService) StartNodeInfoBroadcaster(ctx context.Context) {
+func (s *Service) StartNodeInfoBroadcaster(ctx context.Context) {
 	if s == nil || s.store == nil || s.server == nil {
 		return
 	}
@@ -59,7 +60,7 @@ func (s *botService) StartNodeInfoBroadcaster(ctx context.Context) {
 //   - 其它情况用原 channel + bot PSK 加密
 //
 // 解析失败、目标不是受管 bot、或缺少必要的密钥时，安静返回不报错——这条路径只是“尽力”。
-func (s *botService) MaybeAutoAck(record map[string]any) {
+func (s *Service) MaybeAutoAck(record map[string]any) {
 	if s == nil || s.store == nil || s.server == nil || record == nil {
 		return
 	}
@@ -110,7 +111,7 @@ func (s *botService) MaybeAutoAck(record map[string]any) {
 	}
 }
 
-func (s *botService) buildPKIAck(bot *botNodeRecord, toNum, ackPacketID, requestID uint32) ([]byte, error) {
+func (s *Service) buildPKIAck(bot *storepkg.BotNodeRecord, toNum, ackPacketID, requestID uint32) ([]byte, error) {
 	privateKeyB64 := strings.TrimSpace(bot.PrivateKey)
 	if privateKeyB64 == "" {
 		return nil, fmt.Errorf("bot has no private key")
@@ -119,7 +120,7 @@ func (s *botService) buildPKIAck(bot *botNodeRecord, toNum, ackPacketID, request
 	if err != nil {
 		return nil, err
 	}
-	senderPublic, err := decodeBotPublicKey(*bot)
+	senderPublic, err := storepkg.DecodeBotPublicKey(*bot)
 	if err != nil {
 		return nil, err
 	}
@@ -140,14 +141,14 @@ func (s *botService) buildPKIAck(bot *botNodeRecord, toNum, ackPacketID, request
 	})
 }
 
-func (s *botService) buildPSKAck(bot *botNodeRecord, toNum, ackPacketID, requestID uint32, channelID string) ([]byte, error) {
+func (s *Service) buildPSKAck(bot *storepkg.BotNodeRecord, toNum, ackPacketID, requestID uint32, channelID string) ([]byte, error) {
 	channel := fallbackChannelID(channelID, false, bot.DefaultChannelID)
 	if channel == "" || channel == mqtpp.PKIChannelID {
 		return nil, fmt.Errorf("no channel id available for psk ack")
 	}
 	psk := strings.TrimSpace(bot.PSK)
 	if psk == "" {
-		psk = botDefaultPSK
+		psk = storepkg.BotDefaultPSK
 	}
 	key, err := mqtpp.ExpandPSK(psk)
 	if err != nil {
@@ -208,7 +209,7 @@ func errString(err error) string {
 	return err.Error()
 }
 
-func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMessageRecord, error) {
+func (s *Service) SendText(_ context.Context, req SendTextRequest) (*storepkg.BotMessageRecord, error) {
 	if s == nil || s.store == nil {
 		return nil, fmt.Errorf("bot service is not configured")
 	}
@@ -244,7 +245,7 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 	fromNodeNum := uint32(bot.NodeNum)
 
 	// direct 私聊走 PKI；channel 群聊保留旧的 AES-CTR + PSK 路径
-	if messageType == botMessageTypeDirect {
+	if messageType == storepkg.BotMessageTypeDirect {
 		return s.sendPKIDirect(bot, fromNodeNum, uint32(toNodeNum), toNodeID, packetID, text, req.CreatedBy)
 	}
 
@@ -257,7 +258,7 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 	}
 	psk := strings.TrimSpace(bot.PSK)
 	if psk == "" {
-		psk = botDefaultPSK
+		psk = storepkg.BotDefaultPSK
 	}
 	key, err := mqtpp.ExpandPSK(psk)
 	if err != nil {
@@ -280,7 +281,7 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 		return nil, err
 	}
 	topic := botMQTTTopic(bot.TopicPrefix, channelID, bot.NodeID)
-	row := &botMessageRecord{
+	row := &storepkg.BotMessageRecord{
 		BotID:       bot.ID,
 		BotNodeID:   bot.NodeID,
 		BotNodeNum:  bot.NodeNum,
@@ -293,7 +294,7 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 		Text:        text,
 		PayloadLen:  int64(len(raw)),
 		Encrypted:   true,
-		Status:      botMessageStatusPending,
+		Status:      storepkg.BotMessageStatusPending,
 		CreatedBy:   strings.TrimSpace(req.CreatedBy),
 	}
 	return s.persistAndPublish(row, topic, raw)
@@ -303,7 +304,7 @@ func (s *botService) SendText(_ context.Context, req botSendTextRequest) (*botMe
 //   - 从 nodeinfo 中查目标节点的 X25519 公钥
 //   - 用 bot 自身私钥与对端公钥派生共享密钥，AES-CCM(M=8,L=2) 加密
 //   - ServiceEnvelope.channel_id = "PKI"，topic 也用 "PKI"
-func (s *botService) sendPKIDirect(bot *botNodeRecord, fromNodeNum, toNodeNum uint32, toNodeID *string, packetID uint32, text, createdBy string) (*botMessageRecord, error) {
+func (s *Service) sendPKIDirect(bot *storepkg.BotNodeRecord, fromNodeNum, toNodeNum uint32, toNodeID *string, packetID uint32, text, createdBy string) (*storepkg.BotMessageRecord, error) {
 	if toNodeID == nil {
 		return nil, fmt.Errorf("target node id is required for pki direct message")
 	}
@@ -315,7 +316,7 @@ func (s *botService) sendPKIDirect(bot *botNodeRecord, fromNodeNum, toNodeNum ui
 	if err != nil {
 		return nil, fmt.Errorf("invalid bot private key: %w", err)
 	}
-	senderPublic, err := decodeBotPublicKey(*bot)
+	senderPublic, err := storepkg.DecodeBotPublicKey(*bot)
 	if err != nil {
 		return nil, err
 	}
@@ -339,11 +340,11 @@ func (s *botService) sendPKIDirect(bot *botNodeRecord, fromNodeNum, toNodeNum ui
 		return nil, err
 	}
 	topic := botMQTTTopic(bot.TopicPrefix, mqtpp.PKIChannelID, bot.NodeID)
-	row := &botMessageRecord{
+	row := &storepkg.BotMessageRecord{
 		BotID:       bot.ID,
 		BotNodeID:   bot.NodeID,
 		BotNodeNum:  bot.NodeNum,
-		MessageType: botMessageTypeDirect,
+		MessageType: storepkg.BotMessageTypeDirect,
 		ChannelID:   mqtpp.PKIChannelID,
 		ToNodeID:    toNodeID,
 		ToNodeNum:   int64PtrOrNil(int64(toNodeNum), true),
@@ -352,7 +353,7 @@ func (s *botService) sendPKIDirect(bot *botNodeRecord, fromNodeNum, toNodeNum ui
 		Text:        text,
 		PayloadLen:  int64(len(raw)),
 		Encrypted:   true,
-		Status:      botMessageStatusPending,
+		Status:      storepkg.BotMessageStatusPending,
 		CreatedBy:   strings.TrimSpace(createdBy),
 	}
 	result, err := s.persistAndPublish(row, topic, raw)
@@ -364,16 +365,16 @@ func (s *botService) sendPKIDirect(bot *botNodeRecord, fromNodeNum, toNodeNum ui
 }
 
 // recordOutboundDirectMessage 把出向 PKI DM 写入 bot_direct_messages。失败仅打日志。
-func (s *botService) recordOutboundDirectMessage(bot *botNodeRecord, msg *botMessageRecord, peerNodeID string, peerNodeNum uint32, text string, payloadLen int, sendErr error) {
+func (s *Service) recordOutboundDirectMessage(bot *storepkg.BotNodeRecord, msg *storepkg.BotMessageRecord, peerNodeID string, peerNodeNum uint32, text string, payloadLen int, sendErr error) {
 	if s == nil || s.store == nil || msg == nil || bot == nil {
 		return
 	}
 	status := msg.Status
 	if status == "" {
 		if sendErr != nil {
-			status = botMessageStatusFailed
+			status = storepkg.BotMessageStatusFailed
 		} else {
-			status = botMessageStatusPublished
+			status = storepkg.BotMessageStatusPublished
 		}
 	}
 	errText := msg.Error
@@ -396,13 +397,13 @@ func (s *botService) recordOutboundDirectMessage(bot *botNodeRecord, msg *botMes
 		botMessageID = &id
 	}
 	now := time.Now()
-	dm := &botDirectMessageRecord{
+	dm := &storepkg.BotDirectMessageRecord{
 		BotID:        bot.ID,
 		BotNodeID:    bot.NodeID,
 		BotNodeNum:   bot.NodeNum,
 		PeerNodeID:   peerNodeID,
 		PeerNodeNum:  int64(peerNodeNum),
-		Direction:    botDirectMessageDirectionOutbound,
+		Direction:    storepkg.BotDirectMessageDirectionOutbound,
 		Topic:        msg.Topic,
 		PacketID:     msg.PacketID,
 		Text:         text,
@@ -430,7 +431,7 @@ func (s *botService) recordOutboundDirectMessage(bot *botNodeRecord, msg *botMes
 }
 
 // lookupRecipientPublicKey 从 nodeinfo 表中按 node_id 查询目标节点的 X25519 公钥（hex 编码）。
-func (s *botService) lookupRecipientPublicKey(nodeID string) ([]byte, error) {
+func (s *Service) lookupRecipientPublicKey(nodeID string) ([]byte, error) {
 	node, err := s.store.GetNodeInfo(nodeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -458,33 +459,33 @@ func (s *botService) lookupRecipientPublicKey(nodeID string) ([]byte, error) {
 }
 
 // persistAndPublish 把消息记录入库后发布到 MQTT，统一处理失败状态写回。
-func (s *botService) persistAndPublish(row *botMessageRecord, topic string, raw []byte) (*botMessageRecord, error) {
+func (s *Service) persistAndPublish(row *storepkg.BotMessageRecord, topic string, raw []byte) (*storepkg.BotMessageRecord, error) {
 	if err := s.store.InsertBotMessage(row); err != nil {
 		return nil, err
 	}
 	if s.server == nil {
-		_ = s.store.UpdateBotMessageStatus(row.ID, botMessageStatusFailed, "mqtt server is not configured", nil)
-		row.Status = botMessageStatusFailed
+		_ = s.store.UpdateBotMessageStatus(row.ID, storepkg.BotMessageStatusFailed, "mqtt server is not configured", nil)
+		row.Status = storepkg.BotMessageStatusFailed
 		row.Error = "mqtt server is not configured"
 		return row, fmt.Errorf("mqtt server is not configured")
 	}
 	if err := s.server.Publish(topic, raw, false, 0); err != nil {
-		_ = s.store.UpdateBotMessageStatus(row.ID, botMessageStatusFailed, err.Error(), nil)
-		row.Status = botMessageStatusFailed
+		_ = s.store.UpdateBotMessageStatus(row.ID, storepkg.BotMessageStatusFailed, err.Error(), nil)
+		row.Status = storepkg.BotMessageStatusFailed
 		row.Error = err.Error()
 		return row, err
 	}
 	now := time.Now()
-	if err := s.store.UpdateBotMessageStatus(row.ID, botMessageStatusPublished, "", &now); err != nil {
+	if err := s.store.UpdateBotMessageStatus(row.ID, storepkg.BotMessageStatusPublished, "", &now); err != nil {
 		return nil, err
 	}
-	row.Status = botMessageStatusPublished
+	row.Status = storepkg.BotMessageStatusPublished
 	row.Error = ""
 	row.PublishedAt = &now
 	return row, nil
 }
 
-func (s *botService) runNodeInfoBroadcaster(ctx context.Context) {
+func (s *Service) runNodeInfoBroadcaster(ctx context.Context) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	s.broadcastDueNodeInfo(ctx)
@@ -498,8 +499,8 @@ func (s *botService) runNodeInfoBroadcaster(ctx context.Context) {
 	}
 }
 
-func (s *botService) broadcastDueNodeInfo(ctx context.Context) {
-	rows, err := s.store.ListBotNodes(listOptions{Limit: 500})
+func (s *Service) broadcastDueNodeInfo(ctx context.Context) {
+	rows, err := s.store.ListBotNodes(storepkg.ListOptions{Limit: 500})
 	if err != nil {
 		printJSON(map[string]any{"event": "bot_nodeinfo_broadcast_failed", "error": err.Error()})
 		return
@@ -514,7 +515,7 @@ func (s *botService) broadcastDueNodeInfo(ctx context.Context) {
 		}
 		interval := time.Duration(bot.NodeInfoBroadcastIntervalSeconds) * time.Second
 		if interval <= 0 {
-			interval = time.Duration(botDefaultNodeInfoBroadcastSeconds) * time.Second
+			interval = time.Duration(storepkg.BotDefaultNodeInfoBroadcastSeconds) * time.Second
 		}
 		if bot.LastNodeInfoBroadcastAt != nil && now.Sub(*bot.LastNodeInfoBroadcastAt) < interval {
 			continue
@@ -525,7 +526,7 @@ func (s *botService) broadcastDueNodeInfo(ctx context.Context) {
 	}
 }
 
-func (s *botService) PublishNodeInfoByID(ctx context.Context, id uint64) (*botNodeRecord, error) {
+func (s *Service) PublishNodeInfoByID(ctx context.Context, id uint64) (*storepkg.BotNodeRecord, error) {
 	if s == nil || s.store == nil {
 		return nil, fmt.Errorf("bot service is not configured")
 	}
@@ -546,7 +547,7 @@ func (s *botService) PublishNodeInfoByID(ctx context.Context, id uint64) (*botNo
 	return updated, nil
 }
 
-func (s *botService) PublishNodeInfo(_ context.Context, bot botNodeRecord) error {
+func (s *Service) PublishNodeInfo(_ context.Context, bot storepkg.BotNodeRecord) error {
 	if s == nil || s.server == nil {
 		return fmt.Errorf("mqtt server is not configured")
 	}
@@ -559,7 +560,7 @@ func (s *botService) PublishNodeInfo(_ context.Context, bot botNodeRecord) error
 	}
 	psk := strings.TrimSpace(bot.PSK)
 	if psk == "" {
-		psk = botDefaultPSK
+		psk = storepkg.BotDefaultPSK
 	}
 	key, err := mqtpp.ExpandPSK(psk)
 	if err != nil {
@@ -569,7 +570,7 @@ func (s *botService) PublishNodeInfo(_ context.Context, bot botNodeRecord) error
 	if err != nil {
 		return err
 	}
-	publicKey, err := decodeBotPublicKey(bot)
+	publicKey, err := storepkg.DecodeBotPublicKey(bot)
 	if err != nil {
 		return err
 	}
@@ -612,21 +613,21 @@ func (s *botService) PublishNodeInfo(_ context.Context, bot botNodeRecord) error
 
 func normalizeBotMessageType(value string) (string, error) {
 	switch strings.TrimSpace(value) {
-	case "", botMessageTypeChannel:
-		return botMessageTypeChannel, nil
-	case botMessageTypeDirect:
-		return botMessageTypeDirect, nil
+	case "", storepkg.BotMessageTypeChannel:
+		return storepkg.BotMessageTypeChannel, nil
+	case storepkg.BotMessageTypeDirect:
+		return storepkg.BotMessageTypeDirect, nil
 	default:
 		return "", fmt.Errorf("message type must be channel or direct")
 	}
 }
 
-func botMessageTarget(messageType string, req botSendTextRequest) (int64, *string, error) {
-	if messageType == botMessageTypeChannel {
+func botMessageTarget(messageType string, req SendTextRequest) (int64, *string, error) {
+	if messageType == storepkg.BotMessageTypeChannel {
 		return int64(mqtpp.NodeNumBroadcast), nil, nil
 	}
 	if req.ToNodeNum != nil && *req.ToNodeNum > 0 {
-		if err := validateBotNodeNum(*req.ToNodeNum); err != nil {
+		if err := storepkg.ValidateBotNodeNum(*req.ToNodeNum); err != nil {
 			return 0, nil, err
 		}
 		nodeID := mqtpp.NodeNumToID(uint32(*req.ToNodeNum))
@@ -640,7 +641,7 @@ func botMessageTarget(messageType string, req botSendTextRequest) (int64, *strin
 	if err != nil {
 		return 0, nil, err
 	}
-	if err := validateBotNodeNum(int64(nodeNum)); err != nil {
+	if err := storepkg.ValidateBotNodeNum(int64(nodeNum)); err != nil {
 		return 0, nil, err
 	}
 	normalized := mqtpp.NodeNumToID(nodeNum)
@@ -650,7 +651,7 @@ func botMessageTarget(messageType string, req botSendTextRequest) (int64, *strin
 func botMQTTTopic(topicPrefix, channelID, nodeID string) string {
 	prefix := strings.Trim(strings.TrimSpace(topicPrefix), "/")
 	if prefix == "" {
-		prefix = botDefaultTopicPrefix
+		prefix = storepkg.BotDefaultTopicPrefix
 	}
 	if strings.HasSuffix(prefix, "/2/e") {
 		return prefix + "/" + channelID + "/" + nodeID

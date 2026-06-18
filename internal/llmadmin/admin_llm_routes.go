@@ -1,4 +1,4 @@
-package main
+package llmadmin
 
 import (
 	"errors"
@@ -8,9 +8,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
+	storepkg "meshtastic_mqtt_server/internal/store"
+	"meshtastic_mqtt_server/internal/webutil"
 )
 
-func registerAdminLLMRoutes(r *gin.RouterGroup, store *store) {
+func RegisterRoutes(r *gin.RouterGroup, store *storepkg.Store) {
 	group := r.Group("/llm")
 	{
 		// LLM Message Queue
@@ -38,9 +41,9 @@ func registerAdminLLMRoutes(r *gin.RouterGroup, store *store) {
 	}
 }
 
-func handleListLLMMessages(store *store) gin.HandlerFunc {
+func handleListLLMMessages(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		opts, ok := parseListOptions(c)
+		opts, ok := webutil.ParseListOptions(c)
 		if !ok {
 			return
 		}
@@ -65,7 +68,7 @@ func handleListLLMMessages(store *store) gin.HandlerFunc {
 
 		items := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
-			items = append(items, llmMessageDTO(row))
+			items = append(items, storepkg.LLMMessageDTO(row))
 		}
 
 		c.JSON(http.StatusOK, gin.H{
@@ -77,7 +80,7 @@ func handleListLLMMessages(store *store) gin.HandlerFunc {
 	}
 }
 
-func handleGetLLMMessage(store *store) gin.HandlerFunc {
+func handleGetLLMMessage(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 		if err != nil || id == 0 {
@@ -95,11 +98,11 @@ func handleGetLLMMessage(store *store) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"item": llmMessageDTO(*record)})
+		c.JSON(http.StatusOK, gin.H{"item": storepkg.LLMMessageDTO(*record)})
 	}
 }
 
-func handleUpdateLLMMessageStatus(store *store) gin.HandlerFunc {
+func handleUpdateLLMMessageStatus(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 		if err != nil || id == 0 {
@@ -118,10 +121,10 @@ func handleUpdateLLMMessageStatus(store *store) gin.HandlerFunc {
 
 		// 验证状态值
 		validStatus := map[string]bool{
-			llmMessageStatusPending:    true,
-			llmMessageStatusProcessing: true,
-			llmMessageStatusProcessed:  true,
-			llmMessageStatusError:      true,
+			storepkg.LLMMessageStatusPending:    true,
+			storepkg.LLMMessageStatusProcessing: true,
+			storepkg.LLMMessageStatusProcessed:  true,
+			storepkg.LLMMessageStatusError:      true,
 		}
 		if !validStatus[req.Status] {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid status value"})
@@ -141,7 +144,7 @@ func handleUpdateLLMMessageStatus(store *store) gin.HandlerFunc {
 	}
 }
 
-func handleDeleteLLMMessage(store *store) gin.HandlerFunc {
+func handleDeleteLLMMessage(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 		if err != nil || id == 0 {
@@ -162,7 +165,7 @@ func handleDeleteLLMMessage(store *store) gin.HandlerFunc {
 	}
 }
 
-func handleDeleteLLMMessagesByBot(store *store) gin.HandlerFunc {
+func handleDeleteLLMMessagesByBot(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		botID, err := strconv.ParseUint(c.Param("bot_id"), 10, 64)
 		if err != nil || botID == 0 {
@@ -179,7 +182,7 @@ func handleDeleteLLMMessagesByBot(store *store) gin.HandlerFunc {
 	}
 }
 
-func handleCleanupDeletedLLMMessages(store *store) gin.HandlerFunc {
+func handleCleanupDeletedLLMMessages(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			Days int `json:"days"`
@@ -206,7 +209,7 @@ func handleCleanupDeletedLLMMessages(store *store) gin.HandlerFunc {
 // LLM Provider Handlers
 // ============================================
 
-func handleListLLMProviders(store *store) gin.HandlerFunc {
+func handleListLLMProviders(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		includeInactive := c.Query("include_inactive") == "true"
 
@@ -225,7 +228,7 @@ func handleListLLMProviders(store *store) gin.HandlerFunc {
 	}
 }
 
-func handleGetLLMProvider(store *store) gin.HandlerFunc {
+func handleGetLLMProvider(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		name := c.Param("name")
 		if name == "" {
@@ -247,7 +250,7 @@ func handleGetLLMProvider(store *store) gin.HandlerFunc {
 	}
 }
 
-func handleCreateLLMProvider(store *store) gin.HandlerFunc {
+func handleCreateLLMProvider(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			Name               string `json:"name"`
@@ -268,7 +271,7 @@ func handleCreateLLMProvider(store *store) gin.HandlerFunc {
 			return
 		}
 
-		record := &llmProviderRecord{
+		record := &storepkg.LLMProviderRecord{
 			Name:               req.Name,
 			Active:             req.Active,
 			APIKey:             req.APIKey,
@@ -287,7 +290,7 @@ func handleCreateLLMProvider(store *store) gin.HandlerFunc {
 	}
 }
 
-func handleUpdateLLMProvider(store *store) gin.HandlerFunc {
+func handleUpdateLLMProvider(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		name := c.Param("name")
 		if name == "" {
@@ -352,7 +355,7 @@ func handleUpdateLLMProvider(store *store) gin.HandlerFunc {
 	}
 }
 
-func handleDeleteLLMProvider(store *store) gin.HandlerFunc {
+func handleDeleteLLMProvider(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		name := c.Param("name")
 		if name == "" {
@@ -369,7 +372,7 @@ func handleDeleteLLMProvider(store *store) gin.HandlerFunc {
 	}
 }
 
-func llmProviderDTO(row llmProviderRecord) map[string]any {
+func llmProviderDTO(row storepkg.LLMProviderRecord) map[string]any {
 	return map[string]any{
 		"name":                 row.Name,
 		"active":               row.Active,
@@ -386,7 +389,7 @@ func llmProviderDTO(row llmProviderRecord) map[string]any {
 // LLM Tool Router Handlers
 // ============================================
 
-func handleGetLLMToolRouter(store *store) gin.HandlerFunc {
+func handleGetLLMToolRouter(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		record, err := store.GetLLMToolRouter()
 		if err != nil {
@@ -402,7 +405,7 @@ func handleGetLLMToolRouter(store *store) gin.HandlerFunc {
 	}
 }
 
-func handleUpdateLLMToolRouter(store *store) gin.HandlerFunc {
+func handleUpdateLLMToolRouter(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		record, err := store.GetLLMToolRouter()
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -446,7 +449,7 @@ func handleUpdateLLMToolRouter(store *store) gin.HandlerFunc {
 
 		if record == nil {
 			// 创建新配置
-			newRecord := &llmToolRouterRecord{
+			newRecord := &storepkg.LLMToolRouterRecord{
 				Enabled:      req.Enabled != nil && *req.Enabled,
 				OpenAIName:   "",
 				Timeout:      30,
@@ -487,7 +490,7 @@ func handleUpdateLLMToolRouter(store *store) gin.HandlerFunc {
 	}
 }
 
-func llmToolRouterDTO(row llmToolRouterRecord) map[string]any {
+func llmToolRouterDTO(row storepkg.LLMToolRouterRecord) map[string]any {
 	return map[string]any{
 		"id":            row.ID,
 		"enabled":       row.Enabled,
@@ -504,7 +507,7 @@ func llmToolRouterDTO(row llmToolRouterRecord) map[string]any {
 // LLM Primary Config Handlers
 // ============================================
 
-func handleGetLLMPrimaryConfig(store *store) gin.HandlerFunc {
+func handleGetLLMPrimaryConfig(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		record, err := store.GetLLMPrimaryConfig()
 		if err != nil {
@@ -520,7 +523,7 @@ func handleGetLLMPrimaryConfig(store *store) gin.HandlerFunc {
 	}
 }
 
-func handleUpdateLLMPrimaryConfig(store *store) gin.HandlerFunc {
+func handleUpdateLLMPrimaryConfig(store *storepkg.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		record, err := store.GetLLMPrimaryConfig()
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -568,7 +571,7 @@ func handleUpdateLLMPrimaryConfig(store *store) gin.HandlerFunc {
 
 		if record == nil {
 			// 创建新配置
-			newRecord := &llmPrimaryConfigRecord{
+			newRecord := &storepkg.LLMPrimaryConfigRecord{
 				Enabled:      req.Enabled != nil && *req.Enabled,
 				ProviderName: "",
 				Timeout:      120,
@@ -613,7 +616,7 @@ func handleUpdateLLMPrimaryConfig(store *store) gin.HandlerFunc {
 	}
 }
 
-func llmPrimaryConfigDTO(row llmPrimaryConfigRecord) map[string]any {
+func llmPrimaryConfigDTO(row storepkg.LLMPrimaryConfigRecord) map[string]any {
 	return map[string]any{
 		"id":             row.ID,
 		"enabled":        row.Enabled,
