@@ -20,18 +20,42 @@ func newPKIKeyResolver(s *store) func(toNodeNum, fromNodeNum uint32) ([]byte, []
 	return func(toNodeNum, fromNodeNum uint32) ([]byte, []byte, bool) {
 		bot, err := s.GetBotNodeByNodeNum(int64(toNodeNum))
 		if err != nil {
+			printJSON(map[string]any{
+				"event":   "pki_resolve_bot_not_found",
+				"to_num":  toNodeNum,
+				"from_num": fromNodeNum,
+			})
 			return nil, nil, false
 		}
 		privateKeyB64 := strings.TrimSpace(bot.PrivateKey)
 		if privateKeyB64 == "" {
+			printJSON(map[string]any{
+				"event":    "pki_resolve_no_private_key",
+				"bot_id":   bot.NodeID,
+				"bot_num":  bot.NodeNum,
+				"from_num": fromNodeNum,
+			})
 			return nil, nil, false
 		}
 		privateKey, err := base64.StdEncoding.DecodeString(privateKeyB64)
 		if err != nil || len(privateKey) != 32 {
+			printJSON(map[string]any{
+				"event":    "pki_resolve_invalid_private_key",
+				"bot_id":   bot.NodeID,
+				"bot_num":  bot.NodeNum,
+				"from_num": fromNodeNum,
+				"error":    err,
+			})
 			return nil, nil, false
 		}
 		fromPublic, ok := lookupNodeInfoPublicKey(s, fromNodeNum)
 		if !ok {
+			printJSON(map[string]any{
+				"event":    "pki_resolve_no_sender_public_key",
+				"bot_id":   bot.NodeID,
+				"bot_num":  bot.NodeNum,
+				"from_num": fromNodeNum,
+			})
 			return nil, nil, false
 		}
 		return privateKey, fromPublic, true
