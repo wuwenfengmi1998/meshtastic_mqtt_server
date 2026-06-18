@@ -14,15 +14,23 @@ import (
 	"syscall"
 	"time"
 
-	"meshtastic_mqtt_server/ai"
-	"meshtastic_mqtt_server/autoreply"
-	"meshtastic_mqtt_server/llm"
-	"meshtastic_mqtt_server/mqtpp"
-
 	mqtt "github.com/mochi-mqtt/server/v2"
-	"github.com/mochi-mqtt/server/v2/hooks/auth"
+	mqttauth "github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"github.com/mochi-mqtt/server/v2/packets"
+
+	"meshtastic_mqtt_server/ai"
+	"meshtastic_mqtt_server/autoreply"
+	"meshtastic_mqtt_server/internal/auth"
+	blockingpkg "meshtastic_mqtt_server/internal/blocking"
+	botpkg "meshtastic_mqtt_server/internal/bot"
+	configpkg "meshtastic_mqtt_server/internal/config"
+	mqttforwardpkg "meshtastic_mqtt_server/internal/mqttforward"
+	rspkg "meshtastic_mqtt_server/internal/runtimesettings"
+	storepkg "meshtastic_mqtt_server/internal/store"
+	webpkg "meshtastic_mqtt_server/internal/web"
+	"meshtastic_mqtt_server/llm"
+	"meshtastic_mqtt_server/mqtpp"
 )
 
 const (
@@ -39,10 +47,10 @@ const (
 type meshtasticFilterHook struct {
 	mqtt.HookBase
 	key         []byte
-	dbQueue     *dbWriteQueue
-	stats       *meshtasticMessageStats
-	blocking    *blockingCache
-	settings    *runtimeSettingsCache
+	dbQueue     *storepkg.WriteQueue
+	stats       *mqttforwardpkg.Stats
+	blocking    *blockingpkg.Cache
+	settings    *rspkg.Cache
 	pkiResolver func(toNodeNum, fromNodeNum uint32) ([]byte, []byte, bool)
 	autoAcker   func(record map[string]any)
 }
@@ -107,7 +115,7 @@ func (h *meshtasticFilterHook) rejectPublish(cl *mqtt.Client, pk packets.Packet,
 	h.dbQueue.EnqueueDiscard(record, pk.Payload, mqttClientInfoFromClient(cl))
 }
 
-func blockingViolationForRecord(blocking *blockingCache, record map[string]any) map[string]any {
+func blockingViolationForRecord(blocking *blockingpkg.Cache, record map[string]any) map[string]any {
 	if blocking == nil || record == nil {
 		return nil
 	}
@@ -129,12 +137,12 @@ func blockingViolationForRecord(blocking *blockingCache, record map[string]any) 
 	return nil
 }
 
-func mqttClientInfoFromClient(cl *mqtt.Client) mqttClientInfo {
+func mqttClientInfoFromClient(cl *mqtt.Client) storepkg.MQTTClientInfo {
 	if cl == nil {
-		return mqttClientInfo{}
+		return storepkg.MQTTClientInfo{}
 	}
 
-	info := mqttClientInfo{
+	info := storepkg.MQTTClientInfo{
 		ClientID:   cl.ID,
 		Username:   string(cl.Properties.Username),
 		Listener:   cl.Net.Listener,
@@ -166,8 +174,8 @@ func main() {
 }
 
 // parseArgs 加载配置文件、解析命令行覆盖项，并展开 Meshtastic channel PSK。
-func parseArgs() (*config, error) {
-	cfg, err := loadConfig(defaultConfigPath())
+func parseArgs() (*configpkg.Config, error) {
+	cfg, err := configpkg.Load(configpkg.DefaultPath())
 	if err != nil {
 		return nil, err
 	}
@@ -198,9 +206,9 @@ func parseArgs() (*config, error) {
 	if value := os.Getenv("MESH_ADMIN_SESSION_SECRET"); value != "" {
 		cfg.Web.Admin.SessionSecret = value
 	}
-	clearWebSocketPathOnUnsupportedGOOS(cfg, runtime.GOOS)
+	configpkg.ClearWebSocketPathOnUnsupportedGOOS(cfg, runtime.GOOS)
 
-	if err := validateConfig(cfg); err != nil {
+	if err := configpkg.Validate(cfg); err != nil {
 		return nil, err
 	}
 	key, err := mqtpp.ExpandPSK(cfg.Meshtastic.PSK)
@@ -212,38 +220,38 @@ func parseArgs() (*config, error) {
 }
 
 // run 创建 MQTT broker 和 Web 服务，并阻塞等待退出信号。
-func run(cfg *config) error {
-	store, err := openStore(cfg.Database)
+func run(cfg *configpkg.Config) error {
+	store, err := storepkg.OpenStore(cfg.Database)
 	if err != nil {
 		return err
 	}
 	defer store.Close()
-	dbQueue := newDBWriteQueue(store)
+	dbQueue := storepkg.NewWriteQueue(store)
 	defer dbQueue.Close()
 	if err := store.EnsureDefaultAdmin(cfg.Web.Admin.Username, cfg.Web.Admin.Password); err != nil {
 		return err
 	}
 
-	blocking, err := newBlockingCache(store)
+	blocking, err := blockingpkg.New(store)
 	if err != nil {
 		return err
 	}
-	settings, err := newRuntimeSettingsCache(store)
+	settings, err := rspkg.New(store)
 	if err != nil {
 		return err
 	}
 
-	messageStats := &meshtasticMessageStats{}
+	messageStats := &mqttforwardpkg.Stats{}
 	server, mqttHook, mqttAddr, err := startMQTTServer(cfg, store, dbQueue, messageStats, blocking, settings)
 	if err != nil {
 		return err
 	}
-	botSender := newBotService(store, server, cfg.Key)
+	botSender := botpkg.NewService(store, server, cfg.Key)
 	mqttHook.autoAcker = botSender.MaybeAutoAck
 	botCtx, stopBotBroadcaster := context.WithCancel(context.Background())
 	defer stopBotBroadcaster()
 	botSender.StartNodeInfoBroadcaster(botCtx)
-	forwardManager := newMQTTForwardManager(store)
+	forwardManager := mqttforwardpkg.NewManager(store)
 	if err := forwardManager.StartFromStore(); err != nil {
 		server.Close()
 		return err
@@ -262,12 +270,12 @@ func run(cfg *config) error {
 			providerConfigs := make([]llm.ProviderConfig, 0, len(llmProviders))
 			for _, p := range llmProviders {
 				providerConfigs = append(providerConfigs, llm.ProviderConfig{
-					Name:               p.Name,
-					Active:             p.Active,
-					APIKey:             p.APIKey,
-					BaseURL:            p.BaseURL,
-					Model:              p.Model,
-					Timeout:            p.Timeout,
+					Name:                p.Name,
+					Active:              p.Active,
+					APIKey:              p.APIKey,
+					BaseURL:             p.BaseURL,
+					Model:               p.Model,
+					Timeout:             p.Timeout,
 					ContextWindowTokens: p.ContextWindowTokens,
 				})
 			}
@@ -276,7 +284,7 @@ func run(cfg *config) error {
 			botSenderAdapter := autoreply.NewBotServiceAdapter(
 				// SendDirectText: 发送私聊消息
 				func(ctx context.Context, botID uint64, toNodeNum int64, text string) error {
-					_, err := botSender.SendText(ctx, botSendTextRequest{
+					_, err := botSender.SendText(ctx, botpkg.SendTextRequest{
 						BotID:       botID,
 						MessageType: "direct",
 						ToNodeNum:   &toNodeNum,
@@ -286,7 +294,7 @@ func run(cfg *config) error {
 				},
 				// SendChannelText: 发送频道消息
 				func(ctx context.Context, botID uint64, channelID string, text string) error {
-					_, err := botSender.SendText(ctx, botSendTextRequest{
+					_, err := botSender.SendText(ctx, botpkg.SendTextRequest{
 						BotID:       botID,
 						MessageType: "channel",
 						ChannelID:   channelID,
@@ -297,10 +305,10 @@ func run(cfg *config) error {
 			)
 
 			aiService, err = ai.NewService(ai.Config{
-				LLMProviders:     providerConfigs,
-				DataDir:          cfg.DataDir,
-				Enabled:          cfg.AI.Enabled,
-				ToolConfigStore:  store,
+				LLMProviders:    providerConfigs,
+				DataDir:         cfg.DataDir,
+				Enabled:         cfg.AI.Enabled,
+				ToolConfigStore: store,
 			}, store.DB(), botSenderAdapter)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to initialize AI service: %v\n", err)
@@ -319,12 +327,12 @@ func run(cfg *config) error {
 	var httpServers []*http.Server
 	errCh := make(chan error, 2)
 	if cfg.Web.Enabled {
-		sessions, err := newSessionManager(cfg.Web.Admin)
+		sessions, err := auth.NewManager(cfg.Web.Admin)
 		if err != nil {
 			return err
 		}
-		mqttStatus := mqttRuntimeStatus{server: server, address: mqttAddr, tls: cfg.MQTT.TLS.Enabled, stats: messageStats, dbQueue: dbQueue}
-		handler := newRouter(cfg.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender)
+		mqttStatus := webpkg.MQTTRuntimeStatus{Server: server, Address: mqttAddr, TLS: cfg.MQTT.TLS.Enabled, Stats: messageStats, DBQueue: dbQueue}
+		handler := webpkg.NewRouter(cfg.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender)
 		webAddresses := []string{}
 		if cfg.Web.PortEnabled {
 			httpServer := &http.Server{
@@ -344,7 +352,7 @@ func run(cfg *config) error {
 			httpServers = append(httpServers, httpServer)
 			webAddresses = append(webAddresses, cfg.Web.SocketPath)
 			go func() {
-				if err := serveHTTPUnixSocket(httpServer, cfg.Web.SocketPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				if err := webpkg.ServeUnixSocket(httpServer, cfg.Web.SocketPath); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					errCh <- err
 				}
 			}()
@@ -378,9 +386,9 @@ func run(cfg *config) error {
 	return runErr
 }
 
-func startMQTTServer(cfg *config, store *store, dbQueue *dbWriteQueue, stats *meshtasticMessageStats, blocking *blockingCache, settings *runtimeSettingsCache) (*mqtt.Server, *meshtasticFilterHook, string, error) {
+func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *storepkg.WriteQueue, stats *mqttforwardpkg.Stats, blocking *blockingpkg.Cache, settings *rspkg.Cache) (*mqtt.Server, *meshtasticFilterHook, string, error) {
 	server := mqtt.New(&mqtt.Options{InlineClient: true})
-	if err := server.AddHook(new(auth.AllowHook), nil); err != nil {
+	if err := server.AddHook(new(mqttauth.AllowHook), nil); err != nil {
 		return nil, nil, "", err
 	}
 	hook := &meshtasticFilterHook{
@@ -389,14 +397,14 @@ func startMQTTServer(cfg *config, store *store, dbQueue *dbWriteQueue, stats *me
 		stats:       stats,
 		blocking:    blocking,
 		settings:    settings,
-		pkiResolver: newPKIKeyResolver(store),
+		pkiResolver: botpkg.NewPKIKeyResolver(store),
 	}
 	if err := server.AddHook(hook, nil); err != nil {
 		return nil, nil, "", err
 	}
 
 	addr := net.JoinHostPort(cfg.MQTT.Host, strconv.Itoa(cfg.MQTT.Port))
-	tlsConfig, err := buildTLSConfig(cfg.MQTT.TLS)
+	tlsConfig, err := configpkg.BuildTLS(cfg.MQTT.TLS)
 	if err != nil {
 		return nil, nil, "", err
 	}
