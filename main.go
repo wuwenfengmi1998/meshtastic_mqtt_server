@@ -272,8 +272,9 @@ func run(cfg *config) error {
 				})
 			}
 
-			// Create bot sender adapter
+			// Create bot sender adapter - 支持频道消息和私聊消息两种发送方式
 			botSenderAdapter := autoreply.NewBotServiceAdapter(
+				// SendDirectText: 发送私聊消息
 				func(ctx context.Context, botID uint64, toNodeNum int64, text string) error {
 					_, err := botSender.SendText(ctx, botSendTextRequest{
 						BotID:       botID,
@@ -283,12 +284,23 @@ func run(cfg *config) error {
 					})
 					return err
 				},
+				// SendChannelText: 发送频道消息
+				func(ctx context.Context, botID uint64, channelID string, text string) error {
+					_, err := botSender.SendText(ctx, botSendTextRequest{
+						BotID:       botID,
+						MessageType: "channel",
+						ChannelID:   channelID,
+						Text:        text,
+					})
+					return err
+				},
 			)
 
 			aiService, err = ai.NewService(ai.Config{
-				LLMProviders: providerConfigs,
-				DataDir:      cfg.DataDir,
-				Enabled:      cfg.AI.Enabled,
+				LLMProviders:      providerConfigs,
+				DataDir:           cfg.DataDir,
+				Enabled:           cfg.AI.Enabled,
+				SystemPromptStore: store,
 			}, store.db, botSenderAdapter)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to initialize AI service: %v\n", err)

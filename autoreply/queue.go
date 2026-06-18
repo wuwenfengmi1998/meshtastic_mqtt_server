@@ -38,6 +38,7 @@ type llmMessageQueueRecord struct {
 	PacketID    int64      `gorm:"column:packet_id;not null"`
 	ChannelID   *string    `gorm:"column:channel_id"`
 	Topic       string     `gorm:"column:topic;not null"`
+	MessageType string     `gorm:"column:message_type;not null;default:'direct'"` // "channel" 或 "direct"
 	Status      string     `gorm:"column:status;not null;index"`
 	Error       string     `gorm:"column:error;type:text"`
 	Reply       string     `gorm:"column:reply;type:text"`
@@ -79,6 +80,7 @@ func (q *DBMessageQueue) GetPendingMessages(botID uint64, limit int) ([]QueuedMe
 			PacketID:    r.PacketID,
 			ChannelID:   r.ChannelID,
 			Topic:       r.Topic,
+			MessageType: r.MessageType,
 			ReceivedAt:  r.ReceivedAt,
 		})
 	}

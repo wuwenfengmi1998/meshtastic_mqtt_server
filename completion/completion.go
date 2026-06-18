@@ -3,6 +3,7 @@ package completion
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"meshtastic_mqtt_server/llm"
@@ -35,12 +36,25 @@ func CompleteChat(ctx context.Context, profile *llm.Profile, req model.CreateCha
 }
 
 // CompleteText completes a text prompt using conversation messages
-func CompleteText(ctx context.Context, profile *llm.Profile, messages []message.ChatMessage, maxTokens int) (string, error) {
+// If systemPrompt is not empty, it will be added as the first message
+func CompleteText(ctx context.Context, profile *llm.Profile, systemPrompt string, messages []message.ChatMessage, maxTokens int) (string, error) {
 	if profile == nil || profile.Client == nil {
 		return "", fmt.Errorf("llm profile or client is nil")
 	}
 
-	arkMessages := make([]*model.ChatCompletionMessage, 0, len(messages))
+	arkMessages := make([]*model.ChatCompletionMessage, 0, len(messages)+1)
+
+	// Add system prompt if provided
+	if strings.TrimSpace(systemPrompt) != "" {
+		content := &model.ChatCompletionMessageContent{
+			StringValue: &systemPrompt,
+		}
+		arkMessages = append(arkMessages, &model.ChatCompletionMessage{
+			Role:    "system",
+			Content: content,
+		})
+	}
+
 	for _, msg := range messages {
 		content := &model.ChatCompletionMessageContent{
 			StringValue: &msg.Content,

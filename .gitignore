@@ -31,6 +31,7 @@ desktop.ini
 # 项目运行时数据（Windows 测试路径）
 win/etc/
 win/srv/
+win/var/
 
 # 数据库文件
 *.db

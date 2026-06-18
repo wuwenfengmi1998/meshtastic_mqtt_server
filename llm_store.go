@@ -156,6 +156,20 @@ func (s *store) GetLLMPrimaryConfig() (*llmPrimaryConfigRecord, error) {
 	return &record, nil
 }
 
+// GetLLMPrimaryConfigSystemPrompt 获取主 AI 回复配置中的系统提示词
+// 如果没有配置或出错，返回空字符串（autoreply service 会处理这种情况）
+func (s *store) GetLLMPrimaryConfigSystemPrompt() (string, error) {
+	record, err := s.GetLLMPrimaryConfig()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 没有配置时返回空字符串，使用默认行为
+			return "", nil
+		}
+		return "", err
+	}
+	return record.SystemPrompt, nil
+}
+
 // CreateLLMPrimaryConfig 创建主 AI 回复配置
 func (s *store) CreateLLMPrimaryConfig(record *llmPrimaryConfigRecord) error {
 	if err := s.db.Create(record).Error; err != nil {
@@ -206,6 +220,7 @@ type LLMMessageQueueInput struct {
 	PacketID    int64
 	ChannelID   *string
 	Topic       string
+	MessageType string // "channel" 或 "direct"
 	ContentJSON *string
 }
 
@@ -224,6 +239,11 @@ func (s *store) EnqueueLLMMessage(input LLMMessageQueueInput) (*llmMessageQueueR
 	}
 	if !bot.LLMQueueEnabled {
 		return nil, nil // 机器人的 LLM 队列未启用，静默返回
+	}
+
+	// 忽略机器人自己发送的消息，避免自循环
+	if input.FromNodeID == bot.NodeID {
+		return nil, nil
 	}
 
 	if input.FromNodeID == "" {
@@ -258,6 +278,10 @@ func (s *store) EnqueueLLMMessage(input LLMMessageQueueInput) (*llmMessageQueueR
 	}
 
 	now := time.Now()
+	messageType := input.MessageType
+	if messageType == "" {
+		messageType = "direct"
+	}
 	record := &llmMessageQueueRecord{
 		BotID:       input.BotID,
 		BotNodeID:   input.BotNodeID,
@@ -270,6 +294,7 @@ func (s *store) EnqueueLLMMessage(input LLMMessageQueueInput) (*llmMessageQueueR
 		PacketID:    input.PacketID,
 		ChannelID:   input.ChannelID,
 		Topic:       input.Topic,
+		MessageType: messageType,
 		Status:      llmMessageStatusPending,
 		ReceivedAt:  now,
 		ContentJSON: input.ContentJSON,
@@ -450,8 +475,11 @@ func enqueueChannelMessageToLLM(s *store, record map[string]any) error {
 		return fmt.Errorf("query bots for channel message enqueue: %w", err)
 	}
 
-	// 为每个符合条件的机器人创建一条队列记录
+	// 为每个符合条件的机器人创建一条队列记录（忽略机器人自己发送的消息）
 	for _, bot := range bots {
+		if fromNodeID == bot.NodeID {
+			continue
+		}
 		_, err = s.EnqueueLLMMessage(LLMMessageQueueInput{
 			BotID:       bot.ID,
 			BotNodeID:   bot.NodeID,
@@ -464,6 +492,7 @@ func enqueueChannelMessageToLLM(s *store, record map[string]any) error {
 			PacketID:    packetID,
 			ChannelID:   channelID,
 			Topic:       topic,
+			MessageType: "channel",
 			ContentJSON: contentPtr,
 		})
 		if err != nil {

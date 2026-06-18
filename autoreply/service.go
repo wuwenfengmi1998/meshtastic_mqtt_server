@@ -51,22 +51,32 @@ type QueuedMessage struct {
 	PacketID    int64
 	ChannelID   *string
 	Topic       string
+	MessageType string // "channel" 或 "direct"
 	ReceivedAt  time.Time
 }
 
 // BotSender is the interface for sending bot messages
 type BotSender interface {
-	SendText(ctx context.Context, botID uint64, toNodeNum int64, text string) error
+	// SendDirectText 发送私聊消息给指定节点
+	SendDirectText(ctx context.Context, botID uint64, toNodeNum int64, text string) error
+	// SendChannelText 发送频道消息到指定频道
+	SendChannelText(ctx context.Context, botID uint64, channelID string, text string) error
+}
+
+// SystemPromptStore is the interface for getting the system prompt
+type SystemPromptStore interface {
+	GetLLMPrimaryConfigSystemPrompt() (string, error)
 }
 
 // Service manages automatic AI replies for bots
 type Service struct {
-	llmState   *llm.State
-	toolRouter *toolrouter.State
-	toolMgr    *toolmanager.Manager
-	convStore  *conversation.Store
-	msgQueue   MessageQueue
-	botSender  BotSender
+	llmState          *llm.State
+	toolRouter        *toolrouter.State
+	toolMgr           *toolmanager.Manager
+	convStore         *conversation.Store
+	msgQueue          MessageQueue
+	botSender         BotSender
+	systemPromptStore SystemPromptStore
 
 	running bool
 	mu      sync.Mutex
@@ -82,14 +92,16 @@ func NewService(
 	convStore *conversation.Store,
 	msgQueue MessageQueue,
 	botSender BotSender,
+	systemPromptStore SystemPromptStore,
 ) *Service {
 	return &Service{
-		llmState:  llmState,
-		toolRouter: toolRouter,
-		toolMgr:   toolMgr,
-		convStore: convStore,
-		msgQueue:  msgQueue,
-		botSender: botSender,
+		llmState:          llmState,
+		toolRouter:        toolRouter,
+		toolMgr:           toolMgr,
+		convStore:         convStore,
+		msgQueue:          msgQueue,
+		botSender:         botSender,
+		systemPromptStore: systemPromptStore,
 	}
 }
 
@@ -241,13 +253,22 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 		return
 	}
 
+	// Get system prompt from primary config
+	var systemPrompt string
+	if s.systemPromptStore != nil {
+		systemPrompt, err = s.systemPromptStore.GetLLMPrimaryConfigSystemPrompt()
+		if err != nil {
+			printJSON(map[string]any{"event": "llm_system_prompt_warning", "msg_id": msg.ID, "error": err.Error()})
+		}
+	}
+
 	// Run the tool loop to get augmented messages
 	augmentedMessages, err := toolrouter.RunAgentToolLoop(procCtx, s.toolRouter, profile, conv.Messages, s.toolMgr, nil)
 	_ = augmentedMessages // We'll use this in the future with proper tool support
 
 	// For now, use simple completion since we don't have tools registered yet
-	printJSON(map[string]any{"event": "llm_process_completion_start", "msg_id": msg.ID})
-	reply, err := completion.CompleteText(procCtx, profile, conv.Messages, 512)
+	printJSON(map[string]any{"event": "llm_process_completion_start", "msg_id": msg.ID, "has_system_prompt": systemPrompt != ""})
+	reply, err := completion.CompleteText(procCtx, profile, systemPrompt, conv.Messages, 512)
 	if err != nil {
 		errMsg := fmt.Sprintf("LLM completion failed: %v", err)
 		printJSON(map[string]any{"event": "llm_process_failed", "msg_id": msg.ID, "step": "llm_completion", "error": errMsg})
@@ -304,10 +325,20 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 		// Non-fatal, continue
 	}
 
-	// Send the reply via the bot
-	printJSON(map[string]any{"event": "llm_process_send_start", "msg_id": msg.ID, "to_node_num": msg.FromNodeNum})
-	if err := s.botSender.SendText(procCtx, msg.BotID, msg.FromNodeNum, reply); err != nil {
-		errMsg := fmt.Sprintf("failed to send reply: %v", err)
+	// Send the reply via the bot - 根据消息类型决定发送方式
+	// 频道消息：回复到原频道；私聊消息：回复给发送节点
+	var sendErr error
+	if msg.MessageType == "channel" && msg.ChannelID != nil && *msg.ChannelID != "" {
+		// 频道消息 - 回复到原频道
+		printJSON(map[string]any{"event": "llm_process_send_start", "msg_id": msg.ID, "channel_id": *msg.ChannelID, "message_type": "channel"})
+		sendErr = s.botSender.SendChannelText(procCtx, msg.BotID, *msg.ChannelID, reply)
+	} else {
+		// 私聊消息 - 回复给发送节点
+		printJSON(map[string]any{"event": "llm_process_send_start", "msg_id": msg.ID, "to_node_num": msg.FromNodeNum, "message_type": "direct"})
+		sendErr = s.botSender.SendDirectText(procCtx, msg.BotID, msg.FromNodeNum, reply)
+	}
+	if sendErr != nil {
+		errMsg := fmt.Sprintf("failed to send reply: %v", sendErr)
 		printJSON(map[string]any{"event": "llm_process_failed", "msg_id": msg.ID, "step": "send_reply", "error": errMsg})
 		_ = s.msgQueue.MarkAsFailed(msg.ID, errMsg)
 		return

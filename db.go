@@ -363,6 +363,7 @@ type llmMessageQueueRecord struct {
 	PacketID    int64      `gorm:"column:packet_id;not null;index"`
 	ChannelID   *string    `gorm:"column:channel_id"`
 	Topic       string     `gorm:"column:topic;not null"`
+	MessageType string     `gorm:"column:message_type;not null;default:'direct'"` // "channel" 或 "direct"
 	Status      string     `gorm:"column:status;not null;index"`
 	Error       string     `gorm:"column:error;type:text"`
 	Reply       string     `gorm:"column:reply;type:text"`
@@ -750,6 +751,12 @@ func migrateBotNodePSK(tx *gorm.DB, migrator gorm.Migrator, driver string) error
 	if migrator.HasTable(&llmMessageQueueRecord{}) && !migrator.HasColumn(&llmMessageQueueRecord{}, "Reply") {
 		if err := tx.Exec("ALTER TABLE llm_message_queue ADD COLUMN reply text").Error; err != nil {
 			return fmt.Errorf("migrate llm_message_queue reply column: %w", err)
+		}
+	}
+	// 迁移 LLM 消息队列 message_type 列
+	if migrator.HasTable(&llmMessageQueueRecord{}) && !migrator.HasColumn(&llmMessageQueueRecord{}, "MessageType") {
+		if err := tx.Exec("ALTER TABLE llm_message_queue ADD COLUMN message_type text NOT NULL DEFAULT 'direct'").Error; err != nil {
+			return fmt.Errorf("migrate llm_message_queue message_type column: %w", err)
 		}
 	}
 	return nil

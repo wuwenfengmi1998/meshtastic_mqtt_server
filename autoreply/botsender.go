@@ -7,22 +7,33 @@ import (
 
 // BotServiceAdapter adapts the bot service to the BotSender interface
 type BotServiceAdapter struct {
-	sendTextFn func(ctx context.Context, botID uint64, toNodeNum int64, text string) error
+	sendDirectTextFn  func(ctx context.Context, botID uint64, toNodeNum int64, text string) error
+	sendChannelTextFn func(ctx context.Context, botID uint64, channelID string, text string) error
 }
 
 // NewBotServiceAdapter creates a new bot service adapter
 func NewBotServiceAdapter(
-	sendTextFn func(ctx context.Context, botID uint64, toNodeNum int64, text string) error,
+	sendDirectTextFn func(ctx context.Context, botID uint64, toNodeNum int64, text string) error,
+	sendChannelTextFn func(ctx context.Context, botID uint64, channelID string, text string) error,
 ) *BotServiceAdapter {
 	return &BotServiceAdapter{
-		sendTextFn: sendTextFn,
+		sendDirectTextFn:  sendDirectTextFn,
+		sendChannelTextFn: sendChannelTextFn,
 	}
 }
 
-// SendText sends a text message via the bot service
-func (a *BotServiceAdapter) SendText(ctx context.Context, botID uint64, toNodeNum int64, text string) error {
-	if a.sendTextFn == nil {
-		return fmt.Errorf("send text function is nil")
+// SendDirectText sends a direct/private message to a specific node
+func (a *BotServiceAdapter) SendDirectText(ctx context.Context, botID uint64, toNodeNum int64, text string) error {
+	if a.sendDirectTextFn == nil {
+		return fmt.Errorf("send direct text function is nil")
 	}
-	return a.sendTextFn(ctx, botID, toNodeNum, text)
+	return a.sendDirectTextFn(ctx, botID, toNodeNum, text)
+}
+
+// SendChannelText sends a channel message to a specific channel
+func (a *BotServiceAdapter) SendChannelText(ctx context.Context, botID uint64, channelID string, text string) error {
+	if a.sendChannelTextFn == nil {
+		return fmt.Errorf("send channel text function is nil")
+	}
+	return a.sendChannelTextFn(ctx, botID, channelID, text)
 }
