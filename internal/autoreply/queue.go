@@ -92,13 +92,15 @@ func (q *DBMessageQueue) MarkAsProcessing(id uint64) error {
 	return q.db.Model(&llmMessageQueueRecord{}).Where("id = ?", id).Update("status", statusProcessing).Error
 }
 
-// MarkAsProcessed marks a message as successfully processed
+// MarkAsProcessed marks a message as successfully processed and soft-deletes it
+// 处理完成的消息直接软删除，避免队列页堆积；保留 reply/processed_at 便于查询历史
 func (q *DBMessageQueue) MarkAsProcessed(id uint64, reply string) error {
 	now := time.Now()
 	return q.db.Model(&llmMessageQueueRecord{}).Where("id = ?", id).Updates(map[string]any{
-		"status":      statusProcessed,
-		"reply":       reply,
+		"status":       statusProcessed,
+		"reply":        reply,
 		"processed_at": &now,
+		"deleted_at":   &now,
 	}).Error
 }
 

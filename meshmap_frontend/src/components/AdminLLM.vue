@@ -298,9 +298,14 @@ onMounted(() => {
           <td>{{ formatTime(msg.received_at) }}</td>
           <td>{{ formatTime(msg.processed_at) }}</td>
           <td>
-            <button class="admin-button admin-button-small admin-button-danger" @click="handleDeleteMessage(msg.id)">
+            <button
+              v-if="!msg.deleted_at"
+              class="admin-button admin-button-small admin-button-danger"
+              @click="handleDeleteMessage(msg.id)"
+            >
               删除
             </button>
+            <span v-else class="muted-tag">已删除</span>
           </td>
         </tr>
         <tr v-if="messages.length === 0">
@@ -676,6 +681,15 @@ onMounted(() => {
   text-transform: uppercase;
   letter-spacing: 0.02em;
   border: 1px solid transparent;
+}
+
+.muted-tag {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  background: #f1f5f9;
 }
 
 .status-badge[style*='#fff3cd'] {
