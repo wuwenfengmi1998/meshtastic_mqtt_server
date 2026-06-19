@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getAdminMqttStatus, getAdminRuntimeSettings, updateAdminRuntimeSettings } from '../api'
-import type { AdminMqttStatus, AdminRuntimeSettings } from '../types'
+import type { AdminMqttClient, AdminMqttStatus, AdminRuntimeSettings } from '../types'
 
 const status = ref<AdminMqttStatus | null>(null)
 const runtimeSettings = ref<AdminRuntimeSettings | null>(null)
@@ -11,6 +11,41 @@ const error = ref('')
 const settingsError = ref('')
 const settingsMessage = ref('')
 let timer: number | undefined
+
+type ClientSortKey = 'client_id' | 'username' | 'listener' | 'remote_addr' | 'packets_in' | 'packets_out'
+type SortDir = 'asc' | 'desc'
+
+const clientSortKey = ref<ClientSortKey>('client_id')
+const clientSortDir = ref<SortDir>('asc')
+
+function toggleClientSort(key: ClientSortKey) {
+  if (clientSortKey.value === key) {
+    clientSortDir.value = clientSortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    clientSortKey.value = key
+    clientSortDir.value = 'asc'
+  }
+}
+
+const sortedClients = computed<AdminMqttClient[]>(() => {
+  const list = status.value?.clients ? [...status.value.clients] : []
+  const key = clientSortKey.value
+  const dir = clientSortDir.value === 'asc' ? 1 : -1
+  list.sort((a, b) => {
+    const av = a[key]
+    const bv = b[key]
+    if (typeof av === 'number' && typeof bv === 'number') {
+      return (av - bv) * dir
+    }
+    return String(av ?? '').localeCompare(String(bv ?? '')) * dir
+  })
+  return list
+})
+
+function sortIndicator(key: ClientSortKey): string {
+  if (clientSortKey.value !== key) return ''
+  return clientSortDir.value === 'asc' ? '▲' : '▼'
+}
 
 function formatUptime(seconds: number): string {
   const hours = Math.floor(seconds / 3600)
@@ -158,16 +193,16 @@ onBeforeUnmount(() => {
         <table class="node-table">
           <thead>
             <tr>
-              <th>Client ID</th>
-              <th>Username</th>
-              <th>Listener</th>
-              <th>Remote Addr</th>
-              <th>客户端→服务器</th>
-              <th>服务器→客户端</th>
+              <th class="sortable" @click="toggleClientSort('client_id')">Client ID <span class="sort-indicator">{{ sortIndicator('client_id') }}</span></th>
+              <th class="sortable" @click="toggleClientSort('username')">Username <span class="sort-indicator">{{ sortIndicator('username') }}</span></th>
+              <th class="sortable" @click="toggleClientSort('listener')">Listener <span class="sort-indicator">{{ sortIndicator('listener') }}</span></th>
+              <th class="sortable" @click="toggleClientSort('remote_addr')">Remote Addr <span class="sort-indicator">{{ sortIndicator('remote_addr') }}</span></th>
+              <th class="sortable" @click="toggleClientSort('packets_in')">客户端→服务器 <span class="sort-indicator">{{ sortIndicator('packets_in') }}</span></th>
+              <th class="sortable" @click="toggleClientSort('packets_out')">服务器→客户端 <span class="sort-indicator">{{ sortIndicator('packets_out') }}</span></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="client in status?.clients || []" :key="client.client_id">
+            <tr v-for="client in sortedClients" :key="client.client_id">
               <td>{{ client.client_id || '-' }}</td>
               <td>{{ client.username || '-' }}</td>
               <td>{{ client.listener || '-' }}</td>
@@ -351,5 +386,21 @@ onBeforeUnmount(() => {
   .control-header {
     gap: 0.75rem;
   }
+}
+
+.node-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.node-table th.sortable:hover {
+  color: var(--color-primary);
+}
+
+.node-table th.sortable .sort-indicator {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--color-primary);
 }
 </style>
