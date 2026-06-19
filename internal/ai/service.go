@@ -29,6 +29,7 @@ type Config struct {
 	LLMProviders     []llm.ProviderConfig
 	DataDir          string
 	Enabled          bool
+	ConsoleLog       bool
 	ToolConfigStore  ToolConfigStore
 }
 
@@ -99,6 +100,7 @@ func NewService(cfg Config, db *gorm.DB, botSender autoreply.BotSender) (*Servic
 		msgQueue,
 		botSender,
 		cfg.ToolConfigStore,
+		cfg.ConsoleLog,
 	)
 
 	return &Service{

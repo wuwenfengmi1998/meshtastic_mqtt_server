@@ -3,6 +3,7 @@ package autoreply
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"meshtastic_mqtt_server/internal/conversation"
 	"meshtastic_mqtt_server/internal/llm"
 	"meshtastic_mqtt_server/internal/message"
+	"meshtastic_mqtt_server/internal/stream"
 	"meshtastic_mqtt_server/internal/toolmanager"
 	"meshtastic_mqtt_server/internal/toolrouter"
 
@@ -73,13 +75,14 @@ type ToolConfigStore interface {
 
 // Service manages automatic AI replies for bots
 type Service struct {
-	llmState         *llm.State
-	toolRouter       *toolrouter.State
-	toolMgr          *toolmanager.Manager
-	convStore        *conversation.Store
-	msgQueue         MessageQueue
-	botSender        BotSender
-	toolConfigStore  ToolConfigStore
+	llmState        *llm.State
+	toolRouter      *toolrouter.State
+	toolMgr         *toolmanager.Manager
+	convStore       *conversation.Store
+	msgQueue        MessageQueue
+	botSender       BotSender
+	toolConfigStore ToolConfigStore
+	consoleLog      bool
 
 	running bool
 	mu      sync.Mutex
@@ -96,15 +99,17 @@ func NewService(
 	msgQueue MessageQueue,
 	botSender BotSender,
 	toolConfigStore ToolConfigStore,
+	consoleLog bool,
 ) *Service {
 	return &Service{
-		llmState:         llmState,
-		toolRouter:       toolRouter,
-		toolMgr:          toolMgr,
-		convStore:        convStore,
-		msgQueue:         msgQueue,
-		botSender:        botSender,
-		toolConfigStore:  toolConfigStore,
+		llmState:        llmState,
+		toolRouter:      toolRouter,
+		toolMgr:         toolMgr,
+		convStore:       convStore,
+		msgQueue:        msgQueue,
+		botSender:       botSender,
+		toolConfigStore: toolConfigStore,
+		consoleLog:      consoleLog,
 	}
 }
 
@@ -180,31 +185,73 @@ func (s *Service) processQueue(ctx context.Context) {
 	}
 }
 
-// printJSON outputs a structured log message (imported from main package pattern)
-func printJSON(v any) {
-	fmt.Printf("%+v\n", v)
+// logf 仅在 console_log.llm 开启时输出一行可读日志（带 [llm] 前缀）。
+func (s *Service) logf(format string, args ...any) {
+	if !s.consoleLog {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[llm] "+format+"\n", args...)
+}
+
+// emit 把 toolrouter.Frame 转成单行日志，区分主 AI / 路由 AI / 工具调用。
+func (s *Service) emit(msgID uint64, routerModel string) stream.EmitFunc {
+	if !s.consoleLog {
+		return nil
+	}
+	return func(f stream.Frame) {
+		switch f.Stage {
+		case "prepare":
+			tools, _ := f.Data["tools"].([]string)
+			s.logf("msg=%d router=%s prepare tools=%v", msgID, routerModel, tools)
+		case "request":
+			if f.Status == "success" {
+				// 模型未请求工具
+				s.logf("msg=%d router=%s decide → no_tool（直接生成回答）", msgID, routerModel)
+				return
+			}
+			iter, _ := f.Data["iteration"].(int)
+			s.logf("msg=%d router=%s decide iter=%d ...", msgID, routerModel, iter)
+		case "tool_calls":
+			calls, _ := f.Data["tools"].([]string)
+			iter, _ := f.Data["iteration"].(int)
+			s.logf("msg=%d router=%s decide iter=%d → call_tools=%v", msgID, routerModel, iter, calls)
+		case "arguments":
+			args, _ := f.Data["arguments"].(string)
+			s.logf("msg=%d tool=%s args=%s", msgID, f.Tool, truncate(args, 200))
+		case "result":
+			dur, _ := f.Data["duration_ms"].(int64)
+			preview, _ := f.Data["result_preview"].(string)
+			s.logf("msg=%d tool=%s result(%dms)=%s", msgID, f.Tool, dur, truncate(preview, 200))
+		case "execute":
+			if f.Status == "error" {
+				errStr, _ := f.Data["error"].(string)
+				if errStr == "" {
+					errStr = f.Message
+				}
+				s.logf("msg=%d tool=%s ERROR: %s", msgID, f.Tool, errStr)
+			}
+		case "decision":
+			// 中间帧，已被 tool_calls / request(success) 覆盖，跳过
+		}
+	}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 // processMessage processes a single queued message
 func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 	// Mark message as processing
 	if err := s.msgQueue.MarkAsProcessing(msg.ID); err != nil {
-		printJSON(map[string]any{
-			"event": "llm_process_failed",
-			"msg_id": msg.ID,
-			"step":  "mark_as_processing",
-			"error": err.Error(),
-		})
+		s.logf("msg=%d FAIL step=mark_as_processing err=%v", msg.ID, err)
 		return
 	}
 
-	printJSON(map[string]any{
-		"event":        "llm_process_start",
-		"msg_id":       msg.ID,
-		"bot_id":       msg.BotID,
-		"from_node_id": msg.FromNodeID,
-		"text":         msg.Text,
-	})
+	s.logf("msg=%d from=%s start text=%q", msg.ID, msg.FromNodeID, msg.Text)
 
 	// Create processing context with timeout
 	procCtx, cancel := context.WithTimeout(ctx, MaxProcessingTime)
@@ -214,7 +261,7 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 	conv, err := s.convStore.GetOrCreateForBot(msg.BotID, msg.BotNodeID, msg.FromNodeID)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to get conversation: %v", err)
-		printJSON(map[string]any{"event": "llm_process_failed", "msg_id": msg.ID, "step": "get_conversation", "error": errMsg})
+		s.logf("msg=%d FAIL step=get_conversation err=%s", msg.ID, errMsg)
 		_ = s.msgQueue.MarkAsFailed(msg.ID, errMsg)
 		return
 	}
@@ -226,7 +273,7 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 	}
 	if err := s.convStore.AddMessage(conv.ID, userMsg); err != nil {
 		errMsg := fmt.Sprintf("failed to add message: %v", err)
-		printJSON(map[string]any{"event": "llm_process_failed", "msg_id": msg.ID, "step": "add_message", "error": errMsg})
+		s.logf("msg=%d FAIL step=add_message err=%s", msg.ID, errMsg)
 		_ = s.msgQueue.MarkAsFailed(msg.ID, errMsg)
 		return
 	}
@@ -235,23 +282,18 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 	profile := s.llmState.ActiveProfile()
 	if profile == nil {
 		errMsg := "no active LLM profile - check if LLM providers are configured"
-		printJSON(map[string]any{"event": "llm_process_failed", "msg_id": msg.ID, "step": "get_profile", "error": errMsg})
+		s.logf("msg=%d FAIL step=get_profile err=%s", msg.ID, errMsg)
 		_ = s.msgQueue.MarkAsFailed(msg.ID, errMsg)
 		return
 	}
 
-	printJSON(map[string]any{
-		"event":       "llm_process_profile",
-		"msg_id":      msg.ID,
-		"model":       profile.Config.Model,
-		"base_url":    profile.Config.BaseURL,
-	})
+	s.logf("msg=%d main_model=%s base=%s", msg.ID, profile.Config.Model, profile.Config.BaseURL)
 
 	// Reload conversation to get updated messages
 	conv, err = s.convStore.Get(conv.ID)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to reload conversation: %v", err)
-		printJSON(map[string]any{"event": "llm_process_failed", "msg_id": msg.ID, "step": "reload_conversation", "error": errMsg})
+		s.logf("msg=%d FAIL step=reload_conversation err=%s", msg.ID, errMsg)
 		_ = s.msgQueue.MarkAsFailed(msg.ID, errMsg)
 		return
 	}
@@ -262,11 +304,11 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 	if s.toolConfigStore != nil {
 		systemPrompt, err = s.toolConfigStore.GetLLMPrimaryConfigSystemPrompt()
 		if err != nil {
-			printJSON(map[string]any{"event": "llm_system_prompt_warning", "msg_id": msg.ID, "error": err.Error()})
+			s.logf("msg=%d WARN system_prompt err=%v", msg.ID, err)
 		}
 		enableTool, err = s.toolConfigStore.GetLLMPrimaryConfigEnableTool()
 		if err != nil {
-			printJSON(map[string]any{"event": "llm_enable_tool_warning", "msg_id": msg.ID, "error": err.Error()})
+			s.logf("msg=%d WARN enable_tool err=%v", msg.ID, err)
 		}
 	}
 
@@ -279,27 +321,27 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 		for _, t := range tools {
 			toolNames = append(toolNames, t.Name())
 		}
-		printJSON(map[string]any{
-			"event":      "llm_tool_manager_status",
-			"msg_id":     msg.ID,
-			"tool_count":  toolCount,
-			"tool_names":  toolNames,
-			"enable_tool": enableTool,
-		})
+		s.logf("msg=%d tools_loaded=%v enable_tool=%t", msg.ID, toolNames, enableTool)
 	}
 
 	// Run the tool loop to get augmented messages - pass system prompt to tool router
 	// Tool loop will handle system prompt and tool calling
 	var augmentedMessages []*model.ChatCompletionMessage
 	if enableTool && toolCount > 0 {
-		augmentedMessages, err = toolrouter.RunAgentToolLoop(procCtx, s.toolRouter, profile, systemPrompt, conv.Messages, s.toolMgr, nil)
+		routerProfile := s.toolRouter.RouterProfile(profile)
+		routerModel := profile.Config.Model
+		if routerProfile != nil {
+			routerModel = routerProfile.Config.Model
+		}
+		s.logf("msg=%d router_model=%s tool_loop start", msg.ID, routerModel)
+		augmentedMessages, err = toolrouter.RunAgentToolLoop(procCtx, s.toolRouter, profile, systemPrompt, conv.Messages, s.toolMgr, s.emit(msg.ID, routerModel))
 		if err != nil {
-			printJSON(map[string]any{"event": "llm_tool_loop_warning", "msg_id": msg.ID, "error": err.Error()})
+			s.logf("msg=%d WARN tool_loop err=%v", msg.ID, err)
 			// Continue with original messages if tool loop fails
 		}
 	}
 
-	printJSON(map[string]any{"event": "llm_process_completion_start", "msg_id": msg.ID, "has_system_prompt": systemPrompt != "", "augmented_messages": len(augmentedMessages)})
+	s.logf("msg=%d completion start has_system_prompt=%t augmented=%d", msg.ID, systemPrompt != "", len(augmentedMessages))
 
 	// Use augmented messages from tool loop (already includes system prompt and tool results)
 	// If augmented messages is empty or nil, fallback to original messages with system prompt
@@ -313,50 +355,27 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 	}
 	if err != nil {
 		errMsg := fmt.Sprintf("LLM completion failed: %v", err)
-		printJSON(map[string]any{"event": "llm_process_failed", "msg_id": msg.ID, "step": "llm_completion", "error": errMsg})
+		s.logf("msg=%d FAIL step=llm_completion err=%s", msg.ID, errMsg)
 		_ = s.msgQueue.MarkAsFailed(msg.ID, errMsg)
 		return
 	}
 
-	printJSON(map[string]any{
-		"event":      "llm_process_completion_success",
-		"msg_id":     msg.ID,
-		"reply_len":  len(reply),
-	})
+	s.logf("msg=%d main=%s reply_len=%d reply=%q", msg.ID, profile.Config.Model, len(reply), truncate(reply, 200))
 
 	// Clean and validate reply text
 	reply = cleanReplyText(reply)
-	printJSON(map[string]any{
-		"event":       "llm_process_text_cleaned",
-		"msg_id":      msg.ID,
-		"cleaned_len": len(reply),
-	})
 
 	// Truncate reply for Meshtastic (UTF-8 safe truncation)
 	if len([]byte(reply)) > MaxReplyLength {
 		reply = truncateUTF8(reply, MaxReplyLength-3) + "..."
-		printJSON(map[string]any{
-			"event":       "llm_process_text_truncated",
-			"msg_id":      msg.ID,
-			"truncated_len": len(reply),
-		})
+		s.logf("msg=%d reply truncated to %d bytes", msg.ID, len(reply))
 	}
 
 	// Final UTF-8 validation before sending
 	if !utf8.ValidString(reply) {
-		printJSON(map[string]any{
-			"event":   "llm_process_utf8_warning",
-			"msg_id":  msg.ID,
-			"message": "final text still invalid, using fallback",
-		})
+		s.logf("msg=%d WARN final text invalid utf8, using fallback", msg.ID)
 		reply = "抱歉，我暂时无法回复。请稍后再试。"
 	}
-	printJSON(map[string]any{
-		"event":    "llm_process_final_check",
-		"msg_id":   msg.ID,
-		"valid_utf8": utf8.ValidString(reply),
-		"final_len":  len(reply),
-	})
 
 	// Add assistant reply to conversation
 	assistantMsg := message.ChatMessage{
@@ -372,27 +391,23 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 	var sendErr error
 	if msg.MessageType == "channel" && msg.ChannelID != nil && *msg.ChannelID != "" {
 		// 频道消息 - 回复到原频道
-		printJSON(map[string]any{"event": "llm_process_send_start", "msg_id": msg.ID, "channel_id": *msg.ChannelID, "message_type": "channel"})
+		s.logf("msg=%d send → channel=%s", msg.ID, *msg.ChannelID)
 		sendErr = s.botSender.SendChannelText(procCtx, msg.BotID, *msg.ChannelID, reply)
 	} else {
 		// 私聊消息 - 回复给发送节点
-		printJSON(map[string]any{"event": "llm_process_send_start", "msg_id": msg.ID, "to_node_num": msg.FromNodeNum, "message_type": "direct"})
+		s.logf("msg=%d send → direct to_node_num=%d", msg.ID, msg.FromNodeNum)
 		sendErr = s.botSender.SendDirectText(procCtx, msg.BotID, msg.FromNodeNum, reply)
 	}
 	if sendErr != nil {
 		errMsg := fmt.Sprintf("failed to send reply: %v", sendErr)
-		printJSON(map[string]any{"event": "llm_process_failed", "msg_id": msg.ID, "step": "send_reply", "error": errMsg})
+		s.logf("msg=%d FAIL step=send_reply err=%s", msg.ID, errMsg)
 		_ = s.msgQueue.MarkAsFailed(msg.ID, errMsg)
 		return
 	}
 
 	// Mark message as processed
 	_ = s.msgQueue.MarkAsProcessed(msg.ID, reply)
-	printJSON(map[string]any{
-		"event":    "llm_process_success",
-		"msg_id":   msg.ID,
-		"reply":    reply,
-	})
+	s.logf("msg=%d done", msg.ID)
 }
 
 // formatUserMessage formats the incoming message for the LLM

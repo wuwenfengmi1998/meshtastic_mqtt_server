@@ -386,6 +386,7 @@ func run(cfg *configpkg.Config) error {
 				LLMProviders:    providerConfigs,
 				DataDir:         cfg.AI.DataDir,
 				Enabled:         cfg.AI.Enabled,
+				ConsoleLog:      cfg.ConsoleLog.LLM,
 				ToolConfigStore: store,
 			}, store.DB(), botSenderAdapter)
 			if err != nil {
