@@ -53,6 +53,7 @@ type meshtasticFilterHook struct {
 	settings    *rspkg.Cache
 	pkiResolver func(toNodeNum, fromNodeNum uint32) ([]byte, []byte, bool)
 	autoAcker   func(record map[string]any)
+	consoleLog  bool // 控制台是否打印 MQTT 连接/订阅事件
 }
 
 // ID 返回用于识别 Meshtastic payload 过滤器的 hook 名称。
@@ -60,9 +61,14 @@ func (h *meshtasticFilterHook) ID() string {
 	return "meshtastic-filter"
 }
 
-// Provides 声明该 hook 只处理客户端发布消息。
+// Provides 声明该 hook 处理客户端连接、订阅与发布事件。
 func (h *meshtasticFilterHook) Provides(b byte) bool {
-	return b == mqtt.OnConnect || b == mqtt.OnPublish
+	return b == mqtt.OnConnect ||
+		b == mqtt.OnPublish ||
+		b == mqtt.OnSessionEstablished ||
+		b == mqtt.OnDisconnect ||
+		b == mqtt.OnSubscribed ||
+		b == mqtt.OnUnsubscribed
 }
 
 // OnConnect 在 MQTT 会话建立前拒绝命中 IP 屏蔽表的客户端。
@@ -73,6 +79,54 @@ func (h *meshtasticFilterHook) OnConnect(cl *mqtt.Client, pk packets.Packet) err
 		return packets.ErrNotAuthorized
 	}
 	return nil
+}
+
+// OnSessionEstablished 在客户端通过认证、会话建立后打印连接日志。
+func (h *meshtasticFilterHook) OnSessionEstablished(cl *mqtt.Client, pk packets.Packet) {
+	if !h.consoleLog {
+		return
+	}
+	info := mqttClientInfoFromClient(cl)
+	fmt.Fprintf(os.Stderr, "[mqtt] connect    client_id=%s username=%s remote=%s:%s\n",
+		info.ClientID, info.Username, info.RemoteHost, info.RemotePort)
+}
+
+// OnDisconnect 在客户端断开时打印日志，含触发原因。
+func (h *meshtasticFilterHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
+	if !h.consoleLog {
+		return
+	}
+	info := mqttClientInfoFromClient(cl)
+	reason := "client closed"
+	if err != nil {
+		reason = err.Error()
+	}
+	fmt.Fprintf(os.Stderr, "[mqtt] disconnect client_id=%s username=%s remote=%s:%s expire=%t reason=%s\n",
+		info.ClientID, info.Username, info.RemoteHost, info.RemotePort, expire, reason)
+}
+
+// OnSubscribed 客户端订阅成功后打印订阅的 topic filter 列表。
+func (h *meshtasticFilterHook) OnSubscribed(cl *mqtt.Client, pk packets.Packet, reasonCodes []byte) {
+	if !h.consoleLog {
+		return
+	}
+	info := mqttClientInfoFromClient(cl)
+	for _, sub := range pk.Filters {
+		fmt.Fprintf(os.Stderr, "[mqtt] subscribe  client_id=%s username=%s remote=%s:%s topic=%s\n",
+			info.ClientID, info.Username, info.RemoteHost, info.RemotePort, sub.Filter)
+	}
+}
+
+// OnUnsubscribed 客户端取消订阅后打印日志。
+func (h *meshtasticFilterHook) OnUnsubscribed(cl *mqtt.Client, pk packets.Packet) {
+	if !h.consoleLog {
+		return
+	}
+	info := mqttClientInfoFromClient(cl)
+	for _, sub := range pk.Filters {
+		fmt.Fprintf(os.Stderr, "[mqtt] unsubscribe client_id=%s username=%s remote=%s:%s topic=%s\n",
+			info.ClientID, info.Username, info.RemoteHost, info.RemotePort, sub.Filter)
+	}
 }
 
 // OnPublish 在 broker 转发消息前校验 payload；无效消息会被拒绝并丢弃。
@@ -398,6 +452,7 @@ func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *stor
 		blocking:    blocking,
 		settings:    settings,
 		pkiResolver: botpkg.NewPKIKeyResolver(store),
+		consoleLog:  cfg.ConsoleLog.MQTT,
 	}
 	if err := server.AddHook(hook, nil); err != nil {
 		return nil, nil, "", err
