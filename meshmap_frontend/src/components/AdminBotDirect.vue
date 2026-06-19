@@ -128,13 +128,18 @@ async function reloadConversations() {
   if (!selectedBot.value) return
   try {
     const response = await getBotConversations(selectedBot.value.id, conversationPageSize, 0)
-    conversations.value = response.items
+    let items = response.items
+    // 用户通过“新建私聊”选中尚未有消息的节点时，本地有占位会话，但后端不会返回它。
+    // 直接覆盖会让轮询自动取消选择，所以这里保留占位并 prepend 回去。
+    if (selectedPeerNum.value != null && !items.some((c) => c.peer_node_num === selectedPeerNum.value)) {
+      const localPlaceholder = conversations.value.find((c) => c.peer_node_num === selectedPeerNum.value)
+      if (localPlaceholder) items = [localPlaceholder, ...items]
+    }
+    conversations.value = items
     unreadTotal.value = response.unread_total
-    // 第一次进入或目标会话被删除时自动选中第一个会话，避免空白页面。
-    if (selectedPeerNum.value == null && response.items.length > 0) {
-      selectedPeerNum.value = response.items[0].peer_node_num
-    } else if (selectedPeerNum.value != null && !response.items.some((c) => c.peer_node_num === selectedPeerNum.value)) {
-      selectedPeerNum.value = response.items[0]?.peer_node_num ?? null
+    // 第一次进入时自动选中第一个会话，避免空白页面。
+    if (selectedPeerNum.value == null && items.length > 0) {
+      selectedPeerNum.value = items[0].peer_node_num
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
