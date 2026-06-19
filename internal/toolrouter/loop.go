@@ -76,20 +76,31 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 	}
 	// 每轮调用都重新加载最新配置，确保管理员在 /admin/llm/api 保存后立即生效
 	cfg := state.effectiveConfig()
-	// Use tool router system prompt if available, otherwise fall back to primary system prompt
-	prompt := strings.TrimSpace(cfg.SystemPrompt)
-	if prompt == "" {
-		prompt = strings.TrimSpace(systemPrompt)
+	// 最终回复使用主回复配置的 system prompt（机器人人设/回复指引）；
+	// 工具路由决策使用工具路由的 system prompt（指导如何调用工具），
+	// 为空时回退到主回复 prompt。两者分离，避免工具路由 prompt 覆盖主回复 prompt。
+	primaryPrompt := strings.TrimSpace(systemPrompt)
+	routerPrompt := strings.TrimSpace(cfg.SystemPrompt)
+	if routerPrompt == "" {
+		routerPrompt = primaryPrompt
 	}
-	if prompt != "" {
-		systemMessage := &model.ChatCompletionMessage{
+	if primaryPrompt != "" {
+		primarySystemMessage := &model.ChatCompletionMessage{
 			Role: "system",
 			Content: &model.ChatCompletionMessageContent{
-				StringValue: &prompt,
+				StringValue: &primaryPrompt,
 			},
 		}
-		finalMessages = append([]*model.ChatCompletionMessage{systemMessage}, finalMessages...)
-		decisionMessages = append([]*model.ChatCompletionMessage{systemMessage}, decisionMessages...)
+		finalMessages = append([]*model.ChatCompletionMessage{primarySystemMessage}, finalMessages...)
+	}
+	if routerPrompt != "" {
+		routerSystemMessage := &model.ChatCompletionMessage{
+			Role: "system",
+			Content: &model.ChatCompletionMessageContent{
+				StringValue: &routerPrompt,
+			},
+		}
+		decisionMessages = append([]*model.ChatCompletionMessage{routerSystemMessage}, decisionMessages...)
 	}
 	for i := 0; i < maxAgentToolIterations; i++ {
 		if emit != nil {
