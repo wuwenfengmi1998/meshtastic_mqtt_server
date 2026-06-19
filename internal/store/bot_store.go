@@ -102,6 +102,13 @@ func (s *Store) UpdateBotNode(id uint64, input BotNodeInput) (*BotNodeRecord, er
 	if err != nil {
 		return nil, err
 	}
+	// 更新场景下 input 没传 node_num（前端某些保存路径只携带部分字段）应保持原值，
+	// 否则 normalizedBotNodeRecord 会调用 generateBotNodeNum 随机生成一个新号，
+	// 顺带 NodeID 也被重算——表现就是用户每改一次配置机器人 nodeid 就跳一次。
+	if input.NodeNum == nil || *input.NodeNum == 0 {
+		preserved := existing.NodeNum
+		input.NodeNum = &preserved
+	}
 	row, err := s.normalizedBotNodeRecord(input)
 	if err != nil {
 		return nil, err
