@@ -67,6 +67,7 @@ const mapReportsLoading = ref(false)
 const mapReportTotal = ref(0)
 const mapSources = ref<PublicMapTileSource[]>([fallbackMapSource])
 const mapSource = ref<PublicMapTileSource>(fallbackMapSource)
+const nodeFilter = ref('')
 const pendingDeleteAction = ref<PendingDeleteAction | null>(null)
 type DeletableTextMessage = TextMessage & { mergedCount?: number; mergedMessages?: TextMessage[] }
 type NodeActionRequest = { nodeId: string; nodeNum: number | null; message?: DeletableTextMessage }
@@ -90,10 +91,74 @@ const nodesById = computed<NodeInfoById>(() => {
   return Object.fromEntries(map)
 })
 
+const normalizedNodeFilter = computed(() => nodeFilter.value.trim().toLowerCase())
+
+function nodeMatchesFilterByInfo(node: NodeInfo | null | undefined, keyword: string): boolean {
+  if (!keyword) {
+    return true
+  }
+  if (!node) {
+    return false
+  }
+  const fields = [node.node_id, node.long_name, node.short_name, node.hw_model, node.role]
+  return fields.some((value) => (value ?? '').toString().toLowerCase().includes(keyword))
+}
+
+function nodeIdMatchesFilter(nodeId: string | null | undefined): boolean {
+  const keyword = normalizedNodeFilter.value
+  if (!keyword) {
+    return true
+  }
+  if (!nodeId) {
+    return false
+  }
+  if (nodeId.toLowerCase().includes(keyword)) {
+    return true
+  }
+  return nodeMatchesFilterByInfo(nodesById.value[nodeId] ?? null, keyword)
+}
+
+function mapReportMatchesFilter(item: MapViewportPoint, keyword: string): boolean {
+  if (!keyword) {
+    return true
+  }
+  const fields = [item.node_id, item.long_name, item.short_name, item.hw_model, item.role]
+  if (fields.some((value) => (value ?? '').toString().toLowerCase().includes(keyword))) {
+    return true
+  }
+  return nodeMatchesFilterByInfo(nodesById.value[item.node_id] ?? null, keyword)
+}
+
+const filteredMessages = computed<TextMessage[]>(() => {
+  if (!normalizedNodeFilter.value) {
+    return messages.value
+  }
+  return messages.value.filter((message) => nodeIdMatchesFilter(message.from_id))
+})
+
+const filteredPagedNodeInfo = computed<NodeInfo[]>(() => {
+  const keyword = normalizedNodeFilter.value
+  if (!keyword) {
+    return pagedNodeInfo.value
+  }
+  // 过滤启用时，跨整个 nodeInfoSource（最多 500 条）匹配，分页交给前端忽略
+  return nodeInfoSource.value.filter((node) => nodeMatchesFilterByInfo(node, keyword))
+})
+
+const filteredNodeTotal = computed(() => {
+  if (!normalizedNodeFilter.value) {
+    return nodeTotal.value
+  }
+  return filteredPagedNodeInfo.value.length
+})
+
 const mapItems = computed<MapRenderable[]>(() => {
-  const items = mapViewportItems.value
+  const keyword = normalizedNodeFilter.value
+  const items = keyword
+    ? mapViewportItems.value.filter((item) => isMapViewportPoint(item) && mapReportMatchesFilter(item, keyword))
+    : mapViewportItems.value
   const selectedItem = selectedMapPoint.value
-  const renderItems = selectedItem && selectedItem.type === 'point' && !items.some((item) => item.type === 'point' && item.node_id === selectedItem.node_id)
+  const renderItems = selectedItem && selectedItem.type === 'point' && (!keyword || mapReportMatchesFilter(selectedItem, keyword)) && !items.some((item) => item.type === 'point' && item.node_id === selectedItem.node_id)
     ? [...items, selectedItem]
     : items
 
@@ -578,13 +643,28 @@ onBeforeUnmount(() => {
           <a class="topbar-link" href="/admin">管理</a>
         </template>
         <template v-else>
+
           
-          <span class="counter">节点 {{ nodeTotal }} · 已加载消息 {{ messages.length }} · 坐标 {{ mapItems.length }} / {{ mapReportTotal }}{{ mapViewportMode === 'clusters' ? ' · 已聚合' : '' }}{{ mapReportsLoading ? ' · 坐标加载中...' : '' }}</span>
+          <span class="counter">节点 {{ normalizedNodeFilter ? `${filteredNodeTotal} / ${nodeTotal}` : nodeTotal }} · 已加载消息 {{ normalizedNodeFilter ? `${filteredMessages.length} / ${messages.length}` : messages.length }} · 坐标 {{ mapItems.length }} / {{ mapReportTotal }}{{ mapViewportMode === 'clusters' ? ' · 已聚合' : '' }}{{ mapReportsLoading ? ' · 坐标加载中...' : '' }}{{ normalizedNodeFilter ? ' · 已筛选' : '' }}</span>
+          <div class="topbar-filter">
+            <input
+              type="search"
+              class="topbar-filter-input"
+              v-model="nodeFilter"
+              placeholder="筛选节点"
+            />
+            <button
+              v-if="normalizedNodeFilter"
+              type="button"
+              class="topbar-filter-clear"
+              @click="nodeFilter = ''"
+            >清除</button>
+          </div>
           <a class="topbar-link" href="/signed">签到列表</a>
           <a class="topbar-link" href="/help">使用帮助</a>
           <a class="topbar-link" href="/admin">管理</a>
-          <button @click="() => refresh()" :disabled="loading">{{ loading ? '刷新中...' : '刷新' }}</button>
-          
+          <!-- <button @click="() => refresh()" :disabled="loading">{{ loading ? '刷新中...' : '刷新' }}</button>
+           -->
         </template>
       </div>
     </header>
@@ -633,7 +713,7 @@ onBeforeUnmount(() => {
 
       <section class="workspace">
         <ChatPanel
-          :messages="messages"
+          :messages="filteredMessages"
           :nodes-by-id="nodesById"
           :selected-node-id="selectedNodeId"
           :loading-older="chatLoadingOlder"
@@ -662,13 +742,14 @@ onBeforeUnmount(() => {
       </section>
 
       <NodeListPanel
-        :nodes="pagedNodeInfo"
+        :nodes="filteredPagedNodeInfo"
         :selected-node-id="selectedNodeId"
         :page="nodePage"
         :page-size="nodePageSize"
-        :total="nodeTotal"
+        :total="filteredNodeTotal"
         :loading="nodePageLoading || loading"
         :is-admin="!!adminUser"
+        :filter-active="!!normalizedNodeFilter"
         @select-node="selectNode"
         @page-change="loadNodePage"
         @delete-node="requestDeleteNode"

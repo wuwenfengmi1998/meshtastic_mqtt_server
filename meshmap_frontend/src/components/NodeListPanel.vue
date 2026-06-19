@@ -10,6 +10,7 @@ const props = defineProps<{
   total: number
   loading: boolean
   isAdmin: boolean
+  filterActive?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -133,10 +134,15 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="pagination">
-      <button :disabled="loading || !canPrev" @click="emit('page-change', page - 1)">上一页</button>
-      <span>第 {{ page }} / {{ totalPages }} 页</span>
-      <span>每页 {{ pageSize }} 条</span>
-      <button :disabled="loading || !canNext" @click="emit('page-change', page + 1)">下一页</button>
+      <template v-if="filterActive">
+        <span>已筛选，共 {{ total }} 条</span>
+      </template>
+      <template v-else>
+        <button :disabled="loading || !canPrev" @click="emit('page-change', page - 1)">上一页</button>
+        <span>第 {{ page }} / {{ totalPages }} 页</span>
+        <span>每页 {{ pageSize }} 条</span>
+        <button :disabled="loading || !canNext" @click="emit('page-change', page + 1)">下一页</button>
+      </template>
     </div>
   </section>
 </template>
