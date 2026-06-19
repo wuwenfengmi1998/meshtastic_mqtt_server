@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -46,6 +48,7 @@ const (
 
 type meshtasticFilterHook struct {
 	mqtt.HookBase
+	server          *mqtt.Server
 	key             []byte
 	dbQueue         *storepkg.WriteQueue
 	stats           *mqttforwardpkg.Stats
@@ -82,7 +85,38 @@ func (h *meshtasticFilterHook) OnConnect(cl *mqtt.Client, pk packets.Packet) err
 		printJSON(map[string]any{"event": "mqtt_client_rejected", "reason": "blocked_ip", "client_id": info.ClientID, "remote_addr": info.RemoteAddr, "remote_host": info.RemoteHost})
 		return packets.ErrNotAuthorized
 	}
+	// 如果该 client_id 当前已经有活动连接（典型场景：同一 Meshtastic 节点被两台 Android
+	// 同时连），broker 默认会按 [MQTT-3.1.4-3] 把旧连接顶下线，导致两边互相踢、日志被刷屏。
+	// 这里给后来者随机加个后缀，避免顶号——CONNACK 不会回传新 ID，但客户端只需要能正常
+	// 收发消息即可，订阅状态在断开后自然清空。
+	if h.server != nil && cl.ID != "" {
+		if existing, ok := h.server.Clients.Get(cl.ID); ok && existing != nil && !existing.Closed() && existing != cl {
+			original := cl.ID
+			cl.ID = original + "-" + randomClientIDSuffix()
+			printJSON(map[string]any{
+				"event":          "mqtt_client_id_renamed",
+				"reason":         "duplicate_client_id",
+				"original_id":    original,
+				"assigned_id":    cl.ID,
+				"remote_addr":    info.RemoteAddr,
+				"remote_host":    info.RemoteHost,
+				"existing_remote": existing.Net.Remote,
+			})
+		}
+	}
 	return nil
+}
+
+// randomClientIDSuffix 生成 4 字符的小写 hex 后缀，用于在 client_id 冲突时给后来的连接重命名。
+// 用 crypto/rand 是为了避免热路径上 math/rand 的并发锁；2 byte 的熵已经足够区分。
+func randomClientIDSuffix() string {
+	var b [2]byte
+	if _, err := cryptorand.Read(b[:]); err != nil {
+		// 极端情况下退到时间戳低 16 位作为兜底
+		fallback := uint16(time.Now().UnixNano())
+		return fmt.Sprintf("%04x", fallback)
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // OnSessionEstablished 在客户端通过认证、会话建立后打印连接日志。
@@ -471,6 +505,7 @@ func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *stor
 		return nil, nil, "", err
 	}
 	hook := &meshtasticFilterHook{
+		server:           server,
 		key:              cfg.Key,
 		dbQueue:          dbQueue,
 		stats:            stats,
