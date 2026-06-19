@@ -168,9 +168,15 @@ function nodeDetailHref(nodeId: string): string {
 }
 
 function openNodeMenu(node: MapNode, event: L.LeafletMouseEvent) {
+  // leaflet 的 contextmenu 监听和我们自己的 handleMapContextMenu 都挂在 mapEl 上，
+  // 普通 stopPropagation 不会阻止同一节点上的后续监听器，必须 stopImmediatePropagation
+  // 否则空白处的「删除所有显示的节点」菜单也会一起弹出来。
+  event.originalEvent.preventDefault()
+  event.originalEvent.stopImmediatePropagation()
   L.DomEvent.stopPropagation(event)
   lastRaisedNodeId.value = node.node_id
   emit('select-node', node.node_id)
+  menuMap.value = false
   menuNode.value = node
   menuX.value = event.originalEvent.clientX
   menuY.value = event.originalEvent.clientY
