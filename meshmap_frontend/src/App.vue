@@ -76,6 +76,7 @@ type PendingDeleteAction =
   | { kind: 'delete-message'; message: DeletableTextMessage }
   | { kind: 'delete-node'; nodeId: string }
   | { kind: 'purge-node'; nodeId: string }
+  | { kind: 'delete-displayed-nodes'; nodeIds: string[] }
   | ({ kind: 'delete-and-block-node' } & NodeActionRequest)
 let refreshTimer: number | undefined
 let mapBoundsTimer: number | undefined
@@ -206,6 +207,9 @@ const deleteModalTitle = computed(() => {
   if (action.kind === 'purge-node') {
     return '确认删除节点'
   }
+  if (action.kind === 'delete-displayed-nodes') {
+    return '确认删除所有显示的节点'
+  }
   return '确认删除并屏蔽节点'
 })
 
@@ -225,6 +229,9 @@ const deleteModalMessage = computed(() => {
   }
   if (action.kind === 'purge-node') {
     return '确定要删除这个节点吗？将同时清理该节点的聊天消息和位置/遥测/路由/路径追踪等数据包记录，此操作不可撤销。'
+  }
+  if (action.kind === 'delete-displayed-nodes') {
+    return `确定要删除当前地图上显示的全部 ${action.nodeIds.length} 个节点吗？将逐个调用删除接口，此操作不可撤销。`
   }
   if (!action.message) {
     return '确定要删除并屏蔽这个节点吗？请输入屏蔽原因。'
@@ -453,6 +460,22 @@ function requestPurgeNode(nodeId: string) {
   pendingDeleteAction.value = { kind: 'purge-node', nodeId }
 }
 
+function requestDeleteDisplayedNodes() {
+  // 收集当前地图上正在显示的节点 ID（仅 type=node，跳过聚合点），并按筛选后的视图顺序去重。
+  const nodeIds = Array.from(
+    new Set(
+      mapItems.value
+        .filter((item): item is Extract<MapRenderable, { type: 'node' }> => item.type === 'node')
+        .map((item) => item.node_id),
+    ),
+  )
+  if (nodeIds.length === 0) {
+    error.value = '当前地图上没有可删除的节点。'
+    return
+  }
+  pendingDeleteAction.value = { kind: 'delete-displayed-nodes', nodeIds }
+}
+
 function requestDeleteAndBlockNode(payload: NodeActionRequest) {
   pendingDeleteAction.value = { kind: 'delete-and-block-node', ...payload }
 }
@@ -480,6 +503,11 @@ async function confirmDeleteModal(payload: { reason?: string }) {
 
   if (action.kind === 'purge-node') {
     await purgeNodeById(action.nodeId)
+    return
+  }
+
+  if (action.kind === 'delete-displayed-nodes') {
+    await deleteDisplayedNodes(action.nodeIds)
     return
   }
 
@@ -568,6 +596,29 @@ async function purgeNodeById(nodeId: string) {
     await removeNodeFromLocalState(nodeId)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+// 逐个调用 deleteNode 串行删除当前地图上显示的节点；某一个失败不阻断后续，最后汇总错误。
+async function deleteDisplayedNodes(nodeIds: string[]) {
+  const failures: string[] = []
+  let lastErrorMessage = ''
+  for (const nodeId of nodeIds) {
+    try {
+      await deleteNode(nodeId)
+      await removeNodeFromLocalState(nodeId)
+    } catch (err) {
+      if (isNodeNotFoundError(err)) {
+        // 已经不在了，本地状态也同步移除即可
+        await removeNodeFromLocalState(nodeId)
+        continue
+      }
+      failures.push(nodeId)
+      lastErrorMessage = err instanceof Error ? err.message : String(err)
+    }
+  }
+  if (failures.length > 0) {
+    error.value = `部分节点删除失败（${failures.length}/${nodeIds.length}）：${lastErrorMessage}`
   }
 }
 
@@ -765,6 +816,7 @@ onBeforeUnmount(() => {
           @clear-node="clearSelectedNode"
           @delete-node="requestDeleteNode"
           @purge-node="requestPurgeNode"
+          @delete-displayed-nodes="requestDeleteDisplayedNodes"
           @delete-and-block-node="requestDeleteAndBlockNode"
         />
       </section>

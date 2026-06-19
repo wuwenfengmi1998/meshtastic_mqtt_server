@@ -244,6 +244,21 @@ export function getAdminMqttStatus(): Promise<AdminMqttStatus> {
   return getJSON<AdminMqttStatus>('/api/admin/mqtt/status')
 }
 
+// 一键断开 MQTT 客户端并把它的远端 IP 加入屏蔽表。
+export function disconnectAndBlockMqttClient(
+  clientId: string,
+  payload: { reason?: string } = {},
+): Promise<{
+  status: string
+  client_id: string
+  ip_value: string
+  disconnected: boolean
+  ip_rule_created: boolean
+  ip_rule_id?: number
+}> {
+  return postJSON(`/api/admin/mqtt/clients/${encodeURIComponent(clientId)}/disconnect-and-block`, payload)
+}
+
 export function getAdminRuntimeSettings(): Promise<AdminRuntimeSettingsResponse> {
   return getJSON<AdminRuntimeSettingsResponse>('/api/admin/runtime-settings')
 }

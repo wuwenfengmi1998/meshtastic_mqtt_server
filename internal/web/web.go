@@ -249,6 +249,67 @@ func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Ma
 		status.MessagesDropped = discardCount
 		c.JSON(http.StatusOK, status)
 	})
+	// 一键断开 MQTT 客户端并把它的远端 IP 加入屏蔽表。reason 由前端传入；写库前先查 IP 避免连接断开后查不到。
+	protected.POST("/mqtt/clients/:client_id/disconnect-and-block", func(c *gin.Context) {
+		if mqttStatus == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "mqtt server not available"})
+			return
+		}
+		clientID := c.Param("client_id")
+		if clientID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid client id"})
+			return
+		}
+		var req struct {
+			Reason string `json:"reason"`
+		}
+		// 请求体允许为空——若没传 reason 就走默认占位。
+		_ = c.ShouldBindJSON(&req)
+		reason := strings.TrimSpace(req.Reason)
+		if reason == "" {
+			reason = "manual disconnect from admin dashboard"
+		}
+
+		host, ok := mqttStatus.LookupClientRemoteHost(clientID)
+		if !ok || host == "" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "mqtt client not found"})
+			return
+		}
+
+		// 先写屏蔽规则，再断开连接：万一断开后客户端立刻重连，新规则已经生效。
+		var ipRule *storepkg.IPBlockingRecord
+		row, err := store.CreateIPBlocking(host, reason, true)
+		switch {
+		case err == nil:
+			ipRule = row
+		case errors.Is(err, storepkg.ErrBlockingAlreadyExists):
+			// 已经存在则忽略——只确保是启用状态。
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if blocking != nil {
+			if err := blocking.Reload(store); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		disconnected := mqttStatus.DisconnectClient(clientID)
+		resp := gin.H{
+			"status":       "ok",
+			"client_id":    clientID,
+			"ip_value":     host,
+			"disconnected": disconnected,
+		}
+		if ipRule != nil {
+			resp["ip_rule_id"] = ipRule.ID
+			resp["ip_rule_created"] = true
+		} else {
+			resp["ip_rule_created"] = false
+		}
+		c.JSON(http.StatusOK, resp)
+	})
 	protected.GET("/users", func(c *gin.Context) {
 		users, err := store.ListUsers()
 		if err != nil {

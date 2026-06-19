@@ -1,7 +1,10 @@
 package web
 
 import (
+	"net"
+
 	mqtt "github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/packets"
 
 	mqttforwardpkg "meshtastic_mqtt_server/internal/mqttforward"
 	storepkg "meshtastic_mqtt_server/internal/store"
@@ -11,6 +14,11 @@ import (
 // 实现一般由 main 包传入（持有真正的 mqtt.Server / 写队列 / 统计器）。
 type MQTTStatusProvider interface {
 	Status() AdminMQTTStatus
+	// DisconnectClient 立即踢掉指定的 MQTT 客户端。clientID 不存在时返回 false。
+	DisconnectClient(clientID string) bool
+	// LookupClientRemoteHost 根据 clientID 查询当前连接的远端主机（不带端口），
+	// 用于把该 IP 加入屏蔽表。clientID 不存在时返回空字符串与 false。
+	LookupClientRemoteHost(clientID string) (string, bool)
 }
 
 // MQTTRuntimeStatus 把 mqtt.Server / 写队列 / 转发统计三个上下文打包成
@@ -126,4 +134,38 @@ func mqttClientInfo(c *mqtt.Client) mqttClientInfoView {
 		Listener:   c.Net.Listener,
 		RemoteAddr: c.Net.Remote,
 	}
+}
+
+// DisconnectClient 实现 MQTTStatusProvider：发送 Disconnect 报文并关闭连接。
+// 使用 ErrAdministrativeAction 作为断开理由，便于日志区分。
+func (m MQTTRuntimeStatus) DisconnectClient(clientID string) bool {
+	if m.Server == nil || clientID == "" {
+		return false
+	}
+	client, ok := m.Server.Clients.Get(clientID)
+	if !ok || client == nil {
+		return false
+	}
+	_ = m.Server.DisconnectClient(client, packets.ErrAdministrativeAction)
+	return true
+}
+
+// LookupClientRemoteHost 实现 MQTTStatusProvider：根据 clientID 查询当前连接的远端 IP。
+// Net.Remote 通常是 "host:port"，这里只返回主机部分；解析失败时回退为整个值。
+func (m MQTTRuntimeStatus) LookupClientRemoteHost(clientID string) (string, bool) {
+	if m.Server == nil || clientID == "" {
+		return "", false
+	}
+	client, ok := m.Server.Clients.Get(clientID)
+	if !ok || client == nil {
+		return "", false
+	}
+	remote := client.Net.Remote
+	if remote == "" {
+		return "", false
+	}
+	if host, _, err := net.SplitHostPort(remote); err == nil && host != "" {
+		return host, true
+	}
+	return remote, true
 }

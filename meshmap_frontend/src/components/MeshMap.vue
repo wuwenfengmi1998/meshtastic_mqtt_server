@@ -25,6 +25,7 @@ const emit = defineEmits<{
   'clear-node': []
   'delete-node': [nodeId: string]
   'purge-node': [nodeId: string]
+  'delete-displayed-nodes': []
   'delete-and-block-node': [payload: { nodeId: string; nodeNum: number | null }]
   'bounds-change': [payload: MapBoundsChangePayload]
   'map-source-change': [sourceId: number]
@@ -32,6 +33,7 @@ const emit = defineEmits<{
 
 const mapEl = ref<HTMLElement | null>(null)
 const menuNode = ref<MapNode | null>(null)
+const menuMap = ref(false)
 const menuX = ref(0)
 const menuY = ref(0)
 const lastRaisedNodeId = ref<string | null>(null)
@@ -73,6 +75,12 @@ onMounted(async () => {
     shuffledSelectedNodeIds.clear()
     emit('clear-node')
   })
+  // 地图空白处右键：在管理员视图下展示「删除所有显示的节点」入口。
+  // 必须在原生 contextmenu 上 preventDefault，Leaflet 的事件包装层不会阻止浏览器默认菜单。
+  mapEl.value.addEventListener('contextmenu', handleMapContextMenu)
+  map.on('contextmenu', (event) => {
+    L.DomEvent.stopPropagation(event)
+  })
   map.on('moveend', emitBoundsChange)
   markerLayer = L.layerGroup().addTo(map)
   renderMarkers(true)
@@ -82,6 +90,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('click', closeNodeMenu)
   window.removeEventListener('keydown', handleKeydown)
+  mapEl.value?.removeEventListener('contextmenu', handleMapContextMenu)
   map?.remove()
   map = null
   tileLayer = null
@@ -125,6 +134,33 @@ function applyTileLayer() {
 
 function closeNodeMenu() {
   menuNode.value = null
+  menuMap.value = false
+}
+
+function openMapMenu(event: MouseEvent) {
+  if (!props.isAdmin) {
+    return
+  }
+  menuNode.value = null
+  menuMap.value = true
+  menuX.value = event.clientX
+  menuY.value = event.clientY
+}
+
+function handleMapContextMenu(event: MouseEvent) {
+  // 总是阻止浏览器默认菜单。即使非管理员也阻止，避免在 marker 上右键漏到地图后又弹默认菜单。
+  event.preventDefault()
+  // marker 自身已通过 marker.on('contextmenu') 处理；这里仅响应空白处。
+  const target = event.target as HTMLElement | null
+  if (target?.closest('.leaflet-marker-icon, .leaflet-popup, .map-source-control, .context-menu')) {
+    return
+  }
+  openMapMenu(event)
+}
+
+function deleteAllDisplayedNodes() {
+  emit('delete-displayed-nodes')
+  closeNodeMenu()
 }
 
 function nodeDetailHref(nodeId: string): string {
@@ -600,6 +636,14 @@ function escapeHTML(value: string): string {
       <button v-if="isAdmin" class="danger" type="button" @click="deleteSelectedNode">删除</button>
       <button v-if="isAdmin" class="danger" type="button" @click="purgeSelectedNode">删除节点</button>
       <button v-if="isAdmin" class="danger" type="button" @click="deleteAndBlockSelectedNode">删除并屏蔽节点</button>
+    </div>
+    <div
+      v-if="menuMap && isAdmin"
+      class="context-menu"
+      :style="{ left: `${menuX}px`, top: `${menuY}px` }"
+      @click.stop
+    >
+      <button class="danger" type="button" @click="deleteAllDisplayedNodes">删除所有显示的节点</button>
     </div>
   </section>
 </template>

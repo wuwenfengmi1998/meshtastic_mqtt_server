@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { getAdminMqttStatus, getAdminRuntimeSettings, updateAdminRuntimeSettings } from '../api'
+import { disconnectAndBlockMqttClient, getAdminMqttStatus, getAdminRuntimeSettings, updateAdminRuntimeSettings } from '../api'
+import ConfirmDeleteModal from './ConfirmDeleteModal.vue'
 import type { AdminMqttClient, AdminMqttStatus, AdminRuntimeSettings } from '../types'
 
 const status = ref<AdminMqttStatus | null>(null)
@@ -10,6 +11,10 @@ const settingsLoading = ref(false)
 const error = ref('')
 const settingsError = ref('')
 const settingsMessage = ref('')
+const clientActionMessage = ref('')
+const clientActionError = ref('')
+const pendingClient = ref<AdminMqttClient | null>(null)
+const clientActionInProgress = ref(false)
 let timer: number | undefined
 
 type ClientSortKey = 'client_id' | 'username' | 'listener' | 'remote_addr' | 'packets_in' | 'packets_out'
@@ -99,6 +104,64 @@ async function saveEncryptedForwarding(value: boolean) {
     settingsLoading.value = false
   }
 }
+
+function requestDisconnectAndBlock(client: AdminMqttClient) {
+  clientActionMessage.value = ''
+  clientActionError.value = ''
+  pendingClient.value = client
+}
+
+function cancelClientAction() {
+  if (clientActionInProgress.value) {
+    return
+  }
+  pendingClient.value = null
+}
+
+async function confirmClientAction(payload: { reason?: string }) {
+  const client = pendingClient.value
+  if (!client) {
+    return
+  }
+  const reason = payload.reason?.trim()
+  if (!reason) {
+    return
+  }
+  clientActionInProgress.value = true
+  clientActionError.value = ''
+  clientActionMessage.value = ''
+  try {
+    const result = await disconnectAndBlockMqttClient(client.client_id, { reason })
+    const ipText = result.ip_value || client.remote_addr || '-'
+    const ruleText = result.ip_rule_created ? '已新增屏蔽规则' : '屏蔽规则已存在'
+    const disconnectText = result.disconnected ? '已断开连接' : '连接已不存在'
+    clientActionMessage.value = `${disconnectText}，IP ${ipText} ${ruleText}。`
+    pendingClient.value = null
+    await refreshStatus()
+  } catch (err) {
+    clientActionError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    clientActionInProgress.value = false
+  }
+}
+
+const pendingClientLabel = computed(() => {
+  const client = pendingClient.value
+  if (!client) {
+    return ''
+  }
+  const ip = client.remote_addr || '-'
+  return `Client ID: ${client.client_id || '-'}\n远端: ${ip}`
+})
+
+const clientActionMessageText = computed(() => {
+  const client = pendingClient.value
+  if (!client) {
+    return ''
+  }
+  const ip = client.remote_addr ? client.remote_addr.replace(/:\d+$/, '') : '该客户端的 IP'
+  return `确定要立即断开 MQTT 客户端 “${client.client_id || '-'}” 并将 ${ip} 加入 IP 屏蔽表吗？此操作会立即生效，请输入屏蔽原因。\n\n${pendingClientLabel.value}`
+})
 
 onMounted(() => {
   refreshStatus()
@@ -199,6 +262,7 @@ onBeforeUnmount(() => {
               <th class="sortable" @click="toggleClientSort('remote_addr')">Remote Addr <span class="sort-indicator">{{ sortIndicator('remote_addr') }}</span></th>
               <th class="sortable" @click="toggleClientSort('packets_in')">客户端→服务器 <span class="sort-indicator">{{ sortIndicator('packets_in') }}</span></th>
               <th class="sortable" @click="toggleClientSort('packets_out')">服务器→客户端 <span class="sort-indicator">{{ sortIndicator('packets_out') }}</span></th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -209,12 +273,34 @@ onBeforeUnmount(() => {
               <td>{{ client.remote_addr || '-' }}</td>
               <td>{{ client.packets_in ?? 0 }}</td>
               <td>{{ client.packets_out ?? 0 }}</td>
+              <td>
+                <button
+                  type="button"
+                  class="client-danger-action"
+                  :disabled="clientActionInProgress"
+                  @click="requestDisconnectAndBlock(client)"
+                >断开并屏蔽 IP</button>
+              </td>
             </tr>
           </tbody>
         </table>
         <div v-if="!status?.clients?.length" class="empty">暂无客户端连接</div>
+        <p v-if="clientActionMessage" class="success client-action-feedback">{{ clientActionMessage }}</p>
+        <p v-if="clientActionError" class="error client-action-feedback">{{ clientActionError }}</p>
       </div>
     </div>
+
+    <ConfirmDeleteModal
+      :open="!!pendingClient"
+      title="确认断开并屏蔽 IP"
+      :message="clientActionMessageText"
+      confirm-text="断开并屏蔽"
+      :require-reason="true"
+      reason-label="屏蔽原因"
+      reason-placeholder="请输入屏蔽原因（必填）"
+      @cancel="cancelClientAction"
+      @confirm="confirmClientAction"
+    />
   </section>
 </template>
 
@@ -402,5 +488,32 @@ onBeforeUnmount(() => {
   margin-left: 4px;
   font-size: 11px;
   color: var(--color-primary);
+}
+
+.client-danger-action {
+  border: 1px solid color-mix(in srgb, var(--color-danger, #d04848) 36%, white);
+  border-radius: 6px;
+  padding: 4px 10px;
+  background: color-mix(in srgb, var(--color-danger, #d04848) 10%, white);
+  color: var(--color-danger, #d04848);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.client-danger-action:hover:not(:disabled) {
+  background: var(--color-danger, #d04848);
+  color: #fff;
+}
+
+.client-danger-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.client-action-feedback {
+  margin: 0.5rem 0 0;
+  white-space: pre-line;
 }
 </style>
