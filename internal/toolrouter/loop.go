@@ -60,8 +60,8 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 	if emit != nil {
 		emit(stream.Frame{Type: "trace", Tool: "agent_tools", Stage: "prepare", Status: "success", Message: "已准备可用工具", Data: map[string]any{"tools": availableNames, "tool_descriptions": toolDescriptions}})
 	}
-	if state == nil || state.cfg == nil {
-		// No tool router config, but we have tools - use primary system prompt
+	if state == nil {
+		// No tool router state, but we have tools - use primary system prompt
 		if strings.TrimSpace(systemPrompt) != "" {
 			systemMessage := &model.ChatCompletionMessage{
 				Role: "system",
@@ -74,8 +74,10 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 		}
 		return finalMessages, nil
 	}
+	// 每轮调用都重新加载最新配置，确保管理员在 /admin/llm/api 保存后立即生效
+	cfg := state.effectiveConfig()
 	// Use tool router system prompt if available, otherwise fall back to primary system prompt
-	prompt := strings.TrimSpace(state.cfg.SystemPrompt)
+	prompt := strings.TrimSpace(cfg.SystemPrompt)
 	if prompt == "" {
 		prompt = strings.TrimSpace(systemPrompt)
 	}
@@ -96,11 +98,11 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 		resp, err := completion.CompleteChat(ctx, routerProfile, model.CreateChatCompletionRequest{
 			Model:             routerProfile.Config.Model,
 			Messages:          decisionMessages,
-			MaxTokens:         &state.cfg.MaxTokens,
+			MaxTokens:         &cfg.MaxTokens,
 			Tools:             definitions,
 			ToolChoice:        model.ToolChoiceStringTypeAuto,
 			ParallelToolCalls: BoolPtr(false),
-		}, time.Duration(state.cfg.Timeout)*time.Second)
+		}, time.Duration(cfg.Timeout)*time.Second)
 		if err != nil {
 			return finalMessages, err
 		}

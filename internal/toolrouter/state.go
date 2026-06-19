@@ -17,14 +17,29 @@ type Config struct {
 	SystemPrompt string
 }
 
+// ConfigStore 定义从持久化层读取最新 ToolRouter 配置的能力。
+// 每次 RunAgentToolLoop 都会调用 LoadToolRouterConfig，从而保证管理员
+// 在 /admin/llm/api 修改配置后立即生效，无需重启。
+type ConfigStore interface {
+	LoadToolRouterConfig() (*Config, error)
+}
+
 // State manages the tool router state
 type State struct {
-	cfg *Config
-	ai  *llm.State
+	cfg   *Config
+	ai    *llm.State
+	store ConfigStore
 }
 
 // Option is a function that configures the State
 type Option func(*State)
+
+// WithConfigStore 注入运行时配置加载器，State 会在每次需要时拉取最新配置。
+func WithConfigStore(store ConfigStore) Option {
+	return func(s *State) {
+		s.store = store
+	}
+}
 
 // NewState creates a new tool router state
 func NewState(cfg *Config, ai *llm.State, options ...Option) (*State, error) {
@@ -51,12 +66,31 @@ func NewState(cfg *Config, ai *llm.State, options ...Option) (*State, error) {
 	return state, nil
 }
 
+// effectiveConfig 返回当前生效的配置：优先从 store 加载最新值，加载失败时回退到内存 cfg。
+// 调用方拿到的永远是非 nil 指针；内存 cfg 也保持同步以便其它读取点。
+func (s *State) effectiveConfig() *Config {
+	if s == nil {
+		return &Config{}
+	}
+	if s.store != nil {
+		if latest, err := s.store.LoadToolRouterConfig(); err == nil && latest != nil {
+			s.cfg = latest
+			return latest
+		}
+	}
+	if s.cfg == nil {
+		return &Config{}
+	}
+	return s.cfg
+}
+
 // RouterProfile returns the LLM profile configured for the tool router
 func (s *State) RouterProfile(fallback *llm.Profile) *llm.Profile {
-	if s == nil || s.cfg == nil || s.ai == nil {
+	if s == nil || s.ai == nil {
 		return fallback
 	}
-	name := strings.TrimSpace(s.cfg.OpenAIName)
+	cfg := s.effectiveConfig()
+	name := strings.TrimSpace(cfg.OpenAIName)
 	if name == "" {
 		return fallback
 	}
@@ -69,8 +103,8 @@ func (s *State) RouterProfile(fallback *llm.Profile) *llm.Profile {
 
 // Config returns a copy of the current configuration
 func (s *State) Config() Config {
-	if s == nil || s.cfg == nil {
+	if s == nil {
 		return Config{}
 	}
-	return *s.cfg
+	return *s.effectiveConfig()
 }

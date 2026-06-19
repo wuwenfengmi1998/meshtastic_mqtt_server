@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"meshtastic_mqtt_server/internal/autoreply"
 	"meshtastic_mqtt_server/internal/conversation"
 	"meshtastic_mqtt_server/internal/llm"
+	storepkg "meshtastic_mqtt_server/internal/store"
 	"meshtastic_mqtt_server/internal/toolmanager"
 	"meshtastic_mqtt_server/internal/toolrouter"
 
@@ -24,13 +26,22 @@ type ToolConfigStore interface {
 	GetLLMPrimaryConfigEnableTool() (bool, error)
 }
 
+// ToolRouterStore 是 ai 服务依赖的 ToolRouter 持久化接口；
+// 通常由 *store.Store 实现（GetLLMToolRouter）。
+// 通过本接口我们可以让 toolrouter 在每轮调用时拉取最新配置，
+// 让 /admin/llm/api 中的修改在保存后立即生效（无需重启）。
+type ToolRouterStore interface {
+	GetLLMToolRouter() (*storepkg.LLMToolRouterRecord, error)
+}
+
 // Config holds the AI service configuration
 type Config struct {
-	LLMProviders     []llm.ProviderConfig
-	DataDir          string
-	Enabled          bool
-	ConsoleLog       bool
-	ToolConfigStore  ToolConfigStore
+	LLMProviders    []llm.ProviderConfig
+	DataDir         string
+	Enabled         bool
+	ConsoleLog      bool
+	ToolConfigStore ToolConfigStore
+	ToolRouterStore ToolRouterStore
 }
 
 // Service manages all AI-related components
@@ -43,6 +54,41 @@ type Service struct {
 	MsgQueue   *autoreply.DBMessageQueue
 
 	enabled bool
+}
+
+// toolRouterConfigAdapter 把 ToolRouterStore 适配成 toolrouter.ConfigStore，
+// 每次 LoadToolRouterConfig 都从 DB 拉取最新一行 llm_tool_router。
+type toolRouterConfigAdapter struct {
+	store ToolRouterStore
+}
+
+// LoadToolRouterConfig 实现 toolrouter.ConfigStore。
+// 当 DB 没有记录时返回 nil + nil，由 toolrouter 内部回退到内存默认值。
+func (a *toolRouterConfigAdapter) LoadToolRouterConfig() (*toolrouter.Config, error) {
+	if a == nil || a.store == nil {
+		return nil, errors.New("tool router store is not configured")
+	}
+	record, err := a.store.GetLLMToolRouter()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toolRouterConfigFromRecord(record), nil
+}
+
+func toolRouterConfigFromRecord(r *storepkg.LLMToolRouterRecord) *toolrouter.Config {
+	if r == nil {
+		return nil
+	}
+	return &toolrouter.Config{
+		Enabled:      r.Enabled,
+		OpenAIName:   r.OpenAIName,
+		Timeout:      r.Timeout,
+		MaxTokens:    r.MaxTokens,
+		SystemPrompt: r.SystemPrompt,
+	}
 }
 
 // NewService creates a new AI service
@@ -67,14 +113,21 @@ func NewService(cfg Config, db *gorm.DB, botSender autoreply.BotSender) (*Servic
 		return nil, fmt.Errorf("failed to initialize LLM state: %w", err)
 	}
 
-	// Initialize tool router
-	toolRouterCfg := &toolrouter.Config{
-		Enabled:      true,
-		Timeout:      30,
-		MaxTokens:    512,
-		SystemPrompt: "你是一个智能助手，可以调用工具来回答用户问题。\n用户正在通过 Mesh 网络与你对话，请保持回答简洁明了。\n工具结果优先于模型内置知识。",
+	// 初始化 tool router：优先从 DB 读取已保存的配置，避免硬编码 prompt 把
+	// 用户在 /admin/llm/api 配置好的内容覆盖掉。
+	var (
+		toolRouterCfg     *toolrouter.Config
+		toolRouterOptions []toolrouter.Option
+	)
+	if cfg.ToolRouterStore != nil {
+		adapter := &toolRouterConfigAdapter{store: cfg.ToolRouterStore}
+		// 启动时拉一次作为初始 cfg；失败或为空时让 toolrouter.NewState 走内置默认值。
+		if loaded, loadErr := adapter.LoadToolRouterConfig(); loadErr == nil && loaded != nil {
+			toolRouterCfg = loaded
+		}
+		toolRouterOptions = append(toolRouterOptions, toolrouter.WithConfigStore(adapter))
 	}
-	toolRouter, err := toolrouter.NewState(toolRouterCfg, llmState)
+	toolRouter, err := toolrouter.NewState(toolRouterCfg, llmState, toolRouterOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize tool router: %w", err)
 	}
