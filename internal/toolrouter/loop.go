@@ -219,19 +219,35 @@ func IntPtr(i int) *int {
 // signIntentKeywords 是判定签到意图的关键词。命中任一即认为用户想签到。
 var signIntentKeywords = []string{"签到", "打卡", "上台"}
 
-// detectSignIntent 取最后一条用户消息，若包含签到意图关键词则返回该消息原文
-//（去除前缀的「[来自 ...]」等格式化包装），否则返回空串。
+// signNegationKeywords 是会否决签到意图的关键词。当消息同时命中签到关键词与
+// 这些否决词时，说明用户不是要签到，而是要对签到记录做删除/查询/取消等操作，
+// 此时不应强制签到（否则会把「删除签到信息」这句话本身当签到正文写库）。
+var signNegationKeywords = []string{"删除", "取消", "撤回", "撤销", "清除", "清空", "查询", "查看", "列表", "统计", "不要", "别"}
+
+// detectSignIntent 取最后一条用户消息，若包含签到意图关键词（且不含否决词）
+// 则返回该消息原文（去除前缀的「[来自 ...]」等格式化包装），否则返回空串。
 func detectSignIntent(chatMessages []message.ChatMessage) string {
 	userText := lastUserMessageText(chatMessages)
 	if strings.TrimSpace(userText) == "" {
 		return ""
 	}
+	hit := false
 	for _, kw := range signIntentKeywords {
 		if strings.Contains(userText, kw) {
-			return stripFromPrefix(userText)
+			hit = true
+			break
 		}
 	}
-	return ""
+	if !hit {
+		return ""
+	}
+	// 命中否决词则不视为签到意图
+	for _, kw := range signNegationKeywords {
+		if strings.Contains(userText, kw) {
+			return ""
+		}
+	}
+	return stripFromPrefix(userText)
 }
 
 // stripFromPrefix 去掉 autoreply.formatUserMessage 加上的「[来自 ...] 」前缀，
