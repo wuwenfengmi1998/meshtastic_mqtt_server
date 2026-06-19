@@ -140,6 +140,59 @@ func (s *Store) EnsureDefaultLLMToolRouter() error {
 }
 
 // ============================================
+// LLM Topic Config (llm_topic_config) - 话题选择配置
+// ============================================
+
+// GetLLMTopicConfig 获取当前激活的话题选择配置
+func (s *Store) GetLLMTopicConfig() (*LLMTopicConfigRecord, error) {
+	var record LLMTopicConfigRecord
+	// 默认取第一条记录（ID 最小的），因为通常只需要一个配置
+	if err := s.db.Order("id ASC").First(&record).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("get llm topic config: %w", err)
+	}
+	return &record, nil
+}
+
+// CreateLLMTopicConfig 创建话题选择配置
+func (s *Store) CreateLLMTopicConfig(record *LLMTopicConfigRecord) error {
+	if err := s.db.Create(record).Error; err != nil {
+		return fmt.Errorf("create llm topic config: %w", err)
+	}
+	return nil
+}
+
+// UpdateLLMTopicConfig 更新话题选择配置
+func (s *Store) UpdateLLMTopicConfig(id uint64, updates map[string]any) error {
+	if err := s.db.Model(&LLMTopicConfigRecord{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return fmt.Errorf("update llm topic config %d: %w", id, err)
+	}
+	return nil
+}
+
+// EnsureDefaultLLMTopicConfig 确保存在默认话题选择配置
+func (s *Store) EnsureDefaultLLMTopicConfig() error {
+	_, err := s.GetLLMTopicConfig()
+	if err == nil {
+		return nil // 已存在
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	// 创建默认配置（默认未启用）
+	defaultConfig := &LLMTopicConfigRecord{
+		Enabled:      false,
+		OpenAIName:   "",
+		Timeout:      30,
+		MaxTokens:    512,
+		SystemPrompt: "你是一个话题过滤器，判断用户最新消息是否属于应当回复的话题范围。\n如果应当回复，请输出 REPLY；如果不应当回复，请输出 IGNORE。\n只输出 REPLY 或 IGNORE，不要输出任何其他内容。",
+	}
+	return s.CreateLLMTopicConfig(defaultConfig)
+}
+
+// ============================================
 // LLM Primary Config (llm_primary_config) - 主 AI 回复配置
 // ============================================
 

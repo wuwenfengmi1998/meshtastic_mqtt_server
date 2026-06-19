@@ -5,12 +5,14 @@ import {
   deleteLLMProvider,
   getLLMProviders,
   getLLMToolRouter,
+  getLLMTopicConfig,
   getLLMPrimaryConfig,
   updateLLMProvider,
   updateLLMToolRouter,
+  updateLLMTopicConfig,
   updateLLMPrimaryConfig,
 } from '../api'
-import type { LLMPlatformRouter, LLMProvider, LLMPrimaryConfig } from '../types'
+import type { LLMPlatformRouter, LLMTopicConfig, LLMProvider, LLMPrimaryConfig } from '../types'
 
 const loading = ref(false)
 const error = ref('')
@@ -38,6 +40,18 @@ const editingToolRouter = ref(false)
 
 const toolRouterForm = ref({
   enabled: true,
+  openai_name: '',
+  timeout: 30,
+  max_tokens: 512,
+  system_prompt: '',
+})
+
+// Topic Config 相关 - 话题选择配置
+const topicConfig = ref<LLMTopicConfig | null>(null)
+const editingTopicConfig = ref(false)
+
+const topicConfigForm = ref({
+  enabled: false,
   openai_name: '',
   timeout: 30,
   max_tokens: 512,
@@ -95,6 +109,16 @@ async function loadPrimaryConfig() {
   } catch (err) {
     // 如果不存在，使用默认值
     console.warn('Primary AI config not found, using defaults')
+  }
+}
+
+async function loadTopicConfig() {
+  try {
+    const response = await getLLMTopicConfig()
+    topicConfig.value = response.item
+  } catch (err) {
+    // 如果不存在，使用默认值
+    console.warn('Topic config not found, using defaults')
   }
 }
 
@@ -203,6 +227,35 @@ async function saveToolRouter() {
   }
 }
 
+function openEditTopicConfig() {
+  if (topicConfig.value) {
+    topicConfigForm.value = {
+      enabled: topicConfig.value.enabled,
+      openai_name: topicConfig.value.openai_name,
+      timeout: topicConfig.value.timeout,
+      max_tokens: topicConfig.value.max_tokens,
+      system_prompt: topicConfig.value.system_prompt,
+    }
+  }
+  editingTopicConfig.value = true
+}
+
+function closeTopicConfigForm() {
+  editingTopicConfig.value = false
+}
+
+async function saveTopicConfig() {
+  try {
+    await updateLLMTopicConfig(topicConfigForm.value)
+    success.value = '更新成功'
+    clearSuccess()
+    closeTopicConfigForm()
+    await loadTopicConfig()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
 function openEditPrimaryConfig() {
   if (primaryConfig.value) {
     primaryConfigForm.value = {
@@ -236,6 +289,7 @@ async function savePrimaryConfig() {
 onMounted(() => {
   loadProviders()
   loadToolRouter()
+  loadTopicConfig()
   loadPrimaryConfig()
 })
 </script>
@@ -383,6 +437,90 @@ onMounted(() => {
 
       <div v-else class="empty-state">
         <p>暂无工具路由配置，点击上方按钮进行配置。</p>
+      </div>
+    </div>
+
+    <!-- Topic Config 配置 - 话题选择配置 -->
+    <div class="admin-section">
+      <div class="section-header">
+        <div>
+          <h3>话题选择配置</h3>
+          <p class="section-desc">当工具路由未命中任何工具时，由话题选择判断是否回复。命中（输出 REPLY）才进入主回复，否则丢弃不回复。</p>
+        </div>
+        <button v-if="!editingTopicConfig" class="admin-button" @click="openEditTopicConfig">编辑配置</button>
+      </div>
+
+      <div v-if="editingTopicConfig" class="tool-router-form">
+        <div class="form-group">
+          <label>
+            <input type="checkbox" v-model="topicConfigForm.enabled" />
+            启用话题选择
+          </label>
+          <p class="form-hint">未启用时，未命中工具的消息一律进入主回复（不做过滤）</p>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>使用的 AI 配置</label>
+            <select v-model="topicConfigForm.openai_name" class="form-input">
+              <option value="">请选择</option>
+              <option v-for="p in activeProviders" :key="p.name" :value="p.name">{{ p.name }}</option>
+            </select>
+            <p class="form-hint">选择用于话题判定的 AI 提供商配置，留空则使用主回复配置</p>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>超时时间（秒）</label>
+            <input type="number" v-model.number="topicConfigForm.timeout" class="form-input" min="1" />
+          </div>
+          <div class="form-group">
+            <label>最大 Token 数</label>
+            <input type="number" v-model.number="topicConfigForm.max_tokens" class="form-input" min="1" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>系统提示词</label>
+          <textarea v-model="topicConfigForm.system_prompt" class="form-textarea" rows="6"></textarea>
+          <p class="form-hint">要求模型对应当回复的消息输出 REPLY，否则输出 IGNORE</p>
+        </div>
+
+        <div class="form-actions">
+          <button class="admin-button admin-button-secondary" @click="closeTopicConfigForm">取消</button>
+          <button class="admin-button" @click="saveTopicConfig">保存</button>
+        </div>
+      </div>
+
+      <div v-else-if="topicConfig" class="tool-router-display">
+        <div class="router-status">
+          <span class="status-badge" :class="{ active: topicConfig.enabled, inactive: !topicConfig.enabled }">
+            {{ topicConfig.enabled ? '已启用' : '已停用' }}
+          </span>
+        </div>
+        <div class="router-details">
+          <div class="detail-row">
+            <span class="detail-label">使用的 AI 配置</span>
+            <span class="detail-value">{{ topicConfig.openai_name || '未设置（使用主回复配置）' }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">超时时间</span>
+            <span class="detail-value">{{ topicConfig.timeout }} 秒</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">最大 Token 数</span>
+            <span class="detail-value">{{ topicConfig.max_tokens }}</span>
+          </div>
+          <div class="detail-row full-width">
+            <span class="detail-label">系统提示词</span>
+            <pre class="detail-value system-prompt">{{ topicConfig.system_prompt }}</pre>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="empty-state">
+        <p>暂无话题选择配置，点击上方按钮进行配置。</p>
       </div>
     </div>
 

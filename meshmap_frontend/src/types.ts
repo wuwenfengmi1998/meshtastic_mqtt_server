@@ -669,6 +669,30 @@ export interface LLMPlatformRouterResponse {
   item: LLMPlatformRouter
 }
 
+// LLM Topic Config 相关类型 - 话题选择配置
+export interface LLMTopicConfig {
+  id: number
+  enabled: boolean
+  openai_name: string
+  timeout: number
+  max_tokens: number
+  system_prompt: string
+  created_at: string
+  updated_at: string
+}
+
+export interface LLMTopicConfigPayload {
+  enabled: boolean
+  openai_name: string
+  timeout: number
+  max_tokens: number
+  system_prompt: string
+}
+
+export interface LLMTopicConfigResponse {
+  item: LLMTopicConfig
+}
+
 // LLM Primary Config 相关类型 - 主 AI 回复配置
 export interface LLMPrimaryConfig {
   id: number

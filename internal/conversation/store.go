@@ -180,6 +180,25 @@ func (s *Store) AddMessage(convID string, msg message.ChatMessage) error {
 	return s.Save(conv)
 }
 
+// PopLastMessage 移除会话中最后一条消息（例如被话题选择丢弃、不应保留在上下文里的用户消息）。
+// 若会话没有消息则不做任何改动。返回移除的消息内容，便于调用方记录日志。
+func (s *Store) PopLastMessage(convID string) (message.ChatMessage, error) {
+	conv, err := s.Get(convID)
+	if err != nil {
+		return message.ChatMessage{}, err
+	}
+	if len(conv.Messages) == 0 {
+		return message.ChatMessage{}, nil
+	}
+	last := conv.Messages[len(conv.Messages)-1]
+	conv.Messages = conv.Messages[:len(conv.Messages)-1]
+	// 若弹出后没有消息了，重置标题，避免残留被丢弃消息的文本。
+	if len(conv.Messages) == 0 {
+		conv.Title = "新对话"
+	}
+	return last, s.Save(conv)
+}
+
 // atomicWriteJSON writes JSON to a file atomically
 func atomicWriteJSON(path string, v any) error {
 	tmp := path + ".tmp"

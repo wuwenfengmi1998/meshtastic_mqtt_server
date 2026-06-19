@@ -15,6 +15,7 @@ import (
 	"meshtastic_mqtt_server/internal/message"
 	"meshtastic_mqtt_server/internal/stream"
 	"meshtastic_mqtt_server/internal/toolmanager"
+	"meshtastic_mqtt_server/internal/topicrouter"
 	"meshtastic_mqtt_server/internal/toolrouter"
 
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
@@ -77,6 +78,7 @@ type ToolConfigStore interface {
 type Service struct {
 	llmState        *llm.State
 	toolRouter      *toolrouter.State
+	topicRouter     *topicrouter.State
 	toolMgr         *toolmanager.Manager
 	convStore       *conversation.Store
 	msgQueue        MessageQueue
@@ -94,6 +96,7 @@ type Service struct {
 func NewService(
 	llmState *llm.State,
 	toolRouter *toolrouter.State,
+	topicRouter *topicrouter.State,
 	toolMgr *toolmanager.Manager,
 	convStore *conversation.Store,
 	msgQueue MessageQueue,
@@ -104,6 +107,7 @@ func NewService(
 	return &Service{
 		llmState:        llmState,
 		toolRouter:      toolRouter,
+		topicRouter:     topicRouter,
 		toolMgr:         toolMgr,
 		convStore:       convStore,
 		msgQueue:        msgQueue,
@@ -327,6 +331,7 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 	// Run the tool loop to get augmented messages - pass system prompt to tool router
 	// Tool loop will handle system prompt and tool calling
 	var augmentedMessages []*model.ChatCompletionMessage
+	toolUsed := false
 	if enableTool && toolCount > 0 {
 		routerProfile := s.toolRouter.RouterProfile(profile)
 		routerModel := profile.Config.Model
@@ -334,7 +339,7 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 			routerModel = routerProfile.Config.Model
 		}
 		s.logf("msg=%d router_model=%s tool_loop start", msg.ID, routerModel)
-		augmentedMessages, err = toolrouter.RunAgentToolLoop(procCtx, s.toolRouter, profile, systemPrompt, conv.Messages, s.toolMgr, s.emit(msg.ID, routerModel))
+		augmentedMessages, toolUsed, err = toolrouter.RunAgentToolLoop(procCtx, s.toolRouter, profile, systemPrompt, conv.Messages, s.toolMgr, s.emit(msg.ID, routerModel))
 		if err != nil {
 			s.logf("msg=%d WARN tool_loop err=%v", msg.ID, err)
 			// Continue with original messages if tool loop fails
@@ -342,6 +347,27 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 	}
 
 	s.logf("msg=%d completion start has_system_prompt=%t augmented=%d", msg.ID, systemPrompt != "", len(augmentedMessages))
+
+	// 若工具路由未实际调用任何工具，则进入话题选择判定：
+	// 命中（REPLY/放行）才进入主回复，未命中则丢弃不回复。
+	if !toolUsed {
+		shouldReply, judgeErr := topicrouter.Judge(procCtx, s.topicRouter, profile, conv.Messages)
+		if judgeErr != nil {
+			s.logf("msg=%d WARN topic_judge err=%v (放行)", msg.ID, judgeErr)
+		}
+		if !shouldReply {
+			s.logf("msg=%d topic_judge=IGNORE → 丢弃不回复", msg.ID)
+			// 把刚加入会话的用户消息弹出，避免它残留在上下文里被下一次回复附带回答。
+			if popped, popErr := s.convStore.PopLastMessage(conv.ID); popErr != nil {
+				s.logf("msg=%d WARN pop_discarded_message err=%v", msg.ID, popErr)
+			} else if popped.Content != "" {
+				s.logf("msg=%d pop_discarded_message content=%q", msg.ID, truncate(popped.Content, 200))
+			}
+			_ = s.msgQueue.MarkAsProcessed(msg.ID, "")
+			return
+		}
+		s.logf("msg=%d topic_judge=REPLY → 进入主回复", msg.ID)
+	}
 
 	// Use augmented messages from tool loop (already includes system prompt and tool results)
 	// If augmented messages is empty or nil, fallback to original messages with system prompt

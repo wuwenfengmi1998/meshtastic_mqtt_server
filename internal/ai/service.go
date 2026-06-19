@@ -15,6 +15,7 @@ import (
 	"meshtastic_mqtt_server/internal/llm"
 	storepkg "meshtastic_mqtt_server/internal/store"
 	"meshtastic_mqtt_server/internal/toolmanager"
+	"meshtastic_mqtt_server/internal/topicrouter"
 	"meshtastic_mqtt_server/internal/toolrouter"
 
 	"gorm.io/gorm"
@@ -34,6 +35,12 @@ type ToolRouterStore interface {
 	GetLLMToolRouter() (*storepkg.LLMToolRouterRecord, error)
 }
 
+// TopicRouterStore 是 ai 服务依赖的话题选择持久化接口；
+// 通常由 *store.Store 实现（GetLLMTopicConfig）。
+type TopicRouterStore interface {
+	GetLLMTopicConfig() (*storepkg.LLMTopicConfigRecord, error)
+}
+
 // Config holds the AI service configuration
 type Config struct {
 	LLMProviders    []llm.ProviderConfig
@@ -42,16 +49,18 @@ type Config struct {
 	ConsoleLog      bool
 	ToolConfigStore ToolConfigStore
 	ToolRouterStore ToolRouterStore
+	TopicRouterStore TopicRouterStore
 }
 
 // Service manages all AI-related components
 type Service struct {
-	LLMState   *llm.State
-	ToolRouter *toolrouter.State
-	ToolMgr    *toolmanager.Manager
-	ConvStore  *conversation.Store
-	AutoReply  *autoreply.Service
-	MsgQueue   *autoreply.DBMessageQueue
+	LLMState    *llm.State
+	ToolRouter  *toolrouter.State
+	TopicRouter *topicrouter.State
+	ToolMgr     *toolmanager.Manager
+	ConvStore   *conversation.Store
+	AutoReply   *autoreply.Service
+	MsgQueue    *autoreply.DBMessageQueue
 
 	enabled bool
 }
@@ -83,6 +92,41 @@ func toolRouterConfigFromRecord(r *storepkg.LLMToolRouterRecord) *toolrouter.Con
 		return nil
 	}
 	return &toolrouter.Config{
+		Enabled:      r.Enabled,
+		OpenAIName:   r.OpenAIName,
+		Timeout:      r.Timeout,
+		MaxTokens:    r.MaxTokens,
+		SystemPrompt: r.SystemPrompt,
+	}
+}
+
+// topicRouterConfigAdapter 把 TopicRouterStore 适配成 topicrouter.ConfigStore，
+// 每次 LoadTopicConfig 都从 DB 拉取最新一行 llm_topic_config。
+type topicRouterConfigAdapter struct {
+	store TopicRouterStore
+}
+
+// LoadTopicConfig 实现 topicrouter.ConfigStore。
+// 当 DB 没有记录时返回 nil + nil，由 topicrouter 内部回退到内存默认值。
+func (a *topicRouterConfigAdapter) LoadTopicConfig() (*topicrouter.Config, error) {
+	if a == nil || a.store == nil {
+		return nil, errors.New("topic router store is not configured")
+	}
+	record, err := a.store.GetLLMTopicConfig()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return topicRouterConfigFromRecord(record), nil
+}
+
+func topicRouterConfigFromRecord(r *storepkg.LLMTopicConfigRecord) *topicrouter.Config {
+	if r == nil {
+		return nil
+	}
+	return &topicrouter.Config{
 		Enabled:      r.Enabled,
 		OpenAIName:   r.OpenAIName,
 		Timeout:      r.Timeout,
@@ -132,6 +176,23 @@ func NewService(cfg Config, db *gorm.DB, botSender autoreply.BotSender) (*Servic
 		return nil, fmt.Errorf("failed to initialize tool router: %w", err)
 	}
 
+	// 初始化话题选择 router：同样优先从 DB 读取已保存配置，支持保存即生效。
+	var (
+		topicRouterCfg     *topicrouter.Config
+		topicRouterOptions []topicrouter.Option
+	)
+	if cfg.TopicRouterStore != nil {
+		topicAdapter := &topicRouterConfigAdapter{store: cfg.TopicRouterStore}
+		if loaded, loadErr := topicAdapter.LoadTopicConfig(); loadErr == nil && loaded != nil {
+			topicRouterCfg = loaded
+		}
+		topicRouterOptions = append(topicRouterOptions, topicrouter.WithConfigStore(topicAdapter))
+	}
+	topicRouter, err := topicrouter.NewState(topicRouterCfg, llmState, topicRouterOptions...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize topic router: %w", err)
+	}
+
 	// Load tools
 	toolMgr, err := toolmanager.Load(agentsDir, agenttool.LoadOptions{})
 	if err != nil {
@@ -148,6 +209,7 @@ func NewService(cfg Config, db *gorm.DB, botSender autoreply.BotSender) (*Servic
 	autoReply := autoreply.NewService(
 		llmState,
 		toolRouter,
+		topicRouter,
 		toolMgr,
 		convStore,
 		msgQueue,
@@ -157,13 +219,14 @@ func NewService(cfg Config, db *gorm.DB, botSender autoreply.BotSender) (*Servic
 	)
 
 	return &Service{
-		LLMState:   llmState,
-		ToolRouter: toolRouter,
-		ToolMgr:    toolMgr,
-		ConvStore:  convStore,
-		AutoReply:  autoReply,
-		MsgQueue:   msgQueue,
-		enabled:    true,
+		LLMState:    llmState,
+		ToolRouter:  toolRouter,
+		TopicRouter: topicRouter,
+		ToolMgr:     toolMgr,
+		ConvStore:   convStore,
+		AutoReply:   autoReply,
+		MsgQueue:    msgQueue,
+		enabled:     true,
 	}, nil
 }
 

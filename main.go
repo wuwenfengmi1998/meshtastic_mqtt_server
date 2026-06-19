@@ -417,12 +417,13 @@ func run(cfg *configpkg.Config) error {
 			)
 
 			aiService, err = ai.NewService(ai.Config{
-				LLMProviders:    providerConfigs,
-				DataDir:         cfg.AI.DataDir,
-				Enabled:         cfg.AI.Enabled,
-				ConsoleLog:      cfg.ConsoleLog.LLM,
-				ToolConfigStore: store,
-				ToolRouterStore: store,
+				LLMProviders:     providerConfigs,
+				DataDir:          cfg.AI.DataDir,
+				Enabled:          cfg.AI.Enabled,
+				ConsoleLog:       cfg.ConsoleLog.LLM,
+				ToolConfigStore:  store,
+				ToolRouterStore:  store,
+				TopicRouterStore: store,
 			}, store.DB(), botSenderAdapter)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to initialize AI service: %v\n", err)

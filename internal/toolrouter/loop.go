@@ -19,10 +19,13 @@ const maxAgentToolIterations = 6
 
 // RunAgentToolLoop runs the agent tool calling loop
 // systemPrompt is the primary system prompt from LLM config
-func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, systemPrompt string, chatMessages []message.ChatMessage, manager *toolmanager.Manager, emit stream.EmitFunc) ([]*model.ChatCompletionMessage, error) {
+// The third return value toolUsed indicates whether at least one tool was actually
+// invoked during the loop (i.e. the model selected a tool). Callers use it to decide
+// whether to skip downstream gating (e.g. topic selection).
+func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, systemPrompt string, chatMessages []message.ChatMessage, manager *toolmanager.Manager, emit stream.EmitFunc) ([]*model.ChatCompletionMessage, bool, error) {
 	finalMessages, err := buildArkMessages(chatMessages)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	routerProfile := profile
 	if state != nil {
@@ -40,7 +43,7 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 			}
 			finalMessages = append([]*model.ChatCompletionMessage{systemMessage}, finalMessages...)
 		}
-		return finalMessages, nil
+		return finalMessages, false, nil
 	}
 
 	decisionMessages := append([]*model.ChatCompletionMessage(nil), finalMessages...)
@@ -72,7 +75,7 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 			finalMessages = append([]*model.ChatCompletionMessage{systemMessage}, finalMessages...)
 			decisionMessages = append([]*model.ChatCompletionMessage{systemMessage}, decisionMessages...)
 		}
-		return finalMessages, nil
+		return finalMessages, false, nil
 	}
 	// 每轮调用都重新加载最新配置，确保管理员在 /admin/llm/api 保存后立即生效
 	cfg := state.effectiveConfig()
@@ -102,6 +105,8 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 		}
 		decisionMessages = append([]*model.ChatCompletionMessage{routerSystemMessage}, decisionMessages...)
 	}
+	// toolUsed 记录本轮是否真的执行了至少一次工具调用，供调用方决定是否跳过话题选择等后续门控。
+	toolUsed := false
 	for i := 0; i < maxAgentToolIterations; i++ {
 		if emit != nil {
 			emit(stream.Frame{Type: "trace", Tool: "agent_tools", Stage: "request", Status: "running", Message: fmt.Sprintf("正在进行第 %d 轮工具判断", i+1), Data: map[string]any{"iteration": i + 1, "max_iterations": maxAgentToolIterations, "tools": availableNames}})
@@ -115,13 +120,13 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 			ParallelToolCalls: BoolPtr(false),
 		}, time.Duration(cfg.Timeout)*time.Second)
 		if err != nil {
-			return finalMessages, err
+			return finalMessages, toolUsed, err
 		}
 		if tracker := stream.TrackerFromContext(ctx); tracker != nil {
 			tracker.AddTool(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 		}
 		if len(resp.Choices) == 0 {
-			return finalMessages, nil
+			return finalMessages, toolUsed, nil
 		}
 		choice := resp.Choices[0]
 		if emit != nil {
@@ -135,7 +140,7 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 			if emit != nil {
 				emit(stream.Frame{Type: "trace", Tool: "agent_tools", Stage: "request", Status: "success", Message: "模型未请求工具，进入回答生成"})
 			}
-			return finalMessages, nil
+			return finalMessages, toolUsed, nil
 		}
 		callNames := make([]string, 0, len(calls))
 		for _, call := range calls {
@@ -146,6 +151,8 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 		if emit != nil {
 			emit(stream.Frame{Type: "trace", Tool: "agent_tools", Stage: "tool_calls", Status: "running", Message: fmt.Sprintf("模型请求调用 %d 个工具", len(calls)), Data: map[string]any{"tools": callNames, "iteration": i + 1}})
 		}
+		// 模型确实请求了工具调用，标记 toolUsed=true
+		toolUsed = true
 		assistantMessage := &model.ChatCompletionMessage{Role: "assistant", ToolCalls: calls, Content: choice.Message.Content}
 		finalMessages = append(finalMessages, assistantMessage)
 		decisionMessages = append(decisionMessages, assistantMessage)
@@ -160,7 +167,7 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 	limitText := "工具调用轮数已达到上限。请基于已有工具结果回答，并说明可能未完成全部工具调用。"
 	limitMessage := &model.ChatCompletionMessage{Role: "system", Content: &model.ChatCompletionMessageContent{StringValue: &limitText}}
 	finalMessages = append(finalMessages, limitMessage)
-	return finalMessages, nil
+	return finalMessages, toolUsed, nil
 }
 
 func buildArkMessages(chatMessages []message.ChatMessage) ([]*model.ChatCompletionMessage, error) {

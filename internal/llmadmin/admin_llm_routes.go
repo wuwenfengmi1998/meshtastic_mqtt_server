@@ -35,6 +35,10 @@ func RegisterRoutes(r *gin.RouterGroup, store *storepkg.Store) {
 		group.GET("/tool-router", handleGetLLMToolRouter(store))
 		group.PUT("/tool-router", handleUpdateLLMToolRouter(store))
 
+		// LLM Topic Config - 话题选择配置
+		group.GET("/topic-config", handleGetLLMTopicConfig(store))
+		group.PUT("/topic-config", handleUpdateLLMTopicConfig(store))
+
 		// LLM Primary Config - 主 AI 回复配置
 		group.GET("/primary-config", handleGetLLMPrimaryConfig(store))
 		group.PUT("/primary-config", handleUpdateLLMPrimaryConfig(store))
@@ -491,6 +495,124 @@ func handleUpdateLLMToolRouter(store *storepkg.Store) gin.HandlerFunc {
 }
 
 func llmToolRouterDTO(row storepkg.LLMToolRouterRecord) map[string]any {
+	return map[string]any{
+		"id":            row.ID,
+		"enabled":       row.Enabled,
+		"openai_name":   row.OpenAIName,
+		"timeout":       row.Timeout,
+		"max_tokens":    row.MaxTokens,
+		"system_prompt": row.SystemPrompt,
+		"created_at":    row.CreatedAt,
+		"updated_at":    row.UpdatedAt,
+	}
+}
+
+// ============================================
+// LLM Topic Config Handlers - 话题选择配置
+// ============================================
+
+func handleGetLLMTopicConfig(store *storepkg.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		record, err := store.GetLLMTopicConfig()
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "topic config not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"item": llmTopicConfigDTO(*record)})
+	}
+}
+
+func handleUpdateLLMTopicConfig(store *storepkg.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		record, err := store.GetLLMTopicConfig()
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		var req struct {
+			Enabled      *bool   `json:"enabled"`
+			OpenAIName   *string `json:"openai_name"`
+			Timeout      *int    `json:"timeout"`
+			MaxTokens    *int    `json:"max_tokens"`
+			SystemPrompt *string `json:"system_prompt"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+			return
+		}
+
+		updates := make(map[string]any)
+		if req.Enabled != nil {
+			updates["enabled"] = *req.Enabled
+		}
+		if req.OpenAIName != nil {
+			updates["openai_name"] = *req.OpenAIName
+		}
+		if req.Timeout != nil {
+			updates["timeout"] = *req.Timeout
+		}
+		if req.MaxTokens != nil {
+			updates["max_tokens"] = *req.MaxTokens
+		}
+		if req.SystemPrompt != nil {
+			updates["system_prompt"] = *req.SystemPrompt
+		}
+
+		if len(updates) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no fields to update"})
+			return
+		}
+
+		if record == nil {
+			// 创建新配置
+			newRecord := &storepkg.LLMTopicConfigRecord{
+				Enabled:      req.Enabled != nil && *req.Enabled,
+				OpenAIName:   "",
+				Timeout:      30,
+				MaxTokens:    512,
+				SystemPrompt: "",
+			}
+			if req.OpenAIName != nil {
+				newRecord.OpenAIName = *req.OpenAIName
+			}
+			if req.Timeout != nil {
+				newRecord.Timeout = *req.Timeout
+			}
+			if req.MaxTokens != nil {
+				newRecord.MaxTokens = *req.MaxTokens
+			}
+			if req.SystemPrompt != nil {
+				newRecord.SystemPrompt = *req.SystemPrompt
+			}
+			if err := store.CreateLLMTopicConfig(newRecord); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			record = newRecord
+		} else {
+			// 更新现有配置
+			if err := store.UpdateLLMTopicConfig(record.ID, updates); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			record, err = store.GetLLMTopicConfig()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "item": llmTopicConfigDTO(*record)})
+	}
+}
+
+func llmTopicConfigDTO(row storepkg.LLMTopicConfigRecord) map[string]any {
 	return map[string]any{
 		"id":            row.ID,
 		"enabled":       row.Enabled,

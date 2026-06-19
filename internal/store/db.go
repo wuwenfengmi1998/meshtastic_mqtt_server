@@ -494,6 +494,22 @@ func (LLMToolRouterRecord) TableName() string {
 	return "llm_tool_router"
 }
 
+// LLMTopicConfigRecord 保存话题选择的配置
+type LLMTopicConfigRecord struct {
+	ID           uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	Enabled      bool      `gorm:"column:enabled;not null;index"`           // 是否启用话题选择
+	OpenAIName   string    `gorm:"column:openai_name;size:64;not null"`     // 使用的 LLM 提供商名称（关联 llm_providers.name）
+	Timeout      int       `gorm:"column:timeout;not null;default:30"`      // 话题判定超时时间（秒）
+	MaxTokens    int       `gorm:"column:max_tokens;not null;default:512"`  // 话题判定最大 token 数
+	SystemPrompt string    `gorm:"column:system_prompt;type:text;not null"` // 系统提示词
+	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime;index"`
+}
+
+func (LLMTopicConfigRecord) TableName() string {
+	return "llm_topic_config"
+}
+
 // LLMPrimaryConfigRecord 保存主 AI 回复的配置
 type LLMPrimaryConfigRecord struct {
 	ID            uint64    `gorm:"column:id;primaryKey;autoIncrement"`
@@ -666,6 +682,7 @@ func (s *Store) migrate() error {
 			{label: "llm_message_queue", model: &LLMMessageQueueRecord{}},
 			{label: "llm_providers", model: &LLMProviderRecord{}},
 			{label: "llm_tool_router", model: &LLMToolRouterRecord{}},
+			{label: "llm_topic_config", model: &LLMTopicConfigRecord{}},
 			{label: "llm_primary_config", model: &LLMPrimaryConfigRecord{}},
 			{label: "nodeinfo", model: &NodeInfoRecord{}},
 			{label: "map_report", model: &MapReportRecord{}},
@@ -711,6 +728,9 @@ func (s *Store) migrate() error {
 			return err
 		}
 		if err := txStore.EnsureDefaultLLMToolRouter(); err != nil {
+			return err
+		}
+		if err := txStore.EnsureDefaultLLMTopicConfig(); err != nil {
 			return err
 		}
 		if err := txStore.EnsureDefaultLLMPrimaryConfig(); err != nil {
