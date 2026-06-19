@@ -221,7 +221,7 @@ func parseArgs() (*configpkg.Config, error) {
 
 // run 创建 MQTT broker 和 Web 服务，并阻塞等待退出信号。
 func run(cfg *configpkg.Config) error {
-	store, err := storepkg.OpenStore(cfg.Database)
+	store, err := storepkg.OpenStore(cfg.Database, cfg.ConsoleLog.SQL)
 	if err != nil {
 		return err
 	}
@@ -306,7 +306,7 @@ func run(cfg *configpkg.Config) error {
 
 			aiService, err = ai.NewService(ai.Config{
 				LLMProviders:    providerConfigs,
-				DataDir:         cfg.DataDir,
+				DataDir:         cfg.AI.DataDir,
 				Enabled:         cfg.AI.Enabled,
 				ToolConfigStore: store,
 			}, store.DB(), botSenderAdapter)
@@ -332,7 +332,7 @@ func run(cfg *configpkg.Config) error {
 			return err
 		}
 		mqttStatus := webpkg.MQTTRuntimeStatus{Server: server, Address: mqttAddr, TLS: cfg.MQTT.TLS.Enabled, Stats: messageStats, DBQueue: dbQueue}
-		handler := webpkg.NewRouter(cfg.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender)
+		handler := webpkg.NewRouter(cfg.Web, cfg.ConsoleLog.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender)
 		webAddresses := []string{}
 		if cfg.Web.PortEnabled {
 			httpServer := &http.Server{

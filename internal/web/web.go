@@ -27,10 +27,10 @@ import (
 	"meshtastic_mqtt_server/internal/webutil"
 )
 
-func NewHTTPServer(cfg configpkg.WebConfig, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender) *http.Server {
+func NewHTTPServer(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender) *http.Server {
 	return &http.Server{
 		Addr:    net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
-		Handler: NewRouter(cfg, store, sessions, mqttStatus, blocking, forwarder, settings, botSender),
+		Handler: NewRouter(cfg, consoleLog, store, sessions, mqttStatus, blocking, forwarder, settings, botSender),
 	}
 }
 
@@ -60,9 +60,9 @@ func ServeUnixSocket(server *http.Server, socketPath string) error {
 	return server.Serve(listener)
 }
 
-func NewRouter(cfg configpkg.WebConfig, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender) *gin.Engine {
+func NewRouter(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender) *gin.Engine {
 	r := gin.New()
-	if cfg.ConsoleLog {
+	if consoleLog {
 		r.Use(gin.Logger(), gin.Recovery())
 	} else {
 		r.Use(gin.Recovery())

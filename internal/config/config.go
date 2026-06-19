@@ -23,7 +23,7 @@ type Config struct {
 	Database   DatabaseConfig   `yaml:"database"`
 	Web        WebConfig        `yaml:"web"`
 	AI         AIConfig         `yaml:"ai"`
-	DataDir    string           `yaml:"data_dir"`
+	ConsoleLog ConsoleLogConfig `yaml:"console_log"`
 	Key        []byte           `yaml:"-"`
 }
 
@@ -66,7 +66,6 @@ type WebConfig struct {
 	SocketPath      string         `yaml:"socket_path"`
 	StaticDir       string         `yaml:"static_dir"`
 	MapTileCacheDir string         `yaml:"map_tile_cache_dir"`
-	ConsoleLog      bool           `yaml:"console_log"`
 	Admin           WebAdminConfig `yaml:"admin"`
 }
 
@@ -78,7 +77,16 @@ type WebAdminConfig struct {
 }
 
 type AIConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled bool   `yaml:"enabled"`
+	DataDir string `yaml:"data_dir"`
+}
+
+// ConsoleLogConfig 控制各模块是否在控制台打印日志。后续若新增模块，按需扩展。
+type ConsoleLogConfig struct {
+	Web  bool `yaml:"web"`
+	MQTT bool `yaml:"mqtt"`
+	LLM  bool `yaml:"llm"`
+	SQL  bool `yaml:"sql"`
 }
 
 type rawConfig struct {
@@ -87,11 +95,19 @@ type rawConfig struct {
 	Database   *rawDatabaseConfig   `yaml:"database"`
 	Web        *rawWebConfig        `yaml:"web"`
 	AI         *rawAIConfig         `yaml:"ai"`
-	DataDir    *string              `yaml:"data_dir"`
+	ConsoleLog *rawConsoleLogConfig `yaml:"console_log"`
+}
+
+type rawConsoleLogConfig struct {
+	Web  *bool `yaml:"web"`
+	MQTT *bool `yaml:"mqtt"`
+	LLM  *bool `yaml:"llm"`
+	SQL  *bool `yaml:"sql"`
 }
 
 type rawAIConfig struct {
-	Enabled *bool `yaml:"enabled"`
+	Enabled *bool   `yaml:"enabled"`
+	DataDir *string `yaml:"data_dir"`
 }
 
 type rawMQTTConfig struct {
@@ -133,7 +149,6 @@ type rawWebConfig struct {
 	SocketPath      *string            `yaml:"socket_path"`
 	StaticDir       *string            `yaml:"static_dir"`
 	MapTileCacheDir *string            `yaml:"map_tile_cache_dir"`
-	ConsoleLog      *bool              `yaml:"console_log"`
 	Admin           *rawWebAdminConfig `yaml:"admin"`
 }
 
@@ -173,7 +188,6 @@ func Default() *Config {
 			SocketPath:      defaultWebSocketPath(),
 			StaticDir:       "./dist",
 			MapTileCacheDir: defaultMapTileCacheDir(),
-			ConsoleLog:      true,
 			Admin: WebAdminConfig{
 				Username:      "admin",
 				Password:      "admin",
@@ -183,8 +197,14 @@ func Default() *Config {
 		},
 		AI: AIConfig{
 			Enabled: false,
+			DataDir: defaultDataDir(),
 		},
-		DataDir: defaultDataDir(),
+		ConsoleLog: ConsoleLogConfig{
+			Web:  true,
+			MQTT: true,
+			LLM:  true,
+			SQL:  true,
+		},
 	}
 }
 
@@ -431,11 +451,6 @@ func normalize(raw rawConfig) (*Config, bool) {
 		} else {
 			cfg.Web.MapTileCacheDir = *raw.Web.MapTileCacheDir
 		}
-		if raw.Web.ConsoleLog == nil {
-			changed = true
-		} else {
-			cfg.Web.ConsoleLog = *raw.Web.ConsoleLog
-		}
 		if raw.Web.Admin == nil {
 			changed = true
 		} else {
@@ -470,12 +485,36 @@ func normalize(raw rawConfig) (*Config, bool) {
 		} else {
 			cfg.AI.Enabled = *raw.AI.Enabled
 		}
+		if raw.AI.DataDir == nil {
+			changed = true
+		} else {
+			cfg.AI.DataDir = *raw.AI.DataDir
+		}
 	}
 
-	if raw.DataDir == nil {
+	if raw.ConsoleLog == nil {
 		changed = true
 	} else {
-		cfg.DataDir = *raw.DataDir
+		if raw.ConsoleLog.Web == nil {
+			changed = true
+		} else {
+			cfg.ConsoleLog.Web = *raw.ConsoleLog.Web
+		}
+		if raw.ConsoleLog.MQTT == nil {
+			changed = true
+		} else {
+			cfg.ConsoleLog.MQTT = *raw.ConsoleLog.MQTT
+		}
+		if raw.ConsoleLog.LLM == nil {
+			changed = true
+		} else {
+			cfg.ConsoleLog.LLM = *raw.ConsoleLog.LLM
+		}
+		if raw.ConsoleLog.SQL == nil {
+			changed = true
+		} else {
+			cfg.ConsoleLog.SQL = *raw.ConsoleLog.SQL
+		}
 	}
 
 	return cfg, changed

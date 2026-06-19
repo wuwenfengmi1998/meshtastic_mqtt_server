@@ -978,7 +978,7 @@ func openTestStore(t *testing.T) *Store {
 	st, err := OpenStore(config.DatabaseConfig{
 		Driver: config.DriverSQLite,
 		SQLite: config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "mesh_mqtt_go.db")},
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("OpenStore() error = %v", err)
 	}

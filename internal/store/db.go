@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 
 	"meshtastic_mqtt_server/internal/config"
 )
@@ -571,7 +573,7 @@ func (TracerouteRecord) TableName() string {
 	return "traceroute"
 }
 
-func OpenStore(cfg config.DatabaseConfig) (*Store, error) {
+func OpenStore(cfg config.DatabaseConfig, consoleLog bool) (*Store, error) {
 	var dialector gorm.Dialector
 	switch cfg.Driver {
 	case config.DriverSQLite:
@@ -585,7 +587,18 @@ func OpenStore(cfg config.DatabaseConfig) (*Store, error) {
 		return nil, fmt.Errorf("unsupported database driver %q", cfg.Driver)
 	}
 
-	db, err := gorm.Open(dialector, &gorm.Config{})
+	logLevel := gormlogger.Warn
+	if !consoleLog {
+		logLevel = gormlogger.Silent
+	}
+	db, err := gorm.Open(dialector, &gorm.Config{
+		Logger: gormlogger.New(log.New(os.Stderr, "\r\n", log.LstdFlags), gormlogger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logLevel,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  false,
+		}),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("open %s database: %w", cfg.Driver, err)
 	}

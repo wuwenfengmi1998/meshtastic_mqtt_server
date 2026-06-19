@@ -38,7 +38,7 @@ func TestMapTileProxyFetchesAndCaches(t *testing.T) {
 	}
 
 	cacheDir := t.TempDir()
-	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: cacheDir}, st, nil, nil, nil, nil, nil, nil)
+	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: cacheDir}, false, st, nil, nil, nil, nil, nil, nil)
 
 	url := "/api/map/" + row.URLTemplateHash + "?x=1&y=2&z=3"
 	for i := 0; i < 2; i++ {
@@ -75,7 +75,7 @@ func TestMapTileProxyRejectsInvalidCoordinates(t *testing.T) {
 		t.Fatalf("CreateMapTileSource() error = %v", err)
 	}
 
-	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, st, nil, nil, nil, nil, nil, nil)
+	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, false, st, nil, nil, nil, nil, nil, nil)
 
 	cases := []string{
 		"/api/map/" + row.URLTemplateHash + "?y=0&z=0",
@@ -106,7 +106,7 @@ func TestMapTileProxyUnknownAndDisabledSource(t *testing.T) {
 		t.Fatalf("CreateMapTileSource(proxy disabled) error = %v", err)
 	}
 
-	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, st, nil, nil, nil, nil, nil, nil)
+	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, false, st, nil, nil, nil, nil, nil, nil)
 
 	cases := []string{
 		"/api/map/not-a-hash?x=0&y=0&z=0",
@@ -147,7 +147,7 @@ func TestMapTileProxyUpstreamStatus(t *testing.T) {
 		t.Fatalf("CreateMapTileSource(500) error = %v", err)
 	}
 
-	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, st, nil, nil, nil, nil, nil, nil)
+	router := NewRouter(configpkg.WebConfig{StaticDir: t.TempDir(), MapTileCacheDir: t.TempDir()}, false, st, nil, nil, nil, nil, nil, nil)
 
 	cases := []struct {
 		url  string

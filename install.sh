@@ -79,12 +79,16 @@ web:
   port: 8080
   socket_path: ${SOCKET_PATH}
   static_dir: ${INSTALL_DIR}/dist
-  console_log: true
   admin:
     username: admin
     password: admin
     session_secret: ""
     session_secure: false
+console_log:
+  web: true
+  mqtt: true
+  llm: true
+  sql: true
 EOF
   chown "${SERVICE_USER}:${SERVICE_USER}" "${CONFIG_DIR}/config.yaml"
   chmod 0640 "${CONFIG_DIR}/config.yaml"
