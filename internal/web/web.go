@@ -62,7 +62,11 @@ func ServeUnixSocket(server *http.Server, socketPath string) error {
 
 func NewRouter(cfg configpkg.WebConfig, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender) *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery())
+	if cfg.ConsoleLog {
+		r.Use(gin.Logger(), gin.Recovery())
+	} else {
+		r.Use(gin.Recovery())
+	}
 	api := r.Group("/api")
 	registerAPIRoutes(api, store, cfg.MapTileCacheDir)
 	registerAdminRoutes(api.Group("/admin"), store, sessions, mqttStatus, blocking, forwarder, settings, botSender)

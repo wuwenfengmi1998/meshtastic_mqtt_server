@@ -66,6 +66,7 @@ type WebConfig struct {
 	SocketPath      string         `yaml:"socket_path"`
 	StaticDir       string         `yaml:"static_dir"`
 	MapTileCacheDir string         `yaml:"map_tile_cache_dir"`
+	ConsoleLog      bool           `yaml:"console_log"`
 	Admin           WebAdminConfig `yaml:"admin"`
 }
 
@@ -132,6 +133,7 @@ type rawWebConfig struct {
 	SocketPath      *string            `yaml:"socket_path"`
 	StaticDir       *string            `yaml:"static_dir"`
 	MapTileCacheDir *string            `yaml:"map_tile_cache_dir"`
+	ConsoleLog      *bool              `yaml:"console_log"`
 	Admin           *rawWebAdminConfig `yaml:"admin"`
 }
 
@@ -171,6 +173,7 @@ func Default() *Config {
 			SocketPath:      defaultWebSocketPath(),
 			StaticDir:       "./dist",
 			MapTileCacheDir: defaultMapTileCacheDir(),
+			ConsoleLog:      true,
 			Admin: WebAdminConfig{
 				Username:      "admin",
 				Password:      "admin",
@@ -264,9 +267,9 @@ func defaultDataDir() string {
 
 func defaultDataDirForGOOS(goos string) string {
 	if useRelativeDefaultPath(goos) {
-		return filepath.Join(".", "win", "var", "lib", "mesh_mqtt_go")
+		return filepath.Join(".", "win", "srv", "mesh_mqtt_go")
 	}
-	return filepath.Join(string(filepath.Separator), "var", "lib", "mesh_mqtt_go")
+	return filepath.Join(string(filepath.Separator), "srv", "mesh_mqtt_go")
 }
 
 // Load 加载配置文件；文件不存在时生成，字段缺失时自动补全并写回。
@@ -427,6 +430,11 @@ func normalize(raw rawConfig) (*Config, bool) {
 			changed = true
 		} else {
 			cfg.Web.MapTileCacheDir = *raw.Web.MapTileCacheDir
+		}
+		if raw.Web.ConsoleLog == nil {
+			changed = true
+		} else {
+			cfg.Web.ConsoleLog = *raw.Web.ConsoleLog
 		}
 		if raw.Web.Admin == nil {
 			changed = true

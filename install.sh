@@ -79,6 +79,7 @@ web:
   port: 8080
   socket_path: ${SOCKET_PATH}
   static_dir: ${INSTALL_DIR}/dist
+  console_log: true
   admin:
     username: admin
     password: admin
