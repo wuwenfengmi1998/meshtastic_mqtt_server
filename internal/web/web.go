@@ -338,6 +338,23 @@ func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Ma
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	// purge：除了 nodeinfo + map_report，还把 text_message 与 position/telemetry/routing/traceroute
+	// 中按 from_id 关联到该节点的记录一并删除。
+	protected.DELETE("/nodes/:id/purge", func(c *gin.Context) {
+		nodeID := c.Param("id")
+		if nodeID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid node id"})
+			return
+		}
+		if err := store.PurgeNode(nodeID); errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+			return
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 }
 
 func registerNodeInfoRoutes(r gin.IRouter, store *storepkg.Store, path string) {

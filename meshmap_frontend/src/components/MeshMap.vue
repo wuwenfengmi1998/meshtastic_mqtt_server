@@ -24,6 +24,7 @@ const emit = defineEmits<{
   'select-node': [nodeId: string]
   'clear-node': []
   'delete-node': [nodeId: string]
+  'purge-node': [nodeId: string]
   'delete-and-block-node': [payload: { nodeId: string; nodeNum: number | null }]
   'bounds-change': [payload: MapBoundsChangePayload]
   'map-source-change': [sourceId: number]
@@ -142,6 +143,13 @@ function openNodeMenu(node: MapNode, event: L.LeafletMouseEvent) {
 function deleteSelectedNode() {
   if (menuNode.value) {
     emit('delete-node', menuNode.value.node_id)
+  }
+  closeNodeMenu()
+}
+
+function purgeSelectedNode() {
+  if (menuNode.value) {
+    emit('purge-node', menuNode.value.node_id)
   }
   closeNodeMenu()
 }
@@ -590,6 +598,7 @@ function escapeHTML(value: string): string {
     >
       <a :href="nodeDetailHref(menuNode.node_id)">节点详细</a>
       <button v-if="isAdmin" class="danger" type="button" @click="deleteSelectedNode">删除</button>
+      <button v-if="isAdmin" class="danger" type="button" @click="purgeSelectedNode">删除节点</button>
       <button v-if="isAdmin" class="danger" type="button" @click="deleteAndBlockSelectedNode">删除并屏蔽节点</button>
     </div>
   </section>

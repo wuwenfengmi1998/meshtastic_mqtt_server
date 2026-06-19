@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { adminLogout, createNodeBlockingRule, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReportViewport, getNodeInfo, getPositions, getTextMessages } from './api'
+import { adminLogout, createNodeBlockingRule, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReportViewport, getNodeInfo, getPositions, getTextMessages, purgeNode } from './api'
 import AdminBlockingManagement from './components/AdminBlockingManagement.vue'
 import AdminBot from './components/AdminBot.vue'
 import AdminBotDirect from './components/AdminBotDirect.vue'
@@ -75,6 +75,7 @@ type NodeActionPayload = NodeActionRequest & { reason: string }
 type PendingDeleteAction =
   | { kind: 'delete-message'; message: DeletableTextMessage }
   | { kind: 'delete-node'; nodeId: string }
+  | { kind: 'purge-node'; nodeId: string }
   | ({ kind: 'delete-and-block-node' } & NodeActionRequest)
 let refreshTimer: number | undefined
 let mapBoundsTimer: number | undefined
@@ -202,6 +203,9 @@ const deleteModalTitle = computed(() => {
   if (action.kind === 'delete-node') {
     return '确认删除节点'
   }
+  if (action.kind === 'purge-node') {
+    return '确认删除节点'
+  }
   return '确认删除并屏蔽节点'
 })
 
@@ -218,6 +222,9 @@ const deleteModalMessage = computed(() => {
   }
   if (action.kind === 'delete-node') {
     return '确定要删除这个节点吗？此操作不可撤销。'
+  }
+  if (action.kind === 'purge-node') {
+    return '确定要删除这个节点吗？将同时清理该节点的聊天消息和位置/遥测/路由/路径追踪等数据包记录，此操作不可撤销。'
   }
   if (!action.message) {
     return '确定要删除并屏蔽这个节点吗？请输入屏蔽原因。'
@@ -442,6 +449,10 @@ function requestDeleteNode(nodeId: string) {
   pendingDeleteAction.value = { kind: 'delete-node', nodeId }
 }
 
+function requestPurgeNode(nodeId: string) {
+  pendingDeleteAction.value = { kind: 'purge-node', nodeId }
+}
+
 function requestDeleteAndBlockNode(payload: NodeActionRequest) {
   pendingDeleteAction.value = { kind: 'delete-and-block-node', ...payload }
 }
@@ -464,6 +475,11 @@ async function confirmDeleteModal(payload: { reason?: string }) {
 
   if (action.kind === 'delete-node') {
     await deleteNodeById(action.nodeId)
+    return
+  }
+
+  if (action.kind === 'purge-node') {
+    await purgeNodeById(action.nodeId)
     return
   }
 
@@ -538,6 +554,17 @@ async function deleteMessagesFromLocalState(message: DeletableTextMessage) {
 async function deleteNodeById(nodeId: string) {
   try {
     await deleteNode(nodeId)
+    await removeNodeFromLocalState(nodeId)
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+async function purgeNodeById(nodeId: string) {
+  try {
+    await purgeNode(nodeId)
+    // 该节点的本地缓存包括聊天消息，一起从前端状态里清掉。
+    messages.value = messages.value.filter((message) => message.from_id !== nodeId)
     await removeNodeFromLocalState(nodeId)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
@@ -737,6 +764,7 @@ onBeforeUnmount(() => {
           @select-node="selectNode"
           @clear-node="clearSelectedNode"
           @delete-node="requestDeleteNode"
+          @purge-node="requestPurgeNode"
           @delete-and-block-node="requestDeleteAndBlockNode"
         />
       </section>
@@ -753,6 +781,7 @@ onBeforeUnmount(() => {
         @select-node="selectNode"
         @page-change="loadNodePage"
         @delete-node="requestDeleteNode"
+        @purge-node="requestPurgeNode"
         @delete-and-block-node="requestDeleteAndBlockNode"
       />
     </template>

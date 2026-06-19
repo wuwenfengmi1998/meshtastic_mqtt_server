@@ -211,6 +211,11 @@ export function deleteNode(nodeId: string): Promise<{ status: string }> {
   return deleteJSON<{ status: string }>(`/api/admin/nodes/${encodeURIComponent(nodeId)}`)
 }
 
+// 「删除节点」：除节点信息和地图上报外，再清理聊天消息以及 position/telemetry/routing/traceroute 等数据包记录。
+export function purgeNode(nodeId: string): Promise<{ status: string }> {
+  return deleteJSON<{ status: string }>(`/api/admin/nodes/${encodeURIComponent(nodeId)}/purge`)
+}
+
 export function getPositions(limit = 500, offset = 0, nodeIdOrOptions: string | ListQueryOptions = ''): Promise<ListResponse<PositionRecord>> {
   return getJSON<ListResponse<PositionRecord>>(listPath('/api/positions', limit, offset, nodeIdOrOptions))
 }

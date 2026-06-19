@@ -232,6 +232,53 @@ func (s *Store) DeleteNode(nodeID string) error {
 	})
 }
 
+// PurgeNode 在「删除节点」菜单触发时执行：除了 nodeinfo + map_report，
+// 还要把 text_message（频道聊天）以及 position/telemetry/routing/traceroute
+// 这些以 from_id 关联的数据包记录一起清理。
+//
+// 任一表删到记录就视为成功；全部为空才返回 ErrRecordNotFound。
+func (s *Store) PurgeNode(nodeID string) error {
+	if nodeID == "" {
+		return gorm.ErrRecordNotFound
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var totalAffected int64
+
+		nodeResult := tx.Where("node_id = ?", nodeID).Delete(&NodeInfoRecord{})
+		if nodeResult.Error != nil {
+			return nodeResult.Error
+		}
+		totalAffected += nodeResult.RowsAffected
+
+		reportResult := tx.Where("node_id = ?", nodeID).Delete(&MapReportRecord{})
+		if reportResult.Error != nil {
+			return reportResult.Error
+		}
+		totalAffected += reportResult.RowsAffected
+
+		// 以 from_id 关联：聊天消息 + 数据包流水
+		fromIDTargets := []any{
+			&TextMessageRecord{},
+			&PositionRecord{},
+			&TelemetryRecord{},
+			&RoutingRecord{},
+			&TracerouteRecord{},
+		}
+		for _, model := range fromIDTargets {
+			res := tx.Where("from_id = ?", nodeID).Delete(model)
+			if res.Error != nil {
+				return res.Error
+			}
+			totalAffected += res.RowsAffected
+		}
+
+		if totalAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
+}
+
 func applyNodeFilters(q *gorm.DB, opts ListOptions) *gorm.DB {
 	if opts.NodeID != "" {
 		q = q.Where("node_id = ?", opts.NodeID)
