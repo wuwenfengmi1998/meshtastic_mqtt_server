@@ -20,17 +20,17 @@ import (
 	"github.com/mochi-mqtt/server/v2/packets"
 
 	"meshtastic_mqtt_server/internal/ai"
-	"meshtastic_mqtt_server/internal/autoreply"
 	"meshtastic_mqtt_server/internal/auth"
+	"meshtastic_mqtt_server/internal/autoreply"
 	blockingpkg "meshtastic_mqtt_server/internal/blocking"
 	botpkg "meshtastic_mqtt_server/internal/bot"
 	configpkg "meshtastic_mqtt_server/internal/config"
+	"meshtastic_mqtt_server/internal/llm"
+	"meshtastic_mqtt_server/internal/mqtpp"
 	mqttforwardpkg "meshtastic_mqtt_server/internal/mqttforward"
 	rspkg "meshtastic_mqtt_server/internal/runtimesettings"
 	storepkg "meshtastic_mqtt_server/internal/store"
 	webpkg "meshtastic_mqtt_server/internal/web"
-	"meshtastic_mqtt_server/internal/llm"
-	"meshtastic_mqtt_server/internal/mqtpp"
 )
 
 const (
@@ -46,14 +46,16 @@ const (
 
 type meshtasticFilterHook struct {
 	mqtt.HookBase
-	key         []byte
-	dbQueue     *storepkg.WriteQueue
-	stats       *mqttforwardpkg.Stats
-	blocking    *blockingpkg.Cache
-	settings    *rspkg.Cache
-	pkiResolver func(toNodeNum, fromNodeNum uint32) ([]byte, []byte, bool)
-	autoAcker   func(record map[string]any)
-	consoleLog  bool // 控制台是否打印 MQTT 连接/订阅事件
+	key             []byte
+	dbQueue         *storepkg.WriteQueue
+	stats           *mqttforwardpkg.Stats
+	clientStats     *mqttforwardpkg.ClientStats
+	blocking        *blockingpkg.Cache
+	settings        *rspkg.Cache
+	pkiResolver     func(toNodeNum, fromNodeNum uint32) ([]byte, []byte, bool)
+	autoAcker       func(record map[string]any)
+	consoleLog      bool // 控制台是否打印 MQTT 连接/订阅事件
+	packetConsoleLog bool // 控制台是否打印 Meshtastic 数据包
 }
 
 // ID 返回用于识别 Meshtastic payload 过滤器的 hook 名称。
@@ -68,7 +70,9 @@ func (h *meshtasticFilterHook) Provides(b byte) bool {
 		b == mqtt.OnSessionEstablished ||
 		b == mqtt.OnDisconnect ||
 		b == mqtt.OnSubscribed ||
-		b == mqtt.OnUnsubscribed
+		b == mqtt.OnUnsubscribed ||
+		b == mqtt.OnPacketRead ||
+		b == mqtt.OnPacketSent
 }
 
 // OnConnect 在 MQTT 会话建立前拒绝命中 IP 屏蔽表的客户端。
@@ -93,6 +97,9 @@ func (h *meshtasticFilterHook) OnSessionEstablished(cl *mqtt.Client, pk packets.
 
 // OnDisconnect 在客户端断开时打印日志，含触发原因。
 func (h *meshtasticFilterHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
+	if cl != nil {
+		h.clientStats.Delete(cl.ID)
+	}
 	if !h.consoleLog {
 		return
 	}
@@ -103,6 +110,22 @@ func (h *meshtasticFilterHook) OnDisconnect(cl *mqtt.Client, err error, expire b
 	}
 	fmt.Fprintf(os.Stderr, "[mqtt] disconnect client_id=%s username=%s remote=%s:%s expire=%t reason=%s\n",
 		info.ClientID, info.Username, info.RemoteHost, info.RemotePort, expire, reason)
+}
+
+// OnPacketRead 在 broker 收到客户端报文时累计入站计数（客户端 → 服务器）。
+// 返回原始 packet 不做修改；该 hook 在 packet 校验前触发。
+func (h *meshtasticFilterHook) OnPacketRead(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
+	if cl != nil {
+		h.clientStats.IncIn(cl.ID)
+	}
+	return pk, nil
+}
+
+// OnPacketSent 在 broker 把报文写出后累计出站计数（服务器 → 客户端）。
+func (h *meshtasticFilterHook) OnPacketSent(cl *mqtt.Client, pk packets.Packet, b []byte) {
+	if cl != nil {
+		h.clientStats.IncOut(cl.ID)
+	}
 }
 
 // OnSubscribed 客户端订阅成功后打印订阅的 topic filter 列表。
@@ -152,8 +175,8 @@ func (h *meshtasticFilterHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (pa
 	if h.autoAcker != nil {
 		h.autoAcker(record)
 	}
-	if record["type"] != "empty_packet" {
-		printJSON(record)
+	if h.packetConsoleLog && record["type"] != "empty_packet" {
+		printMeshtasticRecord(record)
 	}
 	return pk, nil
 }
@@ -296,7 +319,8 @@ func run(cfg *configpkg.Config) error {
 	}
 
 	messageStats := &mqttforwardpkg.Stats{}
-	server, mqttHook, mqttAddr, err := startMQTTServer(cfg, store, dbQueue, messageStats, blocking, settings)
+	clientStats := mqttforwardpkg.NewClientStats()
+	server, mqttHook, mqttAddr, err := startMQTTServer(cfg, store, dbQueue, messageStats, clientStats, blocking, settings)
 	if err != nil {
 		return err
 	}
@@ -385,7 +409,7 @@ func run(cfg *configpkg.Config) error {
 		if err != nil {
 			return err
 		}
-		mqttStatus := webpkg.MQTTRuntimeStatus{Server: server, Address: mqttAddr, TLS: cfg.MQTT.TLS.Enabled, Stats: messageStats, DBQueue: dbQueue}
+		mqttStatus := webpkg.MQTTRuntimeStatus{Server: server, Address: mqttAddr, TLS: cfg.MQTT.TLS.Enabled, Stats: messageStats, ClientStats: clientStats, DBQueue: dbQueue}
 		handler := webpkg.NewRouter(cfg.Web, cfg.ConsoleLog.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender)
 		webAddresses := []string{}
 		if cfg.Web.PortEnabled {
@@ -440,19 +464,21 @@ func run(cfg *configpkg.Config) error {
 	return runErr
 }
 
-func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *storepkg.WriteQueue, stats *mqttforwardpkg.Stats, blocking *blockingpkg.Cache, settings *rspkg.Cache) (*mqtt.Server, *meshtasticFilterHook, string, error) {
+func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *storepkg.WriteQueue, stats *mqttforwardpkg.Stats, clientStats *mqttforwardpkg.ClientStats, blocking *blockingpkg.Cache, settings *rspkg.Cache) (*mqtt.Server, *meshtasticFilterHook, string, error) {
 	server := mqtt.New(&mqtt.Options{InlineClient: true})
 	if err := server.AddHook(new(mqttauth.AllowHook), nil); err != nil {
 		return nil, nil, "", err
 	}
 	hook := &meshtasticFilterHook{
-		key:         cfg.Key,
-		dbQueue:     dbQueue,
-		stats:       stats,
-		blocking:    blocking,
-		settings:    settings,
-		pkiResolver: botpkg.NewPKIKeyResolver(store),
-		consoleLog:  cfg.ConsoleLog.MQTT,
+		key:              cfg.Key,
+		dbQueue:          dbQueue,
+		stats:            stats,
+		clientStats:      clientStats,
+		blocking:         blocking,
+		settings:         settings,
+		pkiResolver:      botpkg.NewPKIKeyResolver(store),
+		consoleLog:       cfg.ConsoleLog.MQTT,
+		packetConsoleLog: cfg.ConsoleLog.Meshtastic,
 	}
 	if err := server.AddHook(hook, nil); err != nil {
 		return nil, nil, "", err
@@ -476,7 +502,76 @@ func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *stor
 
 // printJSON 将记录编码为 JSON 后按数据包类型着色输出。
 func printJSON(record map[string]any) {
-	//printJSONBytes(record, mqtpp.MustJSON(record))
+	printJSONBytes(record, mqtpp.MustJSON(record))
+}
+
+// printMeshtasticRecord 把 Meshtastic 解码后的 record 按 type 拼成可读的彩色单行，
+// 不输出原始 JSON。保留与 printJSONBytes 一致的色码方案。
+func printMeshtasticRecord(record map[string]any) {
+	if record == nil {
+		return
+	}
+	typ, _ := record["type"].(string)
+	from := stringField(record, "from")
+	channel := stringField(record, "channel_id")
+	gateway := stringField(record, "gateway_id")
+
+	var color string
+	var body string
+	switch typ {
+	case "nodeinfo":
+		color = ansiGreenBGWhiteText
+		body = fmt.Sprintf("nodeinfo   from=%s long=%q short=%q hw=%s role=%s",
+			from, stringField(record, "long_name"), stringField(record, "short_name"),
+			stringField(record, "hw_model"), stringField(record, "role"))
+	case "map_report":
+		color = ansiBlueBGWhiteText
+		body = fmt.Sprintf("map_report from=%s long=%q lat=%v lon=%v alt=%v fw=%s region=%s",
+			from, stringField(record, "long_name"),
+			record["latitude"], record["longitude"], record["altitude"],
+			stringField(record, "firmware_version"), stringField(record, "region"))
+	case "text_message":
+		color = ansiPurpleBGWhiteText
+		body = fmt.Sprintf("text       from=%s channel=%s text=%q",
+			from, channel, stringField(record, "text"))
+	case "position":
+		color = ansiCyanBGBlackText
+		body = fmt.Sprintf("position   from=%s lat=%v lon=%v alt=%v",
+			from, record["latitude"], record["longitude"], record["altitude"])
+	case "telemetry":
+		color = ansiYellowBGBlackText
+		body = fmt.Sprintf("telemetry  from=%s tt=%v metrics=%v",
+			from, record["telemetry_type"], record["metrics"])
+	case "routing":
+		color = ansiGrayBGWhiteText
+		body = fmt.Sprintf("routing    from=%s pkt_id=%v", from, record["packet_id"])
+	case "traceroute":
+		color = ansiGrayBGWhiteText
+		body = fmt.Sprintf("traceroute from=%s pkt_id=%v", from, record["packet_id"])
+	default:
+		if record["error"] != nil {
+			color = ansiRedBGWhiteText
+			body = fmt.Sprintf("%-10s from=%s error=%v topic=%s", typ, from,
+				record["error"], stringField(record, "topic"))
+		} else {
+			body = fmt.Sprintf("%-10s from=%s", typ, from)
+		}
+	}
+	if gateway != "" {
+		body += " gw=" + gateway
+	}
+	if color != "" {
+		fmt.Printf("%s%s%s\n", color, body, ansiReset)
+		return
+	}
+	fmt.Println(body)
+}
+
+func stringField(record map[string]any, key string) string {
+	if v, ok := record[key].(string); ok {
+		return v
+	}
+	return ""
 }
 
 // printJSONBytes 使用已编码好的 JSON 文本，并根据记录 type 选择控制台颜色。

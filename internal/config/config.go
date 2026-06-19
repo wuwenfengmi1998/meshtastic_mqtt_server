@@ -83,10 +83,11 @@ type AIConfig struct {
 
 // ConsoleLogConfig 控制各模块是否在控制台打印日志。后续若新增模块，按需扩展。
 type ConsoleLogConfig struct {
-	Web  bool `yaml:"web"`
-	MQTT bool `yaml:"mqtt"`
-	LLM  bool `yaml:"llm"`
-	SQL  bool `yaml:"sql"`
+	Web        bool `yaml:"web"`
+	MQTT       bool `yaml:"mqtt"`
+	LLM        bool `yaml:"llm"`
+	SQL        bool `yaml:"sql"`
+	Meshtastic bool `yaml:"meshtastic"`
 }
 
 type rawConfig struct {
@@ -99,10 +100,11 @@ type rawConfig struct {
 }
 
 type rawConsoleLogConfig struct {
-	Web  *bool `yaml:"web"`
-	MQTT *bool `yaml:"mqtt"`
-	LLM  *bool `yaml:"llm"`
-	SQL  *bool `yaml:"sql"`
+	Web        *bool `yaml:"web"`
+	MQTT       *bool `yaml:"mqtt"`
+	LLM        *bool `yaml:"llm"`
+	SQL        *bool `yaml:"sql"`
+	Meshtastic *bool `yaml:"meshtastic"`
 }
 
 type rawAIConfig struct {
@@ -200,10 +202,11 @@ func Default() *Config {
 			DataDir: defaultDataDir(),
 		},
 		ConsoleLog: ConsoleLogConfig{
-			Web:  true,
-			MQTT: true,
-			LLM:  true,
-			SQL:  true,
+			Web:        true,
+			MQTT:       true,
+			LLM:        true,
+			SQL:        true,
+			Meshtastic: true,
 		},
 	}
 }
@@ -514,6 +517,11 @@ func normalize(raw rawConfig) (*Config, bool) {
 			changed = true
 		} else {
 			cfg.ConsoleLog.SQL = *raw.ConsoleLog.SQL
+		}
+		if raw.ConsoleLog.Meshtastic == nil {
+			changed = true
+		} else {
+			cfg.ConsoleLog.Meshtastic = *raw.ConsoleLog.Meshtastic
 		}
 	}
 

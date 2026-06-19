@@ -16,11 +16,12 @@ type MQTTStatusProvider interface {
 // MQTTRuntimeStatus 把 mqtt.Server / 写队列 / 转发统计三个上下文打包成
 // 实现 MQTTStatusProvider 的具体类型。供 main 包构造后注入 newRouter。
 type MQTTRuntimeStatus struct {
-	Server  *mqtt.Server
-	Address string
-	TLS     bool
-	Stats   *mqttforwardpkg.Stats
-	DBQueue *storepkg.WriteQueue
+	Server      *mqtt.Server
+	Address     string
+	TLS         bool
+	Stats       *mqttforwardpkg.Stats
+	ClientStats *mqttforwardpkg.ClientStats
+	DBQueue     *storepkg.WriteQueue
 }
 
 // AdminMQTTStatus 是 admin 路由 GET /admin/mqtt-status 返回的 JSON 视图。
@@ -51,12 +52,12 @@ type AdminMQTTStatus struct {
 }
 
 type AdminMQTTClient struct {
-	ClientID   string `json:"client_id"`
-	Username   string `json:"username"`
-	Listener   string `json:"listener"`
-	RemoteAddr string `json:"remote_addr"`
-	RemoteHost string `json:"remote_host"`
-	RemotePort string `json:"remote_port"`
+	ClientID     string `json:"client_id"`
+	Username     string `json:"username"`
+	Listener     string `json:"listener"`
+	RemoteAddr   string `json:"remote_addr"`
+	PacketsIn    int64  `json:"packets_in"`  // 客户端 → 服务器
+	PacketsOut   int64  `json:"packets_out"` // 服务器 → 客户端
 }
 
 // Status 实现 MQTTStatusProvider。
@@ -94,13 +95,14 @@ func (m MQTTRuntimeStatus) Status() AdminMQTTStatus {
 			continue
 		}
 		info := mqttClientInfo(client)
+		in, out := m.ClientStats.Get(info.ClientID)
 		status.Clients = append(status.Clients, AdminMQTTClient{
 			ClientID:   info.ClientID,
 			Username:   info.Username,
 			Listener:   info.Listener,
 			RemoteAddr: info.RemoteAddr,
-			RemoteHost: info.RemoteHost,
-			RemotePort: info.RemotePort,
+			PacketsIn:  in,
+			PacketsOut: out,
 		})
 	}
 	return status
@@ -112,39 +114,16 @@ type mqttClientInfoView struct {
 	Username   string
 	Listener   string
 	RemoteAddr string
-	RemoteHost string
-	RemotePort string
 }
 
 func mqttClientInfo(c *mqtt.Client) mqttClientInfoView {
 	if c == nil {
 		return mqttClientInfoView{}
 	}
-	info := mqttClientInfoView{
+	return mqttClientInfoView{
 		ClientID:   c.ID,
 		Username:   string(c.Properties.Username),
 		Listener:   c.Net.Listener,
 		RemoteAddr: c.Net.Remote,
 	}
-	host, port := splitHostPort(c.Net.Remote)
-	info.RemoteHost = host
-	info.RemotePort = port
-	return info
-}
-
-func splitHostPort(addr string) (string, string) {
-	if addr == "" {
-		return "", ""
-	}
-	// 复用 net.SplitHostPort，但要兼容 "host" 这种没端口的情况。
-	for i := len(addr) - 1; i >= 0; i-- {
-		if addr[i] == ':' {
-			host := addr[:i]
-			if len(host) >= 2 && host[0] == '[' && host[len(host)-1] == ']' {
-				host = host[1 : len(host)-1]
-			}
-			return host, addr[i+1:]
-		}
-	}
-	return addr, ""
 }

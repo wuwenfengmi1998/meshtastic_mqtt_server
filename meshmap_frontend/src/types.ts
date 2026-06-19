@@ -327,8 +327,8 @@ export interface AdminMqttClient {
   username: string
   listener: string
   remote_addr: string
-  remote_host: string
-  remote_port: string
+  packets_in: number
+  packets_out: number
 }
 
 export interface AdminRuntimeSettings {

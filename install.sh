@@ -89,6 +89,7 @@ console_log:
   mqtt: true
   llm: true
   sql: true
+  meshtastic: true
 EOF
   chown "${SERVICE_USER}:${SERVICE_USER}" "${CONFIG_DIR}/config.yaml"
   chmod 0640 "${CONFIG_DIR}/config.yaml"

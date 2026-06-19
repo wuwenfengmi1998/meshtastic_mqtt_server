@@ -162,8 +162,8 @@ onBeforeUnmount(() => {
               <th>Username</th>
               <th>Listener</th>
               <th>Remote Addr</th>
-              <th>Remote Host</th>
-              <th>Remote Port</th>
+              <th>客户端→服务器</th>
+              <th>服务器→客户端</th>
             </tr>
           </thead>
           <tbody>
@@ -172,8 +172,8 @@ onBeforeUnmount(() => {
               <td>{{ client.username || '-' }}</td>
               <td>{{ client.listener || '-' }}</td>
               <td>{{ client.remote_addr || '-' }}</td>
-              <td>{{ client.remote_host || '-' }}</td>
-              <td>{{ client.remote_port || '-' }}</td>
+              <td>{{ client.packets_in ?? 0 }}</td>
+              <td>{{ client.packets_out ?? 0 }}</td>
             </tr>
           </tbody>
         </table>
