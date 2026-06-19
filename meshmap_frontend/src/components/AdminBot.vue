@@ -27,8 +27,8 @@ const message = ref('')
 const targetQuery = ref('')
 const chatPanelRef = ref<HTMLElement | null>(null)
 
-const newBot = ref({ node_num: '', long_name: '', short_name: '', default_channel_id: 'LongFast', topic_prefix: 'msh/CN', psk: 'AQ==', nodeinfo_broadcast_enabled: true, nodeinfo_broadcast_interval_seconds: '3600', enabled: true })
-const edits = ref<Record<number, { node_num: string; long_name: string; short_name: string; default_channel_id: string; topic_prefix: string; psk: string; nodeinfo_broadcast_enabled: boolean; nodeinfo_broadcast_interval_seconds: string; enabled: boolean }>>({})
+const newBot = ref<{ node_num: string | number | null; long_name: string; short_name: string; default_channel_id: string; topic_prefix: string; psk: string; nodeinfo_broadcast_enabled: boolean; nodeinfo_broadcast_interval_seconds: string | number; enabled: boolean }>({ node_num: '', long_name: '', short_name: '', default_channel_id: 'LongFast', topic_prefix: 'msh/CN', psk: 'AQ==', nodeinfo_broadcast_enabled: true, nodeinfo_broadcast_interval_seconds: '3600', enabled: true })
+const edits = ref<Record<number, { node_num: string | number | null; long_name: string; short_name: string; default_channel_id: string; topic_prefix: string; psk: string; nodeinfo_broadcast_enabled: boolean; nodeinfo_broadcast_interval_seconds: string | number; enabled: boolean }>>({})
 const sendForm = ref<{ message_type: BotMessageType; channel_id: string; to_node_id: string; text: string }>({ message_type: 'channel', channel_id: 'LongFast', to_node_id: '', text: '' })
 
 const selectedBot = computed(() => bots.value.find((bot) => bot.id === selectedBotId.value) ?? null)
@@ -98,8 +98,10 @@ watch(currentChannelID, () => {
   }
 })
 
-function botPayload(form: { node_num: string; long_name: string; short_name: string; default_channel_id: string; topic_prefix?: string; psk?: string; nodeinfo_broadcast_enabled?: boolean; nodeinfo_broadcast_interval_seconds?: string | number; enabled: boolean }): BotNodePayload {
-  const nodeNumText = form.node_num.trim()
+function botPayload(form: { node_num: string | number | null; long_name: string; short_name: string; default_channel_id: string; topic_prefix?: string; psk?: string; nodeinfo_broadcast_enabled?: boolean; nodeinfo_broadcast_interval_seconds?: string | number; enabled: boolean }): BotNodePayload {
+  // <input type="number"> 的 v-model 会把绑定值转成 number，而 number 上没有 trim，
+  // 直接调用会抛 "node_num.trim is not a function" 让保存失败。统一转成 string 再 trim。
+  const nodeNumText = form.node_num == null ? '' : String(form.node_num).trim()
   const interval = Number(form.nodeinfo_broadcast_interval_seconds || 3600)
   return {
     node_num: nodeNumText ? Number(nodeNumText) : null,
