@@ -424,6 +424,7 @@ func run(cfg *configpkg.Config) error {
 				ToolConfigStore:  store,
 				ToolRouterStore:  store,
 				TopicRouterStore: store,
+				Store:            store,
 			}, store.DB(), botSenderAdapter)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to initialize AI service: %v\n", err)

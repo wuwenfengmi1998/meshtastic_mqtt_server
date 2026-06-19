@@ -45,6 +45,28 @@ func (s *Store) CountSignsByDay(opts ListOptions) ([]SignDayCount, error) {
 	return rows, q.Scan(&rows).Error
 }
 
+// HasSignedOnDay 判断指定节点在 day 所属的自然日（按 day 的时区）是否已有签到记录。
+// 用 Go 端计算当日起止时间再查询，避免依赖 SQLite/MySQL 各自的日期函数。
+func (s *Store) HasSignedOnDay(nodeID string, day time.Time) (bool, error) {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return false, fmt.Errorf("node id is required")
+	}
+	loc := day.Location()
+	if loc == nil {
+		loc = time.Local
+	}
+	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, loc)
+	end := start.AddDate(0, 0, 1)
+	var count int64
+	if err := s.db.Model(&SignRecord{}).
+		Where("node_id = ? AND sign_time >= ? AND sign_time < ?", nodeID, start, end).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("check sign on day: %w", err)
+	}
+	return count > 0, nil
+}
+
 func (s *Store) GetSignByID(id uint64) (*SignRecord, error) {
 	var row SignRecord
 	if err := s.db.Where("id = ?", id).Take(&row).Error; err != nil {

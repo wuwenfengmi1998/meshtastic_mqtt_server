@@ -7,16 +7,17 @@ import (
 	"os"
 	"path/filepath"
 
-	"meshtastic_mqtt_server/internal/agenttool"
 	_ "meshtastic_mqtt_server/internal/agents/calculator"
+	_ "meshtastic_mqtt_server/internal/agents/sign"
 	_ "meshtastic_mqtt_server/internal/agents/time"
+	"meshtastic_mqtt_server/internal/agenttool"
 	"meshtastic_mqtt_server/internal/autoreply"
 	"meshtastic_mqtt_server/internal/conversation"
 	"meshtastic_mqtt_server/internal/llm"
 	storepkg "meshtastic_mqtt_server/internal/store"
 	"meshtastic_mqtt_server/internal/toolmanager"
-	"meshtastic_mqtt_server/internal/topicrouter"
 	"meshtastic_mqtt_server/internal/toolrouter"
+	"meshtastic_mqtt_server/internal/topicrouter"
 
 	"gorm.io/gorm"
 )
@@ -43,13 +44,15 @@ type TopicRouterStore interface {
 
 // Config holds the AI service configuration
 type Config struct {
-	LLMProviders    []llm.ProviderConfig
-	DataDir         string
-	Enabled         bool
-	ConsoleLog      bool
-	ToolConfigStore ToolConfigStore
-	ToolRouterStore ToolRouterStore
+	LLMProviders     []llm.ProviderConfig
+	DataDir          string
+	Enabled          bool
+	ConsoleLog       bool
+	ToolConfigStore  ToolConfigStore
+	ToolRouterStore  ToolRouterStore
 	TopicRouterStore TopicRouterStore
+	// Store 注入持久化层，供需要 DB 访问的 agent 工具（如签到工具）使用。
+	Store *storepkg.Store
 }
 
 // Service manages all AI-related components
@@ -194,7 +197,11 @@ func NewService(cfg Config, db *gorm.DB, botSender autoreply.BotSender) (*Servic
 	}
 
 	// Load tools
-	toolMgr, err := toolmanager.Load(agentsDir, agenttool.LoadOptions{})
+	loadOptions := agenttool.LoadOptions{Values: map[string]any{}}
+	if cfg.Store != nil {
+		loadOptions.Values["store"] = cfg.Store
+	}
+	toolMgr, err := toolmanager.Load(agentsDir, loadOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load tools: %w", err)
 	}

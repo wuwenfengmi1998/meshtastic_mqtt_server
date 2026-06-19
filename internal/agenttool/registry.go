@@ -47,6 +47,28 @@ type Runtime struct {
 	Now          time.Time
 }
 
+// NodeContext carries the originating node identity for a tool execution.
+// 它由 autoreply 在处理一条队列消息时注入到 ctx 中，供需要识别发送节点的
+// 工具（如签到工具）使用，避免依赖 LLM 从文本里回填节点 ID。
+type NodeContext struct {
+	NodeID    string
+	LongName  string
+	ShortName string
+}
+
+type nodeContextKey struct{}
+
+// WithNodeContext 把节点身份信息挂到 ctx 上。
+func WithNodeContext(ctx context.Context, nc NodeContext) context.Context {
+	return context.WithValue(ctx, nodeContextKey{}, nc)
+}
+
+// NodeContextFromContext 从 ctx 中取出节点身份信息；不存在时第二个返回值为 false。
+func NodeContextFromContext(ctx context.Context) (NodeContext, bool) {
+	nc, ok := ctx.Value(nodeContextKey{}).(NodeContext)
+	return nc, ok
+}
+
 // LoadedTool is the interface that all tools must implement
 type LoadedTool interface {
 	Name() string

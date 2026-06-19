@@ -9,14 +9,15 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"meshtastic_mqtt_server/internal/agenttool"
 	"meshtastic_mqtt_server/internal/completion"
 	"meshtastic_mqtt_server/internal/conversation"
 	"meshtastic_mqtt_server/internal/llm"
 	"meshtastic_mqtt_server/internal/message"
 	"meshtastic_mqtt_server/internal/stream"
 	"meshtastic_mqtt_server/internal/toolmanager"
-	"meshtastic_mqtt_server/internal/topicrouter"
 	"meshtastic_mqtt_server/internal/toolrouter"
+	"meshtastic_mqtt_server/internal/topicrouter"
 
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
@@ -247,6 +248,14 @@ func truncate(s string, n int) string {
 	return s[:n] + "..."
 }
 
+// ptrStringValue 安全取出 *string 的值，nil 返回空串。
+func ptrStringValue(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
 // processMessage processes a single queued message
 func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 	// Mark message as processing
@@ -339,7 +348,13 @@ func (s *Service) processMessage(ctx context.Context, msg QueuedMessage) {
 			routerModel = routerProfile.Config.Model
 		}
 		s.logf("msg=%d router_model=%s tool_loop start", msg.ID, routerModel)
-		augmentedMessages, toolUsed, err = toolrouter.RunAgentToolLoop(procCtx, s.toolRouter, profile, systemPrompt, conv.Messages, s.toolMgr, s.emit(msg.ID, routerModel))
+		// 把发送节点身份注入 ctx，供需要识别节点的工具（如签到）使用
+		nodeCtx := agenttool.WithNodeContext(procCtx, agenttool.NodeContext{
+			NodeID:    msg.FromNodeID,
+			LongName:  ptrStringValue(msg.LongName),
+			ShortName: ptrStringValue(msg.ShortName),
+		})
+		augmentedMessages, toolUsed, err = toolrouter.RunAgentToolLoop(nodeCtx, s.toolRouter, profile, systemPrompt, conv.Messages, s.toolMgr, s.emit(msg.ID, routerModel))
 		if err != nil {
 			s.logf("msg=%d WARN tool_loop err=%v", msg.ID, err)
 			// Continue with original messages if tool loop fails
