@@ -321,21 +321,28 @@ func (s *Store) EnqueueLLMMessage(input LLMMessageQueueInput) (*LLMMessageQueueR
 	// 检查是否存在重复消息
 	// packet_id > 0: 用 bot_id + packet_id 去重（频道消息）
 	// packet_id = 0: 用 bot_id + from_node_id + text 去重（私聊消息，可能没有 packet_id）
-	// 只排除 pending/processing 状态的消息，允许 error 状态的消息重新入队
+	// 命中条件二选一：
+	//   1. 仍存在 pending/processing 状态的记录（尚未处理完）
+	//   2. 已软删除（processed）但未超过 dedup 窗口——防止网络延迟/重投导致同一包在刚处理完后又被重复入队
+	// error 状态允许重新入队；processed 软删除超过窗口后也允许重新入队。
+	// 阈值在 Go 侧算好作为参数传入，避免依赖 SQLite datetime('now') 的时区行为，与其它 time 字段读写保持一致。
+	processedCutoff := time.Now().Add(-llmQueueProcessedDedupWindow)
+	dupCondition := "(deleted_at IS NULL AND status IN (?, ?)) OR (deleted_at IS NOT NULL AND deleted_at > ?)"
+
 	var existing LLMMessageQueueRecord
 	if input.PacketID > 0 {
 		// 频道消息：用 bot_id + packet_id 去重
-		err = s.db.Where("bot_id = ? AND packet_id = ? AND deleted_at IS NULL AND status IN (?, ?)",
-			input.BotID, input.PacketID, LLMMessageStatusPending, LLMMessageStatusProcessing).
+		err = s.db.Where("bot_id = ? AND packet_id = ? AND "+dupCondition,
+			input.BotID, input.PacketID, LLMMessageStatusPending, LLMMessageStatusProcessing, processedCutoff).
 			Take(&existing).Error
 	} else {
 		// 私聊消息：用 bot_id + from_node_id + text 去重（避免同一人连续发相同内容被拒绝）
-		err = s.db.Where("bot_id = ? AND from_node_id = ? AND text = ? AND deleted_at IS NULL AND status IN (?, ?)",
-			input.BotID, input.FromNodeID, input.Text, LLMMessageStatusPending, LLMMessageStatusProcessing).
+		err = s.db.Where("bot_id = ? AND from_node_id = ? AND text = ? AND "+dupCondition,
+			input.BotID, input.FromNodeID, input.Text, LLMMessageStatusPending, LLMMessageStatusProcessing, processedCutoff).
 			Take(&existing).Error
 	}
 	if err == nil {
-		// 存在正在处理或待处理的相同消息，直接返回
+		// 存在命中去重的记录（处理中 / 刚处理完未过窗口），直接返回
 		return &existing, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {

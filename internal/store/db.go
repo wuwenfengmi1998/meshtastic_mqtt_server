@@ -384,6 +384,10 @@ const (
 	LLMMessageStatusError      = "error"
 )
 
+// llmQueueProcessedDedupWindow 是 processed 消息软删除后仍参与去重的时间窗口。
+// 处理完即软删除，但记录会保留至此窗口结束，防止网络延迟/重投导致同一包在刚处理完后又被重复入队。
+const llmQueueProcessedDedupWindow = 15 * time.Second
+
 type NodeInfoRecord struct {
 	NodeID      string    `gorm:"column:node_id;primaryKey;not null"`
 	NodeNum     int64     `gorm:"column:node_num;not null;index"`
