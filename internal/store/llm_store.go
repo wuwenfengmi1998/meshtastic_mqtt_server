@@ -505,10 +505,9 @@ func enqueueChannelMessageToLLM(s *Store, record map[string]any) error {
 		fromNodeNum = 0
 	}
 
-	var packetID int64
-	if p, ok := record["packet_id"].(float64); ok {
-		packetID = int64(p)
-	}
+	// record 来自 describePacket 直接构造的 map，packet_id 是 uint32，
+	// 并未经过 JSON 往返（不会变成 float64），必须用类型安全的转换兜底各种整型。
+	packetID, _ := int64FromAny(record["packet_id"])
 
 	topic, _ := record["topic"].(string)
 
