@@ -80,6 +80,16 @@ func (h *meshtasticFilterHook) Provides(b byte) bool {
 
 // OnConnect 在 MQTT 会话建立前拒绝命中 IP 屏蔽表的客户端。
 func (h *meshtasticFilterHook) OnConnect(cl *mqtt.Client, pk packets.Packet) error {
+	// 启用 TCP_NODELAY 禁用 Nagle 算法，确保小数据包（包括 TCP ACK）立即发送
+	// 这对于 MQTT QoS0 消息特别重要，避免设备因为等待 TCP ACK 而重发
+	if cl.Net.Conn != nil {
+		if tcpConn, ok := cl.Net.Conn.(*net.TCPConn); ok {
+			if err := tcpConn.SetNoDelay(true); err != nil {
+				printJSON(map[string]any{"event": "tcp_nodelay_failed", "error": err.Error(), "remote_addr": cl.Net.Remote})
+			}
+		}
+	}
+
 	info := mqttClientInfoFromClient(cl)
 	if h.blocking != nil && h.blocking.IsIPBlocked(info.RemoteHost) {
 		printJSON(map[string]any{"event": "mqtt_client_rejected", "reason": "blocked_ip", "client_id": info.ClientID, "remote_addr": info.RemoteAddr, "remote_host": info.RemoteHost})
