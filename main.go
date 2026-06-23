@@ -203,12 +203,24 @@ func (h *meshtasticFilterHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (pa
 		PKIKeyResolver:           h.pkiResolver,
 	})
 	if !valid {
+		// 记录拒绝原因，帮助诊断 QoS0 重发问题
+		if h.consoleLog {
+			info := mqttClientInfoFromClient(cl)
+			fmt.Fprintf(os.Stderr, "[mqtt] PUBLISH rejected: client_id=%s topic=%s qos=%d payload_len=%d error=%v\n",
+				info.ClientID, pk.TopicName, pk.FixedHeader.Qos, len(pk.Payload), record["error"])
+		}
 		h.rejectPublish(cl, pk, record)
 		return pk, packets.ErrRejectPacket
 	}
 	if violation := blockingViolationForRecord(h.blocking, record); violation != nil {
 		for key, value := range violation {
 			record[key] = value
+		}
+		// 记录屏蔽原因
+		if h.consoleLog {
+			info := mqttClientInfoFromClient(cl)
+			fmt.Fprintf(os.Stderr, "[mqtt] PUBLISH blocked: client_id=%s topic=%s type=%v reason=%v\n",
+				info.ClientID, pk.TopicName, violation["blocking_type"], violation["error"])
 		}
 		h.rejectPublish(cl, pk, record)
 		return pk, packets.ErrRejectPacket
