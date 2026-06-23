@@ -85,6 +85,11 @@ func (m *mockSignStore) CountSignsByDay(opts storepkg.ListOptions) ([]storepkg.S
 func (m *mockSignStore) ListSigns(opts storepkg.ListOptions) ([]storepkg.SignRecord, error) {
 	var result []storepkg.SignRecord
 	for _, sign := range m.signs {
+		// 过滤 NodeID
+		if opts.NodeID != "" && sign.NodeID != opts.NodeID {
+			continue
+		}
+		// 过滤时间范围
 		if opts.Since != nil && sign.SignTime.Before(*opts.Since) {
 			continue
 		}
@@ -92,6 +97,10 @@ func (m *mockSignStore) ListSigns(opts storepkg.ListOptions) ([]storepkg.SignRec
 			continue
 		}
 		result = append(result, sign)
+	}
+	// 应用 Limit
+	if opts.Limit > 0 && len(result) > opts.Limit {
+		result = result[:opts.Limit]
 	}
 	return result, nil
 }
@@ -261,12 +270,13 @@ func TestSignTool_CheckAction(t *testing.T) {
 
 	// 测试场景2：今天已签到
 	t.Run("今天已签到", func(t *testing.T) {
+		signTime := time.Date(2024, 6, 23, 10, 30, 45, 0, time.UTC)
 		store := &mockSignStore{
 			signs: []storepkg.SignRecord{
 				{
 					NodeID:   "test_node_123",
 					SignText: "上海-TestUser-TestDevice签到",
-					SignTime: now,
+					SignTime: signTime,
 				},
 			},
 			nodeInfoMap: make(map[string]*storepkg.NodeInfoRecord),
@@ -299,6 +309,15 @@ func TestSignTool_CheckAction(t *testing.T) {
 
 		if !contains(result, "已经签到") {
 			t.Errorf("Expected result to indicate already signed")
+		}
+		if !contains(result, "签到时间") {
+			t.Errorf("Expected result to contain sign time")
+		}
+		if !contains(result, "10:30:45") {
+			t.Errorf("Expected result to contain the exact sign time")
+		}
+		if !contains(result, "签到内容") {
+			t.Errorf("Expected result to contain sign text")
 		}
 	})
 }

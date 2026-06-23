@@ -179,7 +179,7 @@ func (t *Tool) executeSign(ctx context.Context, params signParams, runtime agent
 	return fmt.Sprintf("签到成功！%s\n签到内容：%s", displayName(node), record.SignText), nil
 }
 
-// executeCheck 检查当前节点今天是否已签到
+// executeCheck 检查当前节点今天是否已签到，并返回签到详情
 func (t *Tool) executeCheck(ctx context.Context, params signParams, runtime agenttool.Runtime) (string, error) {
 	// 节点身份来自消息上下文
 	node, ok := agenttool.NodeContextFromContext(ctx)
@@ -192,16 +192,36 @@ func (t *Tool) executeCheck(ctx context.Context, params signParams, runtime agen
 		now = time.Now()
 	}
 
-	// 查询数据库检查今天是否已签到
-	signed, err := t.store.HasSignedOnDay(node.NodeID, now)
-	if err != nil {
-		return "", fmt.Errorf("检查签到状态失败：%w", err)
+	// 构建查询选项：查询今天的签到记录
+	loc := now.Location()
+	if loc == nil {
+		loc = time.Local
+	}
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	end := start.AddDate(0, 0, 1)
+
+	opts := storepkg.ListOptions{
+		NodeID: node.NodeID,
+		Since:  &start,
+		Until:  &end,
+		Limit:  1,
 	}
 
-	if signed {
-		return fmt.Sprintf("%s 今天已经签到过了。", displayName(node)), nil
+	// 查询数据库获取今天的签到记录
+	signs, err := t.store.ListSigns(opts)
+	if err != nil {
+		return "", fmt.Errorf("查询签到记录失败：%w", err)
 	}
-	return fmt.Sprintf("%s 今天还没有签到。", displayName(node)), nil
+
+	if len(signs) == 0 {
+		return fmt.Sprintf("%s 今天还没有签到。", displayName(node)), nil
+	}
+
+	// 返回签到详情
+	sign := signs[0]
+	signTimeStr := sign.SignTime.Format("15:04:05")
+	return fmt.Sprintf("%s 今天已经签到过了。\n签到时间：%s\n签到内容：%s",
+		displayName(node), signTimeStr, sign.SignText), nil
 }
 
 // executeQuery 执行查询操作
