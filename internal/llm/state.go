@@ -135,3 +135,137 @@ func (s *State) ListProfiles() []ProviderConfig {
 	}
 	return profiles
 }
+
+// UpdateProvider updates an existing provider's configuration
+func (s *State) UpdateProvider(config ProviderConfig) error {
+	name := strings.TrimSpace(config.Name)
+	if name == "" {
+		return errors.New("llm provider name cannot be empty")
+	}
+	if strings.TrimSpace(config.APIKey) == "" {
+		return fmt.Errorf("llm provider %s api_key is required", name)
+	}
+	if strings.TrimSpace(config.Model) == "" {
+		return fmt.Errorf("llm provider %s model is required", name)
+	}
+	if strings.TrimSpace(config.BaseURL) == "" {
+		return fmt.Errorf("llm provider %s base_url is required", name)
+	}
+	if config.Timeout <= 0 {
+		config.Timeout = 120
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.profiles[name]; !ok {
+		return fmt.Errorf("llm provider not found: %s", name)
+	}
+
+	// Create new client with updated config
+	s.profiles[name] = &Profile{
+		Config: config,
+		Client: ark.NewClientWithApiKey(
+			config.APIKey,
+			ark.WithBaseUrl(config.BaseURL),
+			ark.WithTimeout(time.Duration(config.Timeout)*time.Second),
+		),
+	}
+
+	// Update active status if needed
+	if config.Active && s.activeName != name {
+		s.activeName = name
+	} else if !config.Active && s.activeName == name {
+		// If we're deactivating the current active provider, switch to the first available
+		for _, otherName := range s.order {
+			if otherName != name {
+				s.activeName = otherName
+				break
+			}
+		}
+	}
+
+	return nil
+}
+
+// AddProvider adds a new provider to the state
+func (s *State) AddProvider(config ProviderConfig) error {
+	name := strings.TrimSpace(config.Name)
+	if name == "" {
+		return errors.New("llm provider name cannot be empty")
+	}
+	if strings.TrimSpace(config.APIKey) == "" {
+		return fmt.Errorf("llm provider %s api_key is required", name)
+	}
+	if strings.TrimSpace(config.Model) == "" {
+		return fmt.Errorf("llm provider %s model is required", name)
+	}
+	if strings.TrimSpace(config.BaseURL) == "" {
+		return fmt.Errorf("llm provider %s base_url is required", name)
+	}
+	if config.Timeout <= 0 {
+		config.Timeout = 120
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.profiles[name]; ok {
+		return fmt.Errorf("llm provider already exists: %s", name)
+	}
+
+	s.profiles[name] = &Profile{
+		Config: config,
+		Client: ark.NewClientWithApiKey(
+			config.APIKey,
+			ark.WithBaseUrl(config.BaseURL),
+			ark.WithTimeout(time.Duration(config.Timeout)*time.Second),
+		),
+	}
+	s.order = append(s.order, name)
+
+	// Set as active if it's the first one or explicitly marked active
+	if len(s.profiles) == 1 || config.Active {
+		s.activeName = name
+	}
+
+	return nil
+}
+
+// RemoveProvider removes a provider from the state
+func (s *State) RemoveProvider(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("llm provider name cannot be empty")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.profiles[name]; !ok {
+		return fmt.Errorf("llm provider not found: %s", name)
+	}
+
+	// Don't allow removing the last provider
+	if len(s.profiles) == 1 {
+		return errors.New("cannot remove the last llm provider")
+	}
+
+	delete(s.profiles, name)
+
+	// Remove from order
+	newOrder := make([]string, 0, len(s.order)-1)
+	for _, n := range s.order {
+		if n != name {
+			newOrder = append(newOrder, n)
+		}
+	}
+	s.order = newOrder
+
+	// If we removed the active provider, switch to the first available
+	if s.activeName == name {
+		s.activeName = s.order[0]
+	}
+
+	return nil
+}

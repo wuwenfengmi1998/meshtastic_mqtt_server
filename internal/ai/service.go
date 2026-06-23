@@ -258,3 +258,69 @@ func (s *Service) Stop() {
 func (s *Service) Enabled() bool {
 	return s.enabled
 }
+
+// ReloadLLMProvider reloads a specific LLM provider configuration
+func (s *Service) ReloadLLMProvider(config interface{}) error {
+	if !s.enabled || s.LLMState == nil {
+		return nil
+	}
+	providerConfig, err := convertToProviderConfig(config)
+	if err != nil {
+		return err
+	}
+	return s.LLMState.UpdateProvider(providerConfig)
+}
+
+// AddLLMProvider adds a new LLM provider
+func (s *Service) AddLLMProvider(config interface{}) error {
+	if !s.enabled || s.LLMState == nil {
+		return nil
+	}
+	providerConfig, err := convertToProviderConfig(config)
+	if err != nil {
+		return err
+	}
+	return s.LLMState.AddProvider(providerConfig)
+}
+
+// RemoveLLMProvider removes an LLM provider
+func (s *Service) RemoveLLMProvider(name string) error {
+	if !s.enabled || s.LLMState == nil {
+		return nil
+	}
+	return s.LLMState.RemoveProvider(name)
+}
+
+// convertToProviderConfig converts a map to llm.ProviderConfig
+func convertToProviderConfig(config interface{}) (llm.ProviderConfig, error) {
+	m, ok := config.(map[string]interface{})
+	if !ok {
+		return llm.ProviderConfig{}, fmt.Errorf("invalid config type: expected map[string]interface{}")
+	}
+
+	pc := llm.ProviderConfig{}
+
+	if v, ok := m["Name"].(string); ok {
+		pc.Name = v
+	}
+	if v, ok := m["Active"].(bool); ok {
+		pc.Active = v
+	}
+	if v, ok := m["APIKey"].(string); ok {
+		pc.APIKey = v
+	}
+	if v, ok := m["BaseURL"].(string); ok {
+		pc.BaseURL = v
+	}
+	if v, ok := m["Model"].(string); ok {
+		pc.Model = v
+	}
+	if v, ok := m["Timeout"].(int); ok {
+		pc.Timeout = v
+	}
+	if v, ok := m["ContextWindowTokens"].(int); ok {
+		pc.ContextWindowTokens = v
+	}
+
+	return pc, nil
+}

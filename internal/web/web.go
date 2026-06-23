@@ -27,10 +27,17 @@ import (
 	"meshtastic_mqtt_server/internal/webutil"
 )
 
-func NewHTTPServer(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender) *http.Server {
+// LLMProviderReloader is the interface for reloading LLM provider configuration
+type LLMProviderReloader interface {
+	ReloadLLMProvider(config interface{}) error
+	AddLLMProvider(config interface{}) error
+	RemoveLLMProvider(name string) error
+}
+
+func NewHTTPServer(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender, aiService LLMProviderReloader) *http.Server {
 	return &http.Server{
 		Addr:    net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
-		Handler: NewRouter(cfg, consoleLog, store, sessions, mqttStatus, blocking, forwarder, settings, botSender),
+		Handler: NewRouter(cfg, consoleLog, store, sessions, mqttStatus, blocking, forwarder, settings, botSender, aiService),
 	}
 }
 
@@ -60,7 +67,7 @@ func ServeUnixSocket(server *http.Server, socketPath string) error {
 	return server.Serve(listener)
 }
 
-func NewRouter(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender) *gin.Engine {
+func NewRouter(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender, aiService LLMProviderReloader) *gin.Engine {
 	r := gin.New()
 	if consoleLog {
 		r.Use(gin.Logger(), gin.Recovery())
@@ -69,7 +76,7 @@ func NewRouter(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, 
 	}
 	api := r.Group("/api")
 	registerAPIRoutes(api, store, cfg.MapTileCacheDir)
-	registerAdminRoutes(api.Group("/admin"), store, sessions, mqttStatus, blocking, forwarder, settings, botSender)
+	registerAdminRoutes(api.Group("/admin"), store, sessions, mqttStatus, blocking, forwarder, settings, botSender, aiService)
 	registerStaticRoutes(r, cfg.StaticDir)
 	return r
 }
@@ -163,7 +170,7 @@ func registerAPIRoutes(r gin.IRouter, store *storepkg.Store, mapTileCacheDir str
 	})
 }
 
-func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender) {
+func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender, aiService LLMProviderReloader) {
 	type loginRequest struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -230,7 +237,7 @@ func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Ma
 	mappkg.RegisterAdminRoutes(protected, store)
 	helppkg.RegisterAdminRoutes(protected, store)
 	botpkg.RegisterRoutes(protected, store, botSender)
-	llmadminpkg.RegisterRoutes(protected, store)
+	llmadminpkg.RegisterRoutes(protected, store, aiService)
 	protected.GET("/me", func(c *gin.Context) {
 		claims := c.MustGet("admin_claims").(*auth.SessionClaims)
 		c.JSON(http.StatusOK, gin.H{"user": auth.AdminUserDTO{Username: claims.Username, Role: claims.Role}})

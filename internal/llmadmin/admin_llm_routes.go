@@ -13,7 +13,14 @@ import (
 	"meshtastic_mqtt_server/internal/webutil"
 )
 
-func RegisterRoutes(r *gin.RouterGroup, store *storepkg.Store) {
+// LLMProviderReloader is the interface for reloading LLM provider configuration
+type LLMProviderReloader interface {
+	ReloadLLMProvider(config interface{}) error
+	AddLLMProvider(config interface{}) error
+	RemoveLLMProvider(name string) error
+}
+
+func RegisterRoutes(r *gin.RouterGroup, store *storepkg.Store, aiService LLMProviderReloader) {
 	group := r.Group("/llm")
 	{
 		// LLM Message Queue
@@ -27,9 +34,9 @@ func RegisterRoutes(r *gin.RouterGroup, store *storepkg.Store) {
 		// LLM Providers
 		group.GET("/providers", handleListLLMProviders(store))
 		group.GET("/providers/:name", handleGetLLMProvider(store))
-		group.POST("/providers", handleCreateLLMProvider(store))
-		group.PUT("/providers/:name", handleUpdateLLMProvider(store))
-		group.DELETE("/providers/:name", handleDeleteLLMProvider(store))
+		group.POST("/providers", handleCreateLLMProvider(store, aiService))
+		group.PUT("/providers/:name", handleUpdateLLMProvider(store, aiService))
+		group.DELETE("/providers/:name", handleDeleteLLMProvider(store, aiService))
 
 		// LLM Tool Router
 		group.GET("/tool-router", handleGetLLMToolRouter(store))
@@ -254,7 +261,7 @@ func handleGetLLMProvider(store *storepkg.Store) gin.HandlerFunc {
 	}
 }
 
-func handleCreateLLMProvider(store *storepkg.Store) gin.HandlerFunc {
+func handleCreateLLMProvider(store *storepkg.Store, aiService LLMProviderReloader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			Name               string `json:"name"`
@@ -290,11 +297,33 @@ func handleCreateLLMProvider(store *storepkg.Store) gin.HandlerFunc {
 			return
 		}
 
+		// Reload AI service with new provider
+		if aiService != nil {
+			providerConfig := map[string]interface{}{
+				"Name":                record.Name,
+				"Active":              record.Active,
+				"APIKey":              record.APIKey,
+				"BaseURL":             record.BaseURL,
+				"Model":               record.Model,
+				"Timeout":             record.Timeout,
+				"ContextWindowTokens": record.ContextWindowTokens,
+			}
+			if err := aiService.AddLLMProvider(providerConfig); err != nil {
+				// Log warning but don't fail the request - database is already updated
+				c.JSON(http.StatusOK, gin.H{
+					"status":  "ok",
+					"item":    llmProviderDTO(*record),
+					"warning": "provider created but failed to reload AI service: " + err.Error(),
+				})
+				return
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "item": llmProviderDTO(*record)})
 	}
 }
 
-func handleUpdateLLMProvider(store *storepkg.Store) gin.HandlerFunc {
+func handleUpdateLLMProvider(store *storepkg.Store, aiService LLMProviderReloader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		name := c.Param("name")
 		if name == "" {
@@ -355,11 +384,33 @@ func handleUpdateLLMProvider(store *storepkg.Store) gin.HandlerFunc {
 			return
 		}
 
+		// Reload AI service with updated provider
+		if aiService != nil {
+			providerConfig := map[string]interface{}{
+				"Name":                record.Name,
+				"Active":              record.Active,
+				"APIKey":              record.APIKey,
+				"BaseURL":             record.BaseURL,
+				"Model":               record.Model,
+				"Timeout":             record.Timeout,
+				"ContextWindowTokens": record.ContextWindowTokens,
+			}
+			if err := aiService.ReloadLLMProvider(providerConfig); err != nil {
+				// Log warning but don't fail the request - database is already updated
+				c.JSON(http.StatusOK, gin.H{
+					"status":  "ok",
+					"item":    llmProviderDTO(*record),
+					"warning": "provider updated but failed to reload AI service: " + err.Error(),
+				})
+				return
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "item": llmProviderDTO(*record)})
 	}
 }
 
-func handleDeleteLLMProvider(store *storepkg.Store) gin.HandlerFunc {
+func handleDeleteLLMProvider(store *storepkg.Store, aiService LLMProviderReloader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		name := c.Param("name")
 		if name == "" {
@@ -370,6 +421,18 @@ func handleDeleteLLMProvider(store *storepkg.Store) gin.HandlerFunc {
 		if err := store.DeleteLLMProvider(name); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
+		}
+
+		// Remove provider from AI service
+		if aiService != nil {
+			if err := aiService.RemoveLLMProvider(name); err != nil {
+				// Log warning but don't fail the request - database is already updated
+				c.JSON(http.StatusOK, gin.H{
+					"status":  "ok",
+					"warning": "provider deleted but failed to reload AI service: " + err.Error(),
+				})
+				return
+			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})

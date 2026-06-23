@@ -458,7 +458,7 @@ func run(cfg *configpkg.Config) error {
 			return err
 		}
 		mqttStatus := webpkg.MQTTRuntimeStatus{Server: server, Address: mqttAddr, TLS: cfg.MQTT.TLS.Enabled, Stats: messageStats, ClientStats: clientStats, DBQueue: dbQueue}
-		handler := webpkg.NewRouter(cfg.Web, cfg.ConsoleLog.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender)
+		handler := webpkg.NewRouter(cfg.Web, cfg.ConsoleLog.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender, aiService)
 		webAddresses := []string{}
 		if cfg.Web.PortEnabled {
 			httpServer := &http.Server{
