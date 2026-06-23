@@ -45,9 +45,10 @@ func (t *Tool) Enabled() bool { return t.enabled && t.store != nil }
 
 // ToolDefinition returns the OpenAI tool definition
 func (t *Tool) ToolDefinition(description string) *model.Tool {
-	desc := "签到工具。支持签到和查询两种操作：\n" +
+	desc := "签到工具。支持三种操作：\n" +
 		"1. 签到操作(action=sign)：记录节点今日签到信息，每个节点每天只能签到一次。必填参数：地区、名字、设备\n" +
-		"2. 查询操作(action=query)：查询签到统计。可按日期范围查询，默认查询今天。返回签到总数和按天的统计数据"
+		"2. 查询操作(action=query)：查询签到统计。可按日期范围查询，默认查询今天。返回签到总数和按天的统计数据\n" +
+		"3. 检查操作(action=check)：检查当前节点今天是否已签到。用于回答用户'我今天签到了吗'之类的问题"
 	if description != "" {
 		desc = description
 	}
@@ -61,8 +62,8 @@ func (t *Tool) ToolDefinition(description string) *model.Tool {
 				"properties": map[string]any{
 					"action": map[string]any{
 						"type":        "string",
-						"enum":        []string{"sign", "query"},
-						"description": "操作类型：sign=签到，query=查询签到统计",
+						"enum":        []string{"sign", "query", "check"},
+						"description": "操作类型：sign=签到，query=查询签到统计，check=检查今天是否已签到",
 					},
 					"region": map[string]any{
 						"type":        "string",
@@ -122,10 +123,12 @@ func (t *Tool) Execute(ctx context.Context, args string, runtime agenttool.Runti
 	switch strings.ToLower(strings.TrimSpace(params.Action)) {
 	case "query":
 		return t.executeQuery(ctx, params, runtime)
+	case "check":
+		return t.executeCheck(ctx, params, runtime)
 	case "sign", "":
 		return t.executeSign(ctx, params, runtime)
 	default:
-		return "", fmt.Errorf("无效的操作类型：%s，只支持 sign 或 query", params.Action)
+		return "", fmt.Errorf("无效的操作类型：%s，只支持 sign、query 或 check", params.Action)
 	}
 }
 
@@ -174,6 +177,31 @@ func (t *Tool) executeSign(ctx context.Context, params signParams, runtime agent
 	}
 
 	return fmt.Sprintf("签到成功！%s\n签到内容：%s", displayName(node), record.SignText), nil
+}
+
+// executeCheck 检查当前节点今天是否已签到
+func (t *Tool) executeCheck(ctx context.Context, params signParams, runtime agenttool.Runtime) (string, error) {
+	// 节点身份来自消息上下文
+	node, ok := agenttool.NodeContextFromContext(ctx)
+	if !ok || strings.TrimSpace(node.NodeID) == "" {
+		return "", fmt.Errorf("缺少发送节点上下文，无法检查签到状态")
+	}
+
+	now := runtime.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	// 查询数据库检查今天是否已签到
+	signed, err := t.store.HasSignedOnDay(node.NodeID, now)
+	if err != nil {
+		return "", fmt.Errorf("检查签到状态失败：%w", err)
+	}
+
+	if signed {
+		return fmt.Sprintf("%s 今天已经签到过了。", displayName(node)), nil
+	}
+	return fmt.Sprintf("%s 今天还没有签到。", displayName(node)), nil
 }
 
 // executeQuery 执行查询操作

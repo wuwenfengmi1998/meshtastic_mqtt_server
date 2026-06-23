@@ -218,3 +218,100 @@ func TestSignTool_SignAction(t *testing.T) {
 		t.Errorf("Expected 1 sign record, got %d", len(store.signs))
 	}
 }
+
+func TestSignTool_CheckAction(t *testing.T) {
+	now := time.Date(2024, 6, 23, 12, 0, 0, 0, time.UTC)
+
+	// 测试场景1：今天未签到
+	t.Run("今天未签到", func(t *testing.T) {
+		store := &mockSignStore{
+			signs:       []storepkg.SignRecord{},
+			nodeInfoMap: make(map[string]*storepkg.NodeInfoRecord),
+		}
+
+		tool := &Tool{
+			enabled: true,
+			store:   store,
+		}
+
+		params := signParams{
+			Action: "check",
+		}
+		argsJSON, _ := json.Marshal(params)
+
+		nodeCtx := agenttool.NodeContext{
+			NodeID:    "test_node_123",
+			LongName:  "Test Node",
+			ShortName: "TN",
+		}
+		ctx := agenttool.WithNodeContext(context.Background(), nodeCtx)
+
+		runtime := agenttool.Runtime{Now: now}
+		result, err := tool.Execute(ctx, string(argsJSON), runtime)
+
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		t.Logf("Check result (not signed): %s", result)
+
+		if !contains(result, "还没有签到") && !contains(result, "没有签到") {
+			t.Errorf("Expected result to indicate not signed yet")
+		}
+	})
+
+	// 测试场景2：今天已签到
+	t.Run("今天已签到", func(t *testing.T) {
+		store := &mockSignStore{
+			signs: []storepkg.SignRecord{
+				{
+					NodeID:   "test_node_123",
+					SignText: "上海-TestUser-TestDevice签到",
+					SignTime: now,
+				},
+			},
+			nodeInfoMap: make(map[string]*storepkg.NodeInfoRecord),
+		}
+
+		tool := &Tool{
+			enabled: true,
+			store:   store,
+		}
+
+		params := signParams{
+			Action: "check",
+		}
+		argsJSON, _ := json.Marshal(params)
+
+		nodeCtx := agenttool.NodeContext{
+			NodeID:    "test_node_123",
+			LongName:  "Test Node",
+			ShortName: "TN",
+		}
+		ctx := agenttool.WithNodeContext(context.Background(), nodeCtx)
+
+		runtime := agenttool.Runtime{Now: now}
+		result, err := tool.Execute(ctx, string(argsJSON), runtime)
+
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		t.Logf("Check result (already signed): %s", result)
+
+		if !contains(result, "已经签到") {
+			t.Errorf("Expected result to indicate already signed")
+		}
+	})
+}
+
+func contains(s, substr string) bool {
+	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) >= len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsMiddle(s, substr)))
+}
+
+func containsMiddle(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
