@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	_ "meshtastic_mqtt_server/internal/agents/active"
 	_ "meshtastic_mqtt_server/internal/agents/calculator"
 	_ "meshtastic_mqtt_server/internal/agents/sign"
 	_ "meshtastic_mqtt_server/internal/agents/time"
