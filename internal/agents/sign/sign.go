@@ -26,6 +26,9 @@ type SignStore interface {
 	CreateSign(nodeID string, longName, shortName *string, signText string, signTime time.Time) (*storepkg.SignRecord, error)
 	HasSignedOnDay(nodeID string, day time.Time) (bool, error)
 	GetNodeInfo(nodeID string) (*storepkg.NodeInfoRecord, error)
+	CountSigns(opts storepkg.ListOptions) (int64, error)
+	CountSignsByDay(opts storepkg.ListOptions) ([]storepkg.SignDayCount, error)
+	ListSigns(opts storepkg.ListOptions) ([]storepkg.SignRecord, error)
 }
 
 // Tool 是签到工具。
@@ -42,8 +45,9 @@ func (t *Tool) Enabled() bool { return t.enabled && t.store != nil }
 
 // ToolDefinition returns the OpenAI tool definition
 func (t *Tool) ToolDefinition(description string) *model.Tool {
-	desc := "签到工具。当用户想要签到/打卡/上台时调用。会记录该节点今日的签到信息，每个节点每天只能签到一次。" +
-		"必填参数：地区、名字、设备；可选参数：发射功率、天线长度、身处高度。"
+	desc := "签到工具。支持签到和查询两种操作：\n" +
+		"1. 签到操作(action=sign)：记录节点今日签到信息，每个节点每天只能签到一次。必填参数：地区、名字、设备\n" +
+		"2. 查询操作(action=query)：查询签到统计。可按日期范围查询，默认查询今天。返回签到总数和按天的统计数据"
 	if description != "" {
 		desc = description
 	}
@@ -55,36 +59,49 @@ func (t *Tool) ToolDefinition(description string) *model.Tool {
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
+					"action": map[string]any{
+						"type":        "string",
+						"enum":        []string{"sign", "query"},
+						"description": "操作类型：sign=签到，query=查询签到统计",
+					},
 					"region": map[string]any{
 						"type":        "string",
-						"description": "地区，例如 \"上海闵行\"、\"安徽\"、\"广东深圳\"",
+						"description": "签到时必填：地区，例如 \"上海闵行\"、\"安徽\"、\"广东深圳\"",
 					},
 					"name": map[string]any{
 						"type":        "string",
-						"description": "签到用户的名字/呼号，例如 \"Kevin\"、\"TaoEngine\"",
+						"description": "签到时必填：签到用户的名字/呼号，例如 \"Kevin\"、\"TaoEngine\"",
 					},
 					"device": map[string]any{
 						"type":        "string",
-						"description": "使用的设备型号，例如 \"GAT562\"、\"EBYTE_EoRa_S3\"",
+						"description": "签到时必填：使用的设备型号，例如 \"GAT562\"、\"EBYTE_EoRa_S3\"",
 					},
 					"tx_power": map[string]any{
 						"type":        "string",
-						"description": "可选：发射功率，例如 \"25mW\"、\"100mW\"",
+						"description": "签到时可选：发射功率，例如 \"25mW\"、\"100mW\"",
 					},
 					"antenna_length": map[string]any{
 						"type":        "string",
-						"description": "可选：天线长度，例如 \"5dBi\"、\"1.2m\"",
+						"description": "签到时可选：天线长度，例如 \"5dBi\"、\"1.2m\"",
 					},
 					"altitude": map[string]any{
 						"type":        "string",
-						"description": "可选：身处高度，例如 \"30m\"、\"海拔500m\"",
+						"description": "签到时可选：身处高度，例如 \"30m\"、\"海拔500m\"",
 					},
 					"raw_text": map[string]any{
 						"type":        "string",
-						"description": "可选：用户原始签到文本。当无法准确拆分地区/名字/设备时，传入用户原文作为签到正文",
+						"description": "签到时可选：用户原始签到文本。当无法准确拆分地区/名字/设备时，传入用户原文作为签到正文",
+					},
+					"date": map[string]any{
+						"type":        "string",
+						"description": "查询时可选：查询日期，格式 YYYY-MM-DD，例如 \"2024-06-23\"。不填则查询今天",
+					},
+					"days": map[string]any{
+						"type":        "integer",
+						"description": "查询时可选：查询最近N天的数据，例如 7 表示最近7天。不填则只查询date指定的那一天",
 					},
 				},
-				"required": []string{"region", "name", "device"},
+				"required": []string{"action"},
 			},
 		},
 	}
@@ -101,6 +118,19 @@ func (t *Tool) Execute(ctx context.Context, args string, runtime agenttool.Runti
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
 	}
 
+	// 根据 action 参数路由到不同的操作
+	switch strings.ToLower(strings.TrimSpace(params.Action)) {
+	case "query":
+		return t.executeQuery(ctx, params, runtime)
+	case "sign", "":
+		return t.executeSign(ctx, params, runtime)
+	default:
+		return "", fmt.Errorf("无效的操作类型：%s，只支持 sign 或 query", params.Action)
+	}
+}
+
+// executeSign 执行签到操作
+func (t *Tool) executeSign(ctx context.Context, params signParams, runtime agenttool.Runtime) (string, error) {
 	params.Region = strings.TrimSpace(params.Region)
 	params.Name = strings.TrimSpace(params.Name)
 	params.Device = strings.TrimSpace(params.Device)
@@ -146,6 +176,75 @@ func (t *Tool) Execute(ctx context.Context, args string, runtime agenttool.Runti
 	return fmt.Sprintf("签到成功！%s\n签到内容：%s", displayName(node), record.SignText), nil
 }
 
+// executeQuery 执行查询操作
+func (t *Tool) executeQuery(ctx context.Context, params signParams, runtime agenttool.Runtime) (string, error) {
+	now := runtime.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	// 解析查询日期
+	var targetDate time.Time
+	if params.Date != "" {
+		var err error
+		targetDate, err = time.Parse("2006-01-02", params.Date)
+		if err != nil {
+			return "", fmt.Errorf("日期格式错误，应为 YYYY-MM-DD：%v", err)
+		}
+	} else {
+		// 默认查询今天
+		targetDate = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	}
+
+	// 构建查询选项
+	var opts storepkg.ListOptions
+	if params.Days > 0 {
+		// 查询最近N天
+		since := targetDate.AddDate(0, 0, -params.Days+1)
+		until := targetDate.Add(24*time.Hour - time.Nanosecond)
+		opts.Since = &since
+		opts.Until = &until
+	} else {
+		// 只查询指定的那一天
+		since := targetDate
+		until := targetDate.Add(24*time.Hour - time.Nanosecond)
+		opts.Since = &since
+		opts.Until = &until
+	}
+
+	// 获取总数
+	total, err := t.store.CountSigns(opts)
+	if err != nil {
+		return "", fmt.Errorf("查询签到总数失败：%w", err)
+	}
+
+	// 获取按天统计
+	dayCounts, err := t.store.CountSignsByDay(opts)
+	if err != nil {
+		return "", fmt.Errorf("查询按天统计失败：%w", err)
+	}
+
+	// 构建返回消息
+	var result strings.Builder
+	if params.Days > 0 {
+		result.WriteString(fmt.Sprintf("最近 %d 天的签到统计：\n", params.Days))
+	} else {
+		result.WriteString(fmt.Sprintf("%s 的签到统计：\n", targetDate.Format("2006-01-02")))
+	}
+	result.WriteString(fmt.Sprintf("总计：%d 人次\n\n", total))
+
+	if len(dayCounts) > 0 {
+		result.WriteString("按天统计：\n")
+		for _, dc := range dayCounts {
+			result.WriteString(fmt.Sprintf("- %s: %d 人\n", dc.Date, dc.Count))
+		}
+	} else {
+		result.WriteString("该时间段内没有签到记录")
+	}
+
+	return result.String(), nil
+}
+
 // resolveNodeNames 取出节点的 long_name / short_name。
 // text_message 包本身不含名字，队列记录里的 long_name/short_name 经常为空；
 // 此时用 node_id 查 nodeinfo 表补全，保证签到记录里能看到节点名。
@@ -187,14 +286,16 @@ func resolveNodeNames(t *Tool, node agenttool.NodeContext) (*string, *string) {
 
 // signParams 是签到工具的入参。
 type signParams struct {
-	Region        string `json:"region"`
-	Name          string `json:"name"`
-	Device        string `json:"device"`
-	TxPower       string `json:"tx_power"`
-	AntennaLength string `json:"antenna_length"`
-	Altitude      string `json:"altitude"`
-	// RawText 是用户原始签到文本，结构化字段缺失时作为签到正文回退使用。
-	RawText string `json:"raw_text"`
+	Action        string `json:"action"`         // 操作类型：sign=签到，query=查询
+	Region        string `json:"region"`         // 签到时使用
+	Name          string `json:"name"`           // 签到时使用
+	Device        string `json:"device"`         // 签到时使用
+	TxPower       string `json:"tx_power"`       // 签到时使用
+	AntennaLength string `json:"antenna_length"` // 签到时使用
+	Altitude      string `json:"altitude"`       // 签到时使用
+	RawText       string `json:"raw_text"`       // 签到时使用：用户原始签到文本
+	Date          string `json:"date"`           // 查询时使用：日期 YYYY-MM-DD
+	Days          int    `json:"days"`           // 查询时使用：查询最近N天
 }
 
 // buildSignText 按参考格式拼装签到正文：地区-名字-设备签到，可选信息附在括号内。
