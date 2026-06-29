@@ -20,6 +20,7 @@ type PacketBuildOptions struct {
 	PSK         []byte
 	Encrypt     bool
 	ViaMQTT     bool
+	HopLimit    uint32
 }
 
 type TextMessageBuildOptions struct {
@@ -252,6 +253,14 @@ func buildMeshPacket(opts PacketBuildOptions, data []byte) ([]byte, error) {
 		out = protowire.AppendTag(out, 14, protowire.VarintType)
 		out = protowire.AppendVarint(out, 1)
 	}
+	hop := opts.HopLimit
+	if hop == 0 {
+		hop = 7
+	}
+	out = protowire.AppendTag(out, 9, protowire.VarintType)
+	out = protowire.AppendVarint(out, uint64(hop))
+	out = protowire.AppendTag(out, 15, protowire.VarintType)
+	out = protowire.AppendVarint(out, uint64(hop))
 	return out, nil
 }
 
