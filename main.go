@@ -57,8 +57,9 @@ type meshtasticFilterHook struct {
 	settings        *rspkg.Cache
 	pkiResolver     func(toNodeNum, fromNodeNum uint32) ([]byte, []byte, bool)
 	autoAcker       func(record map[string]any)
-	consoleLog      bool // 控制台是否打印 MQTT 连接/订阅事件
+	consoleLog       bool // 控制台是否打印 MQTT 连接/订阅事件
 	packetConsoleLog bool // 控制台是否打印 Meshtastic 数据包
+	dedupQueue       *mqttforwardpkg.DedupQueue
 }
 
 // ID 返回用于识别 Meshtastic payload 过滤器的 hook 名称。
@@ -223,6 +224,10 @@ func (h *meshtasticFilterHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (pa
 				info.ClientID, pk.TopicName, violation["blocking_type"], violation["error"])
 		}
 		h.rejectPublish(cl, pk, record)
+		return pk, packets.ErrRejectPacket
+	}
+	if h.dedupQueue != nil && !h.dedupQueue.TryForward(pk.TopicName, pk.Payload) {
+		h.stats.IncDropped()
 		return pk, packets.ErrRejectPacket
 	}
 	h.stats.IncForwarded()
@@ -521,6 +526,9 @@ func run(cfg *configpkg.Config) error {
 	if err := server.Close(); err != nil && runErr == nil {
 		runErr = err
 	}
+	if mqttHook.dedupQueue != nil {
+		mqttHook.dedupQueue.Stop()
+	}
 	return runErr
 }
 
@@ -529,6 +537,8 @@ func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *stor
 	if err := server.AddHook(new(mqttauth.AllowHook), nil); err != nil {
 		return nil, nil, "", err
 	}
+	dedupQueue := mqttforwardpkg.NewDedupQueue()
+	dedupQueue.Start()
 	hook := &meshtasticFilterHook{
 		server:           server,
 		key:              cfg.Key,
@@ -540,6 +550,7 @@ func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *stor
 		pkiResolver:      botpkg.NewPKIKeyResolver(store),
 		consoleLog:       cfg.ConsoleLog.MQTT,
 		packetConsoleLog: cfg.ConsoleLog.Meshtastic,
+		dedupQueue:       dedupQueue,
 	}
 	if err := server.AddHook(hook, nil); err != nil {
 		return nil, nil, "", err
