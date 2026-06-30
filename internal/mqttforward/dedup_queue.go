@@ -53,6 +53,12 @@ func (dq *DedupQueue) Stop() {
 	close(dq.stopCh)
 }
 
+func (dq *DedupQueue) Len() int {
+	dq.mu.Lock()
+	defer dq.mu.Unlock()
+	return len(dq.entries)
+}
+
 func (dq *DedupQueue) cleanup() {
 	now := time.Now()
 	dq.mu.Lock()

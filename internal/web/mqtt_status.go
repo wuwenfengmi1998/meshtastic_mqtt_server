@@ -30,6 +30,7 @@ type MQTTRuntimeStatus struct {
 	Stats       *mqttforwardpkg.Stats
 	ClientStats *mqttforwardpkg.ClientStats
 	DBQueue     *storepkg.WriteQueue
+	DedupQueue  *mqttforwardpkg.DedupQueue
 }
 
 // AdminMQTTStatus 是 admin 路由 GET /admin/mqtt-status 返回的 JSON 视图。
@@ -50,6 +51,7 @@ type AdminMQTTStatus struct {
 	MessagesSent        int64             `json:"messages_sent"`
 	MessagesDropped     int64             `json:"messages_dropped"`
 	DBWriteQueueLength  int               `json:"db_write_queue_length"`
+	DedupQueueLength    int               `json:"dedup_queue_len"`
 	Retained            int64             `json:"retained"`
 	Inflight            int64             `json:"inflight"`
 	InflightDropped     int64             `json:"inflight_dropped"`
@@ -71,7 +73,7 @@ type AdminMQTTClient struct {
 // Status 实现 MQTTStatusProvider。
 func (m MQTTRuntimeStatus) Status() AdminMQTTStatus {
 	if m.Server == nil || m.Server.Info == nil {
-		return AdminMQTTStatus{Running: false, Address: m.Address, TLS: m.TLS, DBWriteQueueLength: m.DBQueue.Len()}
+		return AdminMQTTStatus{Running: false, Address: m.Address, TLS: m.TLS, DBWriteQueueLength: m.DBQueue.Len(), DedupQueueLength: m.dedupQueueLen()}
 	}
 	info := m.Server.Info.Clone()
 	status := AdminMQTTStatus{
@@ -91,6 +93,7 @@ func (m MQTTRuntimeStatus) Status() AdminMQTTStatus {
 		MessagesSent:        m.Stats.Forwarded(),
 		MessagesDropped:     m.Stats.Dropped(),
 		DBWriteQueueLength:  m.DBQueue.Len(),
+		DedupQueueLength:    m.dedupQueueLen(),
 		Retained:            info.Retained,
 		Inflight:            info.Inflight,
 		InflightDropped:     info.InflightDropped,
@@ -134,6 +137,13 @@ func mqttClientInfo(c *mqtt.Client) mqttClientInfoView {
 		Listener:   c.Net.Listener,
 		RemoteAddr: c.Net.Remote,
 	}
+}
+
+func (m MQTTRuntimeStatus) dedupQueueLen() int {
+	if m.DedupQueue == nil {
+		return 0
+	}
+	return m.DedupQueue.Len()
 }
 
 // DisconnectClient 实现 MQTTStatusProvider：发送 Disconnect 报文并关闭连接。
