@@ -509,6 +509,16 @@ func cleanReplyText(text string) string {
 			sb.WriteRune(r)
 		case r == 0x3002 || r == 0xFF1F || r == 0xFF01 || r == 0xFF0C || r == 0xFF1A: // Fullwidth punctuation
 			sb.WriteRune(r)
+		case r >= 0x1F600 && r <= 0x1F64F: // Emoticons
+			sb.WriteRune(r)
+		case r >= 0x1F300 && r <= 0x1F5FF: // Misc Symbols and Pictographs
+			sb.WriteRune(r)
+		case r >= 0x1F680 && r <= 0x1F6FF: // Transport and Map Symbols
+			sb.WriteRune(r)
+		case r >= 0x1F900 && r <= 0x1F9FF: // Supplemental Symbols and Pictographs
+			sb.WriteRune(r)
+		case r >= 0x2600 && r <= 0x27BF: // Misc Symbols + Dingbats
+			sb.WriteRune(r)
 		default:
 			continue // Skip all other characters
 		}
