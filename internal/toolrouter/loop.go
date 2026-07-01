@@ -88,6 +88,7 @@ func RunAgentToolLoop(ctx context.Context, state *State, profile *llm.Profile, s
 	if routerPrompt == "" {
 		routerPrompt = primaryPrompt
 	}
+	routerPrompt = routerPrompt + "\n当前日期：" + time.Now().Format("2006-01-02")
 	if primaryPrompt != "" {
 		primarySystemMessage := &model.ChatCompletionMessage{
 			Role: "system",
