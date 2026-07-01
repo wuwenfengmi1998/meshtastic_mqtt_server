@@ -6,6 +6,7 @@ import type {
   AdminRuntimeSettingsPayload,
   AdminRuntimeSettingsResponse,
   AdminUsersResponse,
+  AIServiceStatus,
   BotMessage,
   BotMessageMutationResponse,
   BotNode,
@@ -517,6 +518,15 @@ export function updateLLMProvider(name: string, payload: Partial<LLMProviderPayl
 
 export function deleteLLMProvider(name: string): Promise<{ status: string; warning?: string }> {
   return deleteJSON<{ status: string; warning?: string }>(`/api/admin/llm/providers/${encodeURIComponent(name)}`)
+}
+
+// AI Service Status API
+export function getAIServiceStatus(): Promise<AIServiceStatus> {
+  return getJSON<AIServiceStatus>('/api/admin/llm/status')
+}
+
+export function restartAIService(): Promise<AIServiceStatus & { status: string; message?: string }> {
+  return postJSON<AIServiceStatus & { status: string; message?: string }>('/api/admin/llm/restart')
 }
 
 // LLM Tool Router API

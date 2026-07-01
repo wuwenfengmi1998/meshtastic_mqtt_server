@@ -398,16 +398,48 @@ func run(cfg *configpkg.Config) error {
 	defer forwardManager.StopAll()
 
 	// Initialize AI Service
-	var aiService *ai.Service
+	// Create bot sender adapter - 支持频道消息和私聊消息两种发送方式
+	botSenderAdapter := autoreply.NewBotServiceAdapter(
+		// SendDirectText: 发送私聊消息
+		func(ctx context.Context, botID uint64, toNodeNum int64, text string) error {
+			_, err := botSender.SendText(ctx, botpkg.SendTextRequest{
+				BotID:       botID,
+				MessageType: "direct",
+				ToNodeNum:   &toNodeNum,
+				Text:        text,
+			})
+			return err
+		},
+		// SendChannelText: 发送频道消息
+		func(ctx context.Context, botID uint64, channelID string, text string) error {
+			_, err := botSender.SendText(ctx, botpkg.SendTextRequest{
+				BotID:       botID,
+				MessageType: "channel",
+				ChannelID:   channelID,
+				Text:        text,
+			})
+			return err
+		},
+	)
+
+	aiManager := ai.NewAIManager(ai.Config{
+		DataDir:          cfg.AI.DataDir,
+		Enabled:          cfg.AI.Enabled,
+		ConsoleLog:       cfg.ConsoleLog.LLM,
+		ToolConfigStore:  store,
+		ToolRouterStore:  store,
+		TopicRouterStore: store,
+		Store:            store,
+	}, store.DB(), botSenderAdapter, botCtx, store)
+
 	if cfg.AI.Enabled {
-		// Get LLM providers from database
-		llmProviders, err := store.ListLLMProviders(true)
+		aiManager.SetConfigEnabled(true)
+		providers, err := store.ListLLMProviders(true)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to load LLM providers: %v\n", err)
-		} else if len(llmProviders) > 0 {
-			// Convert database records to provider configs
-			providerConfigs := make([]llm.ProviderConfig, 0, len(llmProviders))
-			for _, p := range llmProviders {
+		} else if len(providers) > 0 {
+			providerConfigs := make([]llm.ProviderConfig, 0, len(providers))
+			for _, p := range providers {
 				providerConfigs = append(providerConfigs, llm.ProviderConfig{
 					Name:                p.Name,
 					Active:              p.Active,
@@ -418,48 +450,11 @@ func run(cfg *configpkg.Config) error {
 					ContextWindowTokens: p.ContextWindowTokens,
 				})
 			}
-
-			// Create bot sender adapter - 支持频道消息和私聊消息两种发送方式
-			botSenderAdapter := autoreply.NewBotServiceAdapter(
-				// SendDirectText: 发送私聊消息
-				func(ctx context.Context, botID uint64, toNodeNum int64, text string) error {
-					_, err := botSender.SendText(ctx, botpkg.SendTextRequest{
-						BotID:       botID,
-						MessageType: "direct",
-						ToNodeNum:   &toNodeNum,
-						Text:        text,
-					})
-					return err
-				},
-				// SendChannelText: 发送频道消息
-				func(ctx context.Context, botID uint64, channelID string, text string) error {
-					_, err := botSender.SendText(ctx, botpkg.SendTextRequest{
-						BotID:       botID,
-						MessageType: "channel",
-						ChannelID:   channelID,
-						Text:        text,
-					})
-					return err
-				},
-			)
-
-			aiService, err = ai.NewService(ai.Config{
-				LLMProviders:     providerConfigs,
-				DataDir:          cfg.AI.DataDir,
-				Enabled:          cfg.AI.Enabled,
-				ConsoleLog:       cfg.ConsoleLog.LLM,
-				ToolConfigStore:  store,
-				ToolRouterStore:  store,
-				TopicRouterStore: store,
-				Store:            store,
-			}, store.DB(), botSenderAdapter)
-			if err != nil {
+			aiManager.SetProviderConfigs(providerConfigs)
+			if err := aiManager.Init(); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to initialize AI service: %v\n", err)
 			} else {
-				if err := aiService.Start(botCtx); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to start AI service: %v\n", err)
-				}
-				defer aiService.Stop()
+				defer aiManager.Stop()
 				printJSON(map[string]any{"event": "ai_service_started", "providers": len(providerConfigs)})
 			}
 		} else {
@@ -475,11 +470,7 @@ func run(cfg *configpkg.Config) error {
 			return err
 		}
 		mqttStatus := webpkg.MQTTRuntimeStatus{Server: server, Address: mqttAddr, TLS: cfg.MQTT.TLS.Enabled, Stats: messageStats, ClientStats: clientStats, DBQueue: dbQueue, DedupQueue: mqttHook.dedupQueue}
-		var llmReloader webpkg.LLMProviderReloader
-		if aiService != nil {
-			llmReloader = aiService
-		}
-		handler := webpkg.NewRouter(cfg.Web, cfg.ConsoleLog.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender, llmReloader)
+		handler := webpkg.NewRouter(cfg.Web, cfg.ConsoleLog.Web, store, sessions, mqttStatus, blocking, forwardManager, settings, botSender, aiManager)
 		webAddresses := []string{}
 		if cfg.Web.PortEnabled {
 			httpServer := &http.Server{

@@ -26,27 +26,7 @@ from typing import Any
 import pymysql
 import pymysql.cursors
 
-# ============================================================
-# 硬编码数据库配置
-# ============================================================
-
-SOURCE_CONFIG = {
-    "host": "127.0.0.1",
-    "port": 3306,
-    "user": "root",
-    "password": "PLEASE_CHANGE_ME",
-    "database": "meshtastic",
-    "charset": "utf8mb4",
-}
-
-TARGET_CONFIG = {
-    "host": "127.0.0.1",
-    "port": 3307,
-    "user": "root",
-    "password": "PLEASE_CHANGE_ME",
-    "database": "meshtastic",
-    "charset": "utf8mb4",
-}
+from db_config import SOURCE_CONFIG, TARGET_CONFIG
 
 BATCH_SIZE = 5000
 

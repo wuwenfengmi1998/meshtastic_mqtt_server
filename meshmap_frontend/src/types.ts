@@ -647,6 +647,13 @@ export interface LLMProviderResponse {
   warning?: string
 }
 
+export interface AIServiceStatus {
+  running: boolean
+  enabled: boolean
+  provider_count: number
+  message?: string
+}
+
 // LLM Tool Router 相关类型
 export interface LLMPlatformRouter {
   id: number

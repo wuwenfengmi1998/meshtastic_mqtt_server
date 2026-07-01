@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	aipkg "meshtastic_mqtt_server/internal/ai"
 	"meshtastic_mqtt_server/internal/auth"
 	blockingpkg "meshtastic_mqtt_server/internal/blocking"
 	botpkg "meshtastic_mqtt_server/internal/bot"
@@ -32,6 +33,8 @@ type LLMProviderReloader interface {
 	ReloadLLMProvider(config interface{}) error
 	AddLLMProvider(config interface{}) error
 	RemoveLLMProvider(name string) error
+	AIServiceStatus() aipkg.AIServiceStatus
+	RestartAIService() error
 }
 
 func NewHTTPServer(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender, aiService LLMProviderReloader) *http.Server {

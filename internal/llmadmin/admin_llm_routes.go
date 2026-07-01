@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	aipkg "meshtastic_mqtt_server/internal/ai"
 	storepkg "meshtastic_mqtt_server/internal/store"
 	"meshtastic_mqtt_server/internal/webutil"
 )
@@ -18,6 +19,8 @@ type LLMProviderReloader interface {
 	ReloadLLMProvider(config interface{}) error
 	AddLLMProvider(config interface{}) error
 	RemoveLLMProvider(name string) error
+	AIServiceStatus() aipkg.AIServiceStatus
+	RestartAIService() error
 }
 
 func RegisterRoutes(r *gin.RouterGroup, store *storepkg.Store, aiService LLMProviderReloader) {
@@ -49,6 +52,10 @@ func RegisterRoutes(r *gin.RouterGroup, store *storepkg.Store, aiService LLMProv
 		// LLM Primary Config - 主 AI 回复配置
 		group.GET("/primary-config", handleGetLLMPrimaryConfig(store))
 		group.PUT("/primary-config", handleUpdateLLMPrimaryConfig(store))
+
+		// AI Service Status
+		group.GET("/status", handleGetAIServiceStatus(aiService))
+		group.POST("/restart", handleRestartAIService(aiService))
 	}
 }
 
@@ -826,5 +833,51 @@ func llmPrimaryConfigDTO(row storepkg.LLMPrimaryConfigRecord) map[string]any {
 		"enable_tool":    row.EnableTool,
 		"created_at":     row.CreatedAt,
 		"updated_at":     row.UpdatedAt,
+	}
+}
+
+// ============================================
+// AI Service Status & Restart Handlers
+// ============================================
+
+func handleGetAIServiceStatus(aiService LLMProviderReloader) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if aiService == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"running":        false,
+				"enabled":        false,
+				"provider_count": 0,
+				"message":        "AI 服务未初始化",
+			})
+			return
+		}
+		status := aiService.AIServiceStatus()
+		c.JSON(http.StatusOK, gin.H{
+			"running":        status.Running,
+			"enabled":        status.Enabled,
+			"provider_count": status.ProviderCount,
+			"message":        status.Message,
+		})
+	}
+}
+
+func handleRestartAIService(aiService LLMProviderReloader) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if aiService == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "AI 服务未初始化，无法重启"})
+			return
+		}
+		if err := aiService.RestartAIService(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "重启 AI 服务失败: " + err.Error()})
+			return
+		}
+		status := aiService.AIServiceStatus()
+		c.JSON(http.StatusOK, gin.H{
+			"status":         "ok",
+			"running":        status.Running,
+			"enabled":        status.Enabled,
+			"provider_count": status.ProviderCount,
+			"message":        "AI 服务已重启",
+		})
 	}
 }

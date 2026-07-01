@@ -11,13 +11,19 @@ import {
   updateLLMToolRouter,
   updateLLMTopicConfig,
   updateLLMPrimaryConfig,
+  getAIServiceStatus,
+  restartAIService,
 } from '../api'
-import type { LLMPlatformRouter, LLMTopicConfig, LLMProvider, LLMPrimaryConfig } from '../types'
+import type { LLMPlatformRouter, LLMTopicConfig, LLMProvider, LLMPrimaryConfig, AIServiceStatus } from '../types'
 
 const loading = ref(false)
 const error = ref('')
 const success = ref('')
 const showWarning = ref(false)
+
+// AI Service Status
+const aiStatus = ref<AIServiceStatus>({ running: false, enabled: false, provider_count: 0 })
+const restarting = ref(false)
 
 // LLM Provider 相关
 const providers = ref<LLMProvider[]>([])
@@ -299,7 +305,31 @@ async function savePrimaryConfig() {
   }
 }
 
+async function loadAIStatus() {
+  try {
+    aiStatus.value = await getAIServiceStatus()
+  } catch (err) {
+    console.warn('Failed to load AI service status', err)
+  }
+}
+
+async function handleRestartAI() {
+  if (!confirm('确定要重启 AI 服务吗？')) return
+  restarting.value = true
+  try {
+    const result = await restartAIService()
+    aiStatus.value = result
+    success.value = result.message || 'AI 服务已重启'
+    clearSuccess()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    restarting.value = false
+  }
+}
+
 onMounted(() => {
+  loadAIStatus()
   loadProviders()
   loadToolRouter()
   loadTopicConfig()
@@ -310,6 +340,21 @@ onMounted(() => {
 <template>
   <div class="admin-llm-api">
     <h2>LLM API 配置管理</h2>
+
+    <div class="ai-status-bar">
+      <span class="status-indicator" :class="{ running: aiStatus.running, stopped: !aiStatus.running }"></span>
+      <span class="status-text">
+        <template v-if="aiStatus.running">AI 服务运行中，{{ aiStatus.provider_count }} 个提供商</template>
+        <template v-else>{{ aiStatus.message || 'AI 服务未运行' }}</template>
+      </span>
+      <button
+        class="admin-button admin-button-small"
+        :disabled="restarting"
+        @click="handleRestartAI"
+      >
+        {{ restarting ? '重启中...' : '重启 AI 服务' }}
+      </button>
+    </div>
 
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="success" :class="showWarning ? 'warning' : 'success'">{{ success }}</p>
@@ -703,11 +748,47 @@ onMounted(() => {
 }
 
 .admin-llm-api h2 {
-  margin: 0 0 2rem;
+  margin: 0 0 1rem;
   font-size: 1.75rem;
   font-weight: 700;
   color: #1e293b;
   letter-spacing: -0.02em;
+}
+
+.ai-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.status-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-indicator.running {
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+}
+
+.status-indicator.stopped {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+}
+
+.status-text {
+  flex: 1;
+  font-size: 0.9rem;
+  color: #475569;
+  font-weight: 500;
 }
 
 .admin-section {
