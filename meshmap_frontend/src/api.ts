@@ -515,8 +515,8 @@ export function updateLLMProvider(name: string, payload: Partial<LLMProviderPayl
   return putJSON<LLMProviderResponse>(`/api/admin/llm/providers/${encodeURIComponent(name)}`, payload)
 }
 
-export function deleteLLMProvider(name: string): Promise<{ status: string }> {
-  return deleteJSON<{ status: string }>(`/api/admin/llm/providers/${encodeURIComponent(name)}`)
+export function deleteLLMProvider(name: string): Promise<{ status: string; warning?: string }> {
+  return deleteJSON<{ status: string; warning?: string }>(`/api/admin/llm/providers/${encodeURIComponent(name)}`)
 }
 
 // LLM Tool Router API

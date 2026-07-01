@@ -644,6 +644,7 @@ export interface LLMProviderPayload {
 
 export interface LLMProviderResponse {
   item: LLMProvider
+  warning?: string
 }
 
 // LLM Tool Router 相关类型

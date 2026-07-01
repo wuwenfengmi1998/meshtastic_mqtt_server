@@ -262,6 +262,9 @@ func (s *Service) Enabled() bool {
 
 // ReloadLLMProvider reloads a specific LLM provider configuration
 func (s *Service) ReloadLLMProvider(config interface{}) error {
+	if s == nil {
+		return nil
+	}
 	if !s.enabled || s.LLMState == nil {
 		return nil
 	}
@@ -274,6 +277,9 @@ func (s *Service) ReloadLLMProvider(config interface{}) error {
 
 // AddLLMProvider adds a new LLM provider
 func (s *Service) AddLLMProvider(config interface{}) error {
+	if s == nil {
+		return nil
+	}
 	if !s.enabled || s.LLMState == nil {
 		return nil
 	}
@@ -286,6 +292,9 @@ func (s *Service) AddLLMProvider(config interface{}) error {
 
 // RemoveLLMProvider removes an LLM provider
 func (s *Service) RemoveLLMProvider(name string) error {
+	if s == nil {
+		return nil
+	}
 	if !s.enabled || s.LLMState == nil {
 		return nil
 	}

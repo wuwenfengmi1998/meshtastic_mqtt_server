@@ -17,6 +17,7 @@ import type { LLMPlatformRouter, LLMTopicConfig, LLMProvider, LLMPrimaryConfig }
 const loading = ref(false)
 const error = ref('')
 const success = ref('')
+const showWarning = ref(false)
 
 // LLM Provider 相关
 const providers = ref<LLMProvider[]>([])
@@ -169,12 +170,18 @@ async function saveProvider() {
   }
 
   try {
+    let response: any
     if (isCreatingProvider.value) {
-      await createLLMProvider(providerForm.value)
-      success.value = '创建成功'
+      response = await createLLMProvider(providerForm.value)
     } else if (editingProvider.value) {
-      await updateLLMProvider(editingProvider.value.name, providerForm.value)
-      success.value = '更新成功'
+      response = await updateLLMProvider(editingProvider.value.name, providerForm.value)
+    }
+    if (response.warning) {
+      success.value = response.warning
+      showWarning.value = true
+    } else {
+      success.value = isCreatingProvider.value ? '创建成功' : '更新成功'
+      showWarning.value = false
     }
     clearSuccess()
     closeProviderForm()
@@ -189,8 +196,14 @@ async function confirmDeleteProvider(name: string) {
     return
   }
   try {
-    await deleteLLMProvider(name)
-    success.value = '删除成功'
+    const response = await deleteLLMProvider(name)
+    if (response.warning) {
+      success.value = response.warning
+      showWarning.value = true
+    } else {
+      success.value = '删除成功'
+      showWarning.value = false
+    }
     clearSuccess()
     await loadProviders()
   } catch (err) {
@@ -299,7 +312,7 @@ onMounted(() => {
     <h2>LLM API 配置管理</h2>
 
     <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="success" class="success">{{ success }}</p>
+    <p v-if="success" :class="showWarning ? 'warning' : 'success'">{{ success }}</p>
 
     <!-- LLM Provider 列表 -->
     <div class="admin-section">
@@ -967,6 +980,19 @@ onMounted(() => {
   border-radius: 10px;
   margin-bottom: 1.25rem;
   border: 1px solid #86efac;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.warning {
+  color: #92400e;
+  padding: 1rem 1.25rem;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-radius: 10px;
+  margin-bottom: 1.25rem;
+  border: 1px solid #fcd34d;
   font-weight: 500;
   display: flex;
   align-items: center;

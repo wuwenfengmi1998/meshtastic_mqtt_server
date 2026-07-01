@@ -298,25 +298,30 @@ func handleCreateLLMProvider(store *storepkg.Store, aiService LLMProviderReloade
 		}
 
 		// Reload AI service with new provider
-		if aiService != nil {
-			providerConfig := map[string]interface{}{
-				"Name":                record.Name,
-				"Active":              record.Active,
-				"APIKey":              record.APIKey,
-				"BaseURL":             record.BaseURL,
-				"Model":               record.Model,
-				"Timeout":             record.Timeout,
-				"ContextWindowTokens": record.ContextWindowTokens,
-			}
-			if err := aiService.AddLLMProvider(providerConfig); err != nil {
-				// Log warning but don't fail the request - database is already updated
-				c.JSON(http.StatusOK, gin.H{
-					"status":  "ok",
-					"item":    llmProviderDTO(*record),
-					"warning": "provider created but failed to reload AI service: " + err.Error(),
-				})
-				return
-			}
+		if aiService == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "ok",
+				"item":    llmProviderDTO(*record),
+				"warning": "AI 服务未运行，配置已保存但需重启服务后生效",
+			})
+			return
+		}
+		providerConfig := map[string]interface{}{
+			"Name":                record.Name,
+			"Active":              record.Active,
+			"APIKey":              record.APIKey,
+			"BaseURL":             record.BaseURL,
+			"Model":               record.Model,
+			"Timeout":             record.Timeout,
+			"ContextWindowTokens": record.ContextWindowTokens,
+		}
+		if err := aiService.AddLLMProvider(providerConfig); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "ok",
+				"item":    llmProviderDTO(*record),
+				"warning": "provider created but failed to reload AI service: " + err.Error(),
+			})
+			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "item": llmProviderDTO(*record)})
@@ -385,25 +390,30 @@ func handleUpdateLLMProvider(store *storepkg.Store, aiService LLMProviderReloade
 		}
 
 		// Reload AI service with updated provider
-		if aiService != nil {
-			providerConfig := map[string]interface{}{
-				"Name":                record.Name,
-				"Active":              record.Active,
-				"APIKey":              record.APIKey,
-				"BaseURL":             record.BaseURL,
-				"Model":               record.Model,
-				"Timeout":             record.Timeout,
-				"ContextWindowTokens": record.ContextWindowTokens,
-			}
-			if err := aiService.ReloadLLMProvider(providerConfig); err != nil {
-				// Log warning but don't fail the request - database is already updated
-				c.JSON(http.StatusOK, gin.H{
-					"status":  "ok",
-					"item":    llmProviderDTO(*record),
-					"warning": "provider updated but failed to reload AI service: " + err.Error(),
-				})
-				return
-			}
+		if aiService == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "ok",
+				"item":    llmProviderDTO(*record),
+				"warning": "AI 服务未运行，配置已保存但需重启服务后生效",
+			})
+			return
+		}
+		providerConfig := map[string]interface{}{
+			"Name":                record.Name,
+			"Active":              record.Active,
+			"APIKey":              record.APIKey,
+			"BaseURL":             record.BaseURL,
+			"Model":               record.Model,
+			"Timeout":             record.Timeout,
+			"ContextWindowTokens": record.ContextWindowTokens,
+		}
+		if err := aiService.ReloadLLMProvider(providerConfig); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "ok",
+				"item":    llmProviderDTO(*record),
+				"warning": "provider updated but failed to reload AI service: " + err.Error(),
+			})
+			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "item": llmProviderDTO(*record)})
@@ -424,15 +434,19 @@ func handleDeleteLLMProvider(store *storepkg.Store, aiService LLMProviderReloade
 		}
 
 		// Remove provider from AI service
-		if aiService != nil {
-			if err := aiService.RemoveLLMProvider(name); err != nil {
-				// Log warning but don't fail the request - database is already updated
-				c.JSON(http.StatusOK, gin.H{
-					"status":  "ok",
-					"warning": "provider deleted but failed to reload AI service: " + err.Error(),
-				})
-				return
-			}
+		if aiService == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "ok",
+				"warning": "AI 服务未运行，配置已删除但需重启服务后生效",
+			})
+			return
+		}
+		if err := aiService.RemoveLLMProvider(name); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "ok",
+				"warning": "provider deleted but failed to reload AI service: " + err.Error(),
+			})
+			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
