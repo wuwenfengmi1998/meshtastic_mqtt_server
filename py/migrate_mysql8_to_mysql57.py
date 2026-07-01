@@ -55,6 +55,26 @@ def fix_collation(ddl: str) -> str:
     return ddl
 
 
+def fix_text_blob_index(ddl: str) -> str:
+    """为 TEXT/BLOB 列在索引中添加前缀长度 (255)，兼容 MySQL 5.7"""
+    text_cols = set()
+    for m in re.finditer(r'`(\w+)`\s+(?:tinytext|text|mediumtext|longtext|tinyblob|blob|mediumblob|longblob)\b', ddl, re.IGNORECASE):
+        text_cols.add(m.group(1))
+    if not text_cols:
+        return ddl
+
+    def _add_prefix(match: re.Match) -> str:
+        col = match.group(1)
+        rest = match.group(2)
+        if col in text_cols and not rest.strip().startswith('('):
+            return f'`{col}`(255){rest}'
+        return match.group(0)
+
+    # 匹配 KEY 定义中的列引用: `col_name` 后面不跟 ( 的情况
+    ddl = re.sub(r'`(\w+)`(\s*[,\)])', _add_prefix, ddl)
+    return ddl
+
+
 def get_all_tables(conn: pymysql.Connection) -> list[str]:
     with conn.cursor() as cur:
         cur.execute("SHOW TABLES")
@@ -131,6 +151,7 @@ def migrate() -> int:
             row = cur.fetchone()
             ddl = row["Create Table"]
         ddl = fix_collation(ddl)
+        ddl = fix_text_blob_index(ddl)
 
         try:
             with tgt.cursor() as cur:
