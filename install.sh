@@ -3,6 +3,7 @@ set -euo pipefail
 
 SERVICE_NAME="mesh_mqtt_go"
 SERVICE_USER="mesh_mqtt_go"
+SERVICE_GROUP="${SERVICE_USER}"
 CONFIG_DIR="/etc/${SERVICE_NAME}"
 DATA_DIR="/srv/${SERVICE_NAME}"
 INSTALL_DIR="/opt/${SERVICE_NAME}"
@@ -15,6 +16,12 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 if [[ "${EUID}" -ne 0 ]]; then
   echo "请使用 root 权限运行: sudo $0" >&2
   exit 1
+fi
+
+if id -u "www" >/dev/null 2>&1; then
+  SERVICE_USER="www"
+  SERVICE_GROUP=$(id -gn "www")
+  echo "检测到 www 用户，将以 www 用户运行服务"
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,8 +49,8 @@ if ! id -u "${SERVICE_USER}" >/dev/null 2>&1; then
 fi
 
 echo "创建目录..."
-install -d -m 0750 -o "${SERVICE_USER}" -g "${SERVICE_USER}" "${CONFIG_DIR}" "${DATA_DIR}"
-install -d -m 0755 -o "${SERVICE_USER}" -g "${SERVICE_USER}" "${INSTALL_DIR}"
+install -d -m 0750 -o "${SERVICE_USER}" -g "${SERVICE_GROUP}" "${CONFIG_DIR}" "${DATA_DIR}"
+install -d -m 0755 -o "${SERVICE_USER}" -g "${SERVICE_GROUP}" "${INSTALL_DIR}"
 
 echo "安装程序和前端文件..."
 install -m 0755 -o root -g root "${SCRIPT_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}"
@@ -51,7 +58,7 @@ rm -rf "${INSTALL_DIR}/dist"
 cp -a "${SCRIPT_DIR}/${FRONTEND_DIST_DIR}" "${INSTALL_DIR}/dist"
 chown root:root "${INSTALL_DIR}/${BINARY_NAME}"
 chown -R root:root "${INSTALL_DIR}/dist"
-chown "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}"
+chown "${SERVICE_USER}:${SERVICE_GROUP}" "${INSTALL_DIR}"
 chmod 0755 "${INSTALL_DIR}"
 find "${INSTALL_DIR}/dist" -type d -exec chmod 0755 {} \;
 find "${INSTALL_DIR}/dist" -type f -exec chmod 0644 {} \;
@@ -91,7 +98,7 @@ console_log:
   sql: true
   meshtastic: true
 EOF
-  chown "${SERVICE_USER}:${SERVICE_USER}" "${CONFIG_DIR}/config.yaml"
+  chown "${SERVICE_USER}:${SERVICE_GROUP}" "${CONFIG_DIR}/config.yaml"
   chmod 0640 "${CONFIG_DIR}/config.yaml"
 fi
 
@@ -105,7 +112,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=${SERVICE_USER}
-Group=${SERVICE_USER}
+Group=${SERVICE_GROUP}
 WorkingDirectory=${INSTALL_DIR}
 ExecStart=${INSTALL_DIR}/${BINARY_NAME} -web-socket-path ${SOCKET_PATH} -web-static-dir ${INSTALL_DIR}/dist
 Restart=on-failure
