@@ -66,6 +66,12 @@ func (s *Store) CountBotNodes(opts ListOptions) (int64, error) {
 	return total, s.db.Model(&BotNodeRecord{}).Count(&total).Error
 }
 
+func (s *Store) IsBotNodeID(nodeID string) bool {
+	var count int64
+	s.db.Model(&BotNodeRecord{}).Where("node_id = ?", nodeID).Count(&count)
+	return count > 0
+}
+
 func (s *Store) GetBotNode(id uint64) (*BotNodeRecord, error) {
 	var row BotNodeRecord
 	if err := s.db.Where("id = ?", id).Take(&row).Error; err != nil {

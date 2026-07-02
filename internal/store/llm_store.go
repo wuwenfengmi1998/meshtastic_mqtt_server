@@ -306,8 +306,7 @@ func (s *Store) EnqueueLLMMessage(input LLMMessageQueueInput) (*LLMMessageQueueR
 		return nil, nil // 机器人的 LLM 队列未启用，静默返回
 	}
 
-	// 忽略机器人自己发送的消息，避免自循环
-	if input.FromNodeID == bot.NodeID {
+	if s.IsBotNodeID(input.FromNodeID) {
 		return nil, nil
 	}
 
@@ -526,6 +525,10 @@ func enqueueChannelMessageToLLM(s *Store, record map[string]any) error {
 		shortName = &sn
 	}
 
+	if s.IsBotNodeID(fromNodeID) {
+		return nil
+	}
+
 	var channelID *string
 	if cid, ok := record["channel_id"].(string); ok && cid != "" {
 		channelID = &cid
@@ -546,11 +549,7 @@ func enqueueChannelMessageToLLM(s *Store, record map[string]any) error {
 		return fmt.Errorf("query bots for channel message enqueue: %w", err)
 	}
 
-	// 为每个符合条件的机器人创建一条队列记录（忽略机器人自己发送的消息）
 	for _, bot := range bots {
-		if fromNodeID == bot.NodeID {
-			continue
-		}
 		_, err = s.EnqueueLLMMessage(LLMMessageQueueInput{
 			BotID:       bot.ID,
 			BotNodeID:   bot.NodeID,
