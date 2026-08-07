@@ -439,7 +439,7 @@ type TextMessageRecord struct {
 	Text           *string   `gorm:"column:text"`
 	PayloadHex     *string   `gorm:"column:payload_hex"`
 	Topic          string    `gorm:"column:topic;not null"`
-	ChannelID      *string   `gorm:"column:channel_id;index:idx_text_message_channel_id_created_at,priority:1"`
+	ChannelID      *string   `gorm:"column:channel_id;type:varchar(255);index:idx_text_message_channel_id_created_at,priority:1"`
 	GatewayID      *string   `gorm:"column:gateway_id"`
 	PacketID       *int64    `gorm:"column:packet_id;index:idx_text_message_packet_id"`
 	PacketTo       *string   `gorm:"column:packet_to"`
@@ -463,6 +463,15 @@ type TextMessageRecord struct {
 
 func (TextMessageRecord) TableName() string {
 	return "text_message"
+}
+
+type SchemaMigration struct {
+	Version   int       `gorm:"column:version;primaryKey"`
+	AppliedAt time.Time `gorm:"column:applied_at;autoCreateTime"`
+}
+
+func (SchemaMigration) TableName() string {
+	return "schema_migrations"
 }
 
 // LLMProviderRecord 保存 LLM API 配置，支持多个 AI 提供商
@@ -702,6 +711,9 @@ func (s *Store) migrate() error {
 				}
 			}
 		}
+		if err := runDBMigrations(tx, s.driver); err != nil {
+			return err
+		}
 		for _, item := range []struct {
 			label   string
 			model   any
@@ -873,6 +885,50 @@ func createMissingIndexes(migrator gorm.Migrator, model any, label string, index
 			if err := migrator.CreateIndex(model, indexName); err != nil {
 				return fmt.Errorf("migrate %s index %s: %w", label, indexName, err)
 			}
+		}
+	}
+	return nil
+}
+
+type DBMigration struct {
+	Version int
+	Up      func(tx *gorm.DB, driver string) error
+}
+
+var dbMigrations = []DBMigration{
+	{Version: 1, Up: migrateDB1},
+}
+
+func migrateDB1(tx *gorm.DB, driver string) error {
+	if driver == config.DriverMySQL {
+		if err := tx.Exec("ALTER TABLE text_message MODIFY COLUMN channel_id VARCHAR(255)").Error; err != nil {
+			return fmt.Errorf("alter text_message.channel_id to varchar: %w", err)
+		}
+	}
+	return nil
+}
+
+func runDBMigrations(tx *gorm.DB, driver string) error {
+	if !tx.Migrator().HasTable(&SchemaMigration{}) {
+		if err := tx.Migrator().CreateTable(&SchemaMigration{}); err != nil {
+			return fmt.Errorf("create schema_migrations table: %w", err)
+		}
+	}
+	applied := make(map[int]bool)
+	var rows []SchemaMigration
+	tx.Find(&rows)
+	for _, r := range rows {
+		applied[r.Version] = true
+	}
+	for _, m := range dbMigrations {
+		if applied[m.Version] {
+			continue
+		}
+		if err := m.Up(tx, driver); err != nil {
+			return fmt.Errorf("db migration %d: %w", m.Version, err)
+		}
+		if err := tx.Create(&SchemaMigration{Version: m.Version}).Error; err != nil {
+			return fmt.Errorf("record db migration %d: %w", m.Version, err)
 		}
 	}
 	return nil
