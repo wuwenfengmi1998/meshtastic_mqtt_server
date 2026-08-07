@@ -365,9 +365,6 @@ h3 {
   padding: 8px 12px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-soft);
-  position: sticky;
-  z-index: 9;
-  top: 53px;
 }
 
 .chat-filter-input {
