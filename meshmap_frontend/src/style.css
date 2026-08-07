@@ -89,6 +89,17 @@ a {
   opacity: 0.5;
 }
 
+.app-footer-github {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-muted);
+  transition: color 0.15s ease;
+}
+
+.app-footer-github:hover {
+  color: var(--color-heading);
+}
+
 .topbar {
   display: flex;
   align-items: center;
