@@ -84,6 +84,10 @@ func NewRouter(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, 
 	return r
 }
 
+const BackendVersion = "1.0.0"
+
+var CommitVersion = "dev"
+
 func registerAPIRoutes(r gin.IRouter, store *storepkg.Store, mapTileCacheDir string) {
 	r.GET("/health", func(c *gin.Context) {
 		status := gin.H{"status": "ok", "database": "ok"}
@@ -94,6 +98,10 @@ func registerAPIRoutes(r gin.IRouter, store *storepkg.Store, mapTileCacheDir str
 			return
 		}
 		c.JSON(http.StatusOK, status)
+	})
+
+	r.GET("/version", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"version": BackendVersion, "commit": CommitVersion})
 	})
 
 	registerNodeInfoRoutes(r, store, "/nodeinfo")

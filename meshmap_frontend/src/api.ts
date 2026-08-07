@@ -131,6 +131,10 @@ export function getHealth(): Promise<HealthStatus> {
   return getJSON<HealthStatus>('/api/health')
 }
 
+export function getBackendVersion(): Promise<{ version: string; commit: string }> {
+  return getJSON<{ version: string; commit: string }>('/api/version')
+}
+
 export function getHelpContent(): Promise<HelpContentResponse> {
   return getJSON<HelpContentResponse>('/api/help')
 }

@@ -29,6 +29,7 @@ cd "${SCRIPT_DIR}"
 
 echo "拉取最新代码..."
 git pull
+COMMIT_HASH=$(git rev-parse --short HEAD)
 
 echo "编译前端..."
 cd "${SCRIPT_DIR}/${FRONTEND_DIR}"
@@ -41,7 +42,7 @@ npm run build
 
 echo "编译 Go 程序..."
 cd "${SCRIPT_DIR}"
-go build -o "${BINARY_NAME}" .
+go build -ldflags "-X meshtastic_mqtt_server/internal/web.CommitVersion=${COMMIT_HASH}" -o "${BINARY_NAME}" .
 
 echo "检查系统用户..."
 if ! id -u "${SERVICE_USER}" >/dev/null 2>&1; then

@@ -15,6 +15,7 @@ import AdminMapSource from './components/AdminMapSource.vue'
 import AdminMqttForward from './components/AdminMqttForward.vue'
 import AdminSignManagement from './components/AdminSignManagement.vue'
 import AdminUsers from './components/AdminUsers.vue'
+import AppFooter from './components/AppFooter.vue'
 import ChatPanel from './components/ChatPanel.vue'
 import ConfirmDeleteModal from './components/ConfirmDeleteModal.vue'
 import HelpPage from './components/HelpPage.vue'
@@ -837,6 +838,8 @@ onBeforeUnmount(() => {
         @delete-and-block-node="requestDeleteAndBlockNode"
       />
     </template>
+
+    <AppFooter />
 
     <ConfirmDeleteModal
       :open="!!pendingDeleteAction"
