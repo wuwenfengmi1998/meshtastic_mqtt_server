@@ -27,9 +27,31 @@ const canNext = computed(() => props.page < totalPages.value)
 const menuNode = ref<NodeInfo | null>(null)
 const menuX = ref(0)
 const menuY = ref(0)
+const copiedNodeId = ref<string | null>(null)
 
 function formatTime(value: string): string {
   return new Date(value).toLocaleString()
+}
+
+function truncateKey(key: string): string {
+  if (key.length <= 12) return key
+  return key.slice(0, 8) + '…' + key.slice(-4)
+}
+
+async function copyPublicKey(node: NodeInfo, event: MouseEvent) {
+  event.stopPropagation()
+  if (!node.public_key) return
+  try {
+    await navigator.clipboard.writeText(node.public_key)
+    copiedNodeId.value = node.node_id
+    setTimeout(() => {
+      if (copiedNodeId.value === node.node_id) {
+        copiedNodeId.value = null
+      }
+    }, 2000)
+  } catch {
+    /* clipboard not available */
+  }
 }
 
 function closeNodeMenu() {
@@ -95,7 +117,7 @@ onBeforeUnmount(() => {
       <span class="badge">共 {{ total }} 条</span>
     </div>
 
-    <div class="node-table-wrap" @scroll="closeNodeMenu">
+    <div class="node-table-wrap node-list-wrap" @scroll="closeNodeMenu">
       <table class="node-table">
         <thead>
           <tr>
@@ -122,7 +144,18 @@ onBeforeUnmount(() => {
             <td>{{ node.short_name || '-' }}</td>
             <td>{{ node.hw_model || '-' }}</td>
             <td>{{ node.role || '-' }}</td>
-            <td>{{ node.public_key || '-' }}</td>
+            <td>
+              <span v-if="node.public_key" class="pubkey-cell">
+                <code class="pubkey-text">{{ truncateKey(node.public_key) }}</code>
+                <button
+                  class="copy-btn"
+                  type="button"
+                  :title="copiedNodeId === node.node_id ? '已复制' : '复制完整公钥'"
+                  @click.stop="copyPublicKey(node, $event)"
+                >{{ copiedNodeId === node.node_id ? '已复制' : '复制' }}</button>
+              </span>
+              <span v-else>-</span>
+            </td>
             <td>{{ formatTime(node.updated_at) }}</td>
           </tr>
         </tbody>
