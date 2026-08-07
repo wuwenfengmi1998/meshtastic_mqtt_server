@@ -135,6 +135,10 @@ export function getBackendVersion(): Promise<{ version: string; commit: string }
   return getJSON<{ version: string; commit: string }>('/api/version')
 }
 
+export function getChannels(): Promise<{ items: { channel_id: string }[] }> {
+  return getJSON<{ items: { channel_id: string }[] }>('/api/channels')
+}
+
 export function getHelpContent(): Promise<HelpContentResponse> {
   return getJSON<HelpContentResponse>('/api/help')
 }

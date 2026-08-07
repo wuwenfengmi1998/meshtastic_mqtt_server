@@ -387,3 +387,8 @@ func (s *Store) listAppendRows(opts ListOptions, dest any) *gorm.DB {
 	}
 	return q.Find(dest)
 }
+
+func (s *Store) ListChannels() ([]ChannelRecord, error) {
+	var rows []ChannelRecord
+	return rows, s.db.Order("channel_id ASC").Find(&rows).Error
+}

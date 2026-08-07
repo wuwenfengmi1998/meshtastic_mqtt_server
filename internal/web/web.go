@@ -139,6 +139,18 @@ func registerAPIRoutes(r gin.IRouter, store *storepkg.Store, mapTileCacheDir str
 		rows, err := store.ListTextMessages(opts)
 		writeListResponse(c, rows, opts, err, textMessageDTO)
 	})
+	r.GET("/channels", func(c *gin.Context) {
+		rows, err := store.ListChannels()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		items := make([]gin.H, 0, len(rows))
+		for _, row := range rows {
+			items = append(items, gin.H{"channel_id": row.ChannelID})
+		}
+		c.JSON(http.StatusOK, gin.H{"items": items})
+	})
 	r.GET("/discard-details", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
 		if !ok {

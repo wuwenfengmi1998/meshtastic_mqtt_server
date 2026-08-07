@@ -10,6 +10,7 @@ const props = defineProps<{
   hasMoreMessages: boolean
   isAdmin: boolean
   channelFilter: string
+  channels: string[]
 }>()
 
 type GroupedTextMessage = TextMessage & { mergedCount: number; mergedMessages: TextMessage[] }
@@ -29,6 +30,56 @@ const menuY = ref(0)
 const topThreshold = 8
 const bottomThreshold = 40
 const scrollOverflowAllowance = 1
+
+const showSuggestions = ref(false)
+const selectedSuggestion = ref(-1)
+
+const suggestions = computed(() => {
+  const q = props.channelFilter.trim().toLowerCase()
+  if (!q) return []
+  return props.channels
+    .filter(ch => ch.toLowerCase().includes(q))
+    .slice(0, 10)
+})
+
+function onFilterInput(event: Event) {
+  const value = (event.target as HTMLInputElement).value
+  emit('update:channelFilter', value)
+  selectedSuggestion.value = -1
+  showSuggestions.value = value.trim().length > 0 && suggestions.value.length > 0
+}
+
+function onFilterFocus() {
+  if (props.channelFilter.trim() && suggestions.value.length > 0) {
+    showSuggestions.value = true
+  }
+}
+
+function onFilterBlur() {
+  setTimeout(() => { showSuggestions.value = false }, 150)
+}
+
+function onFilterKeydown(event: KeyboardEvent) {
+  if (!showSuggestions.value || suggestions.value.length === 0) return
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    selectedSuggestion.value = Math.min(selectedSuggestion.value + 1, suggestions.value.length - 1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    selectedSuggestion.value = Math.max(selectedSuggestion.value - 1, -1)
+  } else if (event.key === 'Enter' && selectedSuggestion.value >= 0) {
+    event.preventDefault()
+    emit('update:channelFilter', suggestions.value[selectedSuggestion.value])
+    showSuggestions.value = false
+  } else if (event.key === 'Escape') {
+    showSuggestions.value = false
+  }
+}
+
+function selectSuggestion(ch: string) {
+  emit('update:channelFilter', ch)
+  showSuggestions.value = false
+}
 
 const groupedMessages = computed<GroupedTextMessage[]>(() => {
   const groups = new Map<string, GroupedTextMessage>()
@@ -201,7 +252,10 @@ onUpdated(() => {
           class="chat-filter-input"
           :value="channelFilter"
           placeholder="筛选频道"
-          @input="emit('update:channelFilter', ($event.target as HTMLInputElement).value)"
+          @input="onFilterInput"
+          @focus="onFilterFocus"
+          @blur="onFilterBlur"
+          @keydown="onFilterKeydown"
         />
         <button
           v-if="channelFilter.trim()"
@@ -209,6 +263,14 @@ onUpdated(() => {
           class="chat-filter-clear"
           @click="emit('update:channelFilter', '')"
         >清除</button>
+        <ul v-if="showSuggestions && suggestions.length > 0" class="chat-filter-suggestions">
+          <li
+            v-for="(ch, idx) in suggestions"
+            :key="ch"
+            :class="{ active: idx === selectedSuggestion }"
+            @mousedown.prevent="selectSuggestion(ch)"
+          >{{ ch }}</li>
+        </ul>
       </div>
     </div>
 

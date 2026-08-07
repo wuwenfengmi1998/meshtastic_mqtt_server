@@ -474,6 +474,16 @@ func (SchemaMigration) TableName() string {
 	return "schema_migrations"
 }
 
+type ChannelRecord struct {
+	ID        uint      `gorm:"column:id;primaryKey;autoIncrement"`
+	ChannelID string    `gorm:"column:channel_id;type:varchar(255);not null;uniqueIndex"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (ChannelRecord) TableName() string {
+	return "channels"
+}
+
 // LLMProviderRecord 保存 LLM API 配置，支持多个 AI 提供商
 type LLMProviderRecord struct {
 	Name               string    `gorm:"column:name;primaryKey;size:64;not null"` // 配置名称，如 "default"、"openai"、"ark" 等
@@ -700,6 +710,7 @@ func (s *Store) migrate() error {
 			{label: "nodeinfo", model: &NodeInfoRecord{}},
 			{label: "map_report", model: &MapReportRecord{}},
 			{label: "text_message", model: &TextMessageRecord{}},
+			{label: "channels", model: &ChannelRecord{}},
 			{label: "position", model: &PositionRecord{}},
 			{label: "telemetry", model: &TelemetryRecord{}},
 			{label: "routing", model: &RoutingRecord{}},
@@ -897,6 +908,7 @@ type DBMigration struct {
 
 var dbMigrations = []DBMigration{
 	{Version: 1, Up: migrateDB1},
+	{Version: 2, Up: migrateDB2},
 }
 
 func migrateDB1(tx *gorm.DB, driver string) error {
@@ -904,6 +916,19 @@ func migrateDB1(tx *gorm.DB, driver string) error {
 		if err := tx.Exec("ALTER TABLE text_message MODIFY COLUMN channel_id VARCHAR(255)").Error; err != nil {
 			return fmt.Errorf("alter text_message.channel_id to varchar: %w", err)
 		}
+	}
+	return nil
+}
+
+func migrateDB2(tx *gorm.DB, driver string) error {
+	var sql string
+	if driver == config.DriverSQLite {
+		sql = "INSERT OR IGNORE INTO channels (channel_id, created_at) SELECT DISTINCT channel_id, datetime('now') FROM text_message WHERE channel_id IS NOT NULL AND channel_id != ''"
+	} else {
+		sql = "INSERT IGNORE INTO channels (channel_id, created_at) SELECT DISTINCT channel_id, NOW() FROM text_message WHERE channel_id IS NOT NULL AND channel_id != ''"
+	}
+	if err := tx.Exec(sql).Error; err != nil {
+		return fmt.Errorf("backfill channels: %w", err)
 	}
 	return nil
 }
@@ -1079,6 +1104,9 @@ func (s *Store) InsertTextMessage(record map[string]any, clientInfo MQTTClientIn
 	}
 	if err := s.db.Create(message).Error; err != nil {
 		return fmt.Errorf("insert text_message from %s: %w", message.FromID, err)
+	}
+	if message.ChannelID != nil && *message.ChannelID != "" {
+		s.db.FirstOrCreate(&ChannelRecord{}, ChannelRecord{ChannelID: *message.ChannelID})
 	}
 	return nil
 }

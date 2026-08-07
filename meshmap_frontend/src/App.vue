@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { adminLogout, createNodeBlockingRule, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReportViewport, getNodeInfo, getPositions, getTextMessages, purgeNode } from './api'
+import { adminLogout, createNodeBlockingRule, deleteNode, deleteTextMessage, getAdminMe, getChannels, getHealth, getMapReportViewport, getNodeInfo, getPositions, getTextMessages, purgeNode } from './api'
 import AdminBlockingManagement from './components/AdminBlockingManagement.vue'
 import AdminBot from './components/AdminBot.vue'
 import AdminBotDirect from './components/AdminBotDirect.vue'
@@ -57,6 +57,7 @@ const nodePage = ref(1)
 const nodePageSize = 25
 const nodeTotal = ref(0)
 const messages = ref<TextMessage[]>([])
+const channels = ref<string[]>([])
 const chatPageSize = 20
 const chatLoadingOlder = ref(false)
 const chatHasMore = ref(true)
@@ -682,6 +683,7 @@ onMounted(() => {
   loadMapSource()
   refresh()
   refreshTimer = window.setInterval(() => refresh(false), 5000)
+  getChannels().then(res => { channels.value = res.items.map(i => i.channel_id) }).catch(() => {})
 })
 
 onBeforeUnmount(() => {
@@ -811,6 +813,7 @@ onBeforeUnmount(() => {
       <section class="workspace">
         <ChatPanel
           v-model:channelFilter="channelFilter"
+          :channels="channels"
           :messages="filteredMessages"
           :nodes-by-id="nodesById"
           :selected-node-id="selectedNodeId"
