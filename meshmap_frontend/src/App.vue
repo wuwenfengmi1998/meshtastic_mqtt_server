@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { adminLogout, createNodeBlockingRule, deleteNode, deleteTextMessage, getAdminMe, getHealth, getMapReportViewport, getNodeInfo, getPositions, getTextMessages, purgeNode } from './api'
 import AdminBlockingManagement from './components/AdminBlockingManagement.vue'
 import AdminBot from './components/AdminBot.vue'
@@ -69,6 +69,7 @@ const mapReportTotal = ref(0)
 const mapSources = ref<PublicMapTileSource[]>([fallbackMapSource])
 const mapSource = ref<PublicMapTileSource>(fallbackMapSource)
 const nodeFilter = ref('')
+const channelFilter = ref('')
 const pendingDeleteAction = ref<PendingDeleteAction | null>(null)
 type DeletableTextMessage = TextMessage & { mergedCount?: number; mergedMessages?: TextMessage[] }
 type NodeActionRequest = { nodeId: string; nodeNum: number | null; message?: DeletableTextMessage }
@@ -95,6 +96,7 @@ const nodesById = computed<NodeInfoById>(() => {
 })
 
 const normalizedNodeFilter = computed(() => nodeFilter.value.trim().toLowerCase())
+const normalizedChannelFilter = computed(() => channelFilter.value.trim())
 
 function nodeMatchesFilterByInfo(node: NodeInfo | null | undefined, keyword: string): boolean {
   if (!keyword) {
@@ -298,7 +300,7 @@ function clearSelectedNode() {
 }
 
 async function loadInitialChatMessages() {
-  const response = await getTextMessages(chatPageSize, 0)
+  const response = await getTextMessages(chatPageSize, 0, normalizedChannelFilter.value ? { channelId: normalizedChannelFilter.value } : '')
   messages.value = toChronological(response.items)
   chatHasMore.value = response.items.length === chatPageSize
   chatInitialized.value = true
@@ -311,7 +313,7 @@ async function loadOlderMessages() {
 
   chatLoadingOlder.value = true
   try {
-    const response = await getTextMessages(chatPageSize, messages.value.length)
+    const response = await getTextMessages(chatPageSize, messages.value.length, normalizedChannelFilter.value ? { channelId: normalizedChannelFilter.value } : '')
     messages.value = mergeMessages(messages.value, toChronological(response.items))
     chatHasMore.value = response.items.length === chatPageSize
   } catch (err) {
@@ -322,9 +324,22 @@ async function loadOlderMessages() {
 }
 
 async function pollLatestMessages() {
-  const response = await getTextMessages(chatPageSize, 0)
+  const response = await getTextMessages(chatPageSize, 0, normalizedChannelFilter.value ? { channelId: normalizedChannelFilter.value } : '')
   messages.value = mergeMessages(messages.value, toChronological(response.items))
 }
+
+let channelFilterTimer: number | undefined
+watch(normalizedChannelFilter, () => {
+  if (channelFilterTimer !== undefined) {
+    window.clearTimeout(channelFilterTimer)
+  }
+  channelFilterTimer = window.setTimeout(() => {
+    messages.value = []
+    chatHasMore.value = true
+    chatInitialized.value = false
+    loadInitialChatMessages()
+  }, 400)
+})
 
 async function loadNodePage(page: number, showLoading = true) {
   if (showLoading) {
@@ -676,6 +691,9 @@ onBeforeUnmount(() => {
   if (mapBoundsTimer !== undefined) {
     window.clearTimeout(mapBoundsTimer)
   }
+  if (channelFilterTimer !== undefined) {
+    window.clearTimeout(channelFilterTimer)
+  }
 })
 </script>
 
@@ -737,6 +755,20 @@ onBeforeUnmount(() => {
               type="button"
               class="topbar-filter-clear"
               @click="nodeFilter = ''"
+            >清除</button>
+          </div>
+          <div class="topbar-filter">
+            <input
+              type="search"
+              class="topbar-filter-input"
+              v-model="channelFilter"
+              placeholder="筛选频道"
+            />
+            <button
+              v-if="normalizedChannelFilter"
+              type="button"
+              class="topbar-filter-clear"
+              @click="channelFilter = ''"
             >清除</button>
           </div>
           <a class="topbar-link" href="/signed">签到列表</a>

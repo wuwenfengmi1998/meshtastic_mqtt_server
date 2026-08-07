@@ -439,7 +439,7 @@ type TextMessageRecord struct {
 	Text           *string   `gorm:"column:text"`
 	PayloadHex     *string   `gorm:"column:payload_hex"`
 	Topic          string    `gorm:"column:topic;not null"`
-	ChannelID      *string   `gorm:"column:channel_id"`
+	ChannelID      *string   `gorm:"column:channel_id;index:idx_text_message_channel_id_created_at,priority:1"`
 	GatewayID      *string   `gorm:"column:gateway_id"`
 	PacketID       *int64    `gorm:"column:packet_id;index:idx_text_message_packet_id"`
 	PacketTo       *string   `gorm:"column:packet_to"`
@@ -458,7 +458,7 @@ type TextMessageRecord struct {
 	MQTTRemoteHost *string   `gorm:"column:mqtt_remote_host"`
 	MQTTRemotePort *string   `gorm:"column:mqtt_remote_port"`
 	ContentJSON    string    `gorm:"column:content_json;not null"`
-	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime;index:idx_text_message_from_num_created_at,priority:2;index:idx_text_message_created_at"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime;index:idx_text_message_from_num_created_at,priority:2;index:idx_text_message_created_at;index:idx_text_message_channel_id_created_at,priority:2"`
 }
 
 func (TextMessageRecord) TableName() string {
@@ -707,7 +707,7 @@ func (s *Store) migrate() error {
 			model   any
 			indexes []string
 		}{
-			{label: "text_message", model: &TextMessageRecord{}, indexes: []string{"idx_text_message_from_num_created_at", "idx_text_message_created_at", "idx_text_message_packet_id"}},
+			{label: "text_message", model: &TextMessageRecord{}, indexes: []string{"idx_text_message_from_num_created_at", "idx_text_message_created_at", "idx_text_message_packet_id", "idx_text_message_channel_id_created_at"}},
 			{label: "bot_direct_messages", model: &BotDirectMessageRecord{}, indexes: []string{"idx_bot_dm_bot_peer", "idx_bot_dm_bot_created_at"}},
 			{label: "llm_message_queue", model: &LLMMessageQueueRecord{}, indexes: []string{"idx_llm_queue_bot_created"}},
 		} {
