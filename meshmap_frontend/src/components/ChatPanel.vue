@@ -186,28 +186,30 @@ onUpdated(() => {
 
 <template>
   <aside ref="panelRef" class="chat-panel panel" @scroll.passive="handleScroll">
-    <div class="panel-header">
-      <div>
-        <p class="eyebrow">Chat</p>
-        <h2>聊天信息</h2>
+    <div class="chat-panel-sticky">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Chat</p>
+          <h2>聊天信息</h2>
+        </div>
+        <span class="badge">{{ groupedMessages.length }}</span>
       </div>
-      <span class="badge">{{ groupedMessages.length }}</span>
-    </div>
 
-    <div class="chat-filter">
-      <input
-        type="search"
-        class="chat-filter-input"
-        :value="channelFilter"
-        placeholder="筛选频道"
-        @input="emit('update:channelFilter', ($event.target as HTMLInputElement).value)"
-      />
-      <button
-        v-if="channelFilter.trim()"
-        type="button"
-        class="chat-filter-clear"
-        @click="emit('update:channelFilter', '')"
-      >清除</button>
+      <div class="chat-filter">
+        <input
+          type="search"
+          class="chat-filter-input"
+          :value="channelFilter"
+          placeholder="筛选频道"
+          @input="emit('update:channelFilter', ($event.target as HTMLInputElement).value)"
+        />
+        <button
+          v-if="channelFilter.trim()"
+          type="button"
+          class="chat-filter-clear"
+          @click="emit('update:channelFilter', '')"
+        >清除</button>
+      </div>
     </div>
 
     <div v-if="loadingOlder" class="chat-loading">正在加载更早消息...</div>

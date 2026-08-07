@@ -299,7 +299,7 @@ h3 {
   overflow-y: auto;
 }
 
-.chat-panel .panel-header {
+.chat-panel-sticky {
   position: sticky;
   z-index: 10;
   top: 0;
