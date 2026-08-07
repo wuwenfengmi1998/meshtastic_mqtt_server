@@ -84,7 +84,7 @@ func NewRouter(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, 
 	return r
 }
 
-const BackendVersion = "1.2.0"
+const BackendVersion = "1.2.1"
 
 var CommitVersion = "dev"
 

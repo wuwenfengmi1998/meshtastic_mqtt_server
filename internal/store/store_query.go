@@ -316,7 +316,6 @@ func (s *Store) ListDiscardDetails(opts ListOptions) ([]DiscardDetailsRecord, er
 	opts = NormalizeListOptions(opts)
 	var rows []DiscardDetailsRecord
 	q := applyDiscardDetailsFilters(s.db.Model(&DiscardDetailsRecord{}), opts).
-		Order("created_at DESC").
 		Order("id DESC").
 		Limit(opts.Limit).
 		Offset(opts.Offset)
@@ -385,7 +384,7 @@ func (s *Store) ListTraceroute(opts ListOptions) ([]TracerouteRecord, error) {
 
 func (s *Store) listAppendRows(opts ListOptions, dest any) *gorm.DB {
 	opts = NormalizeListOptions(opts)
-	q := s.db.Order("created_at DESC").Order("id DESC").Limit(opts.Limit).Offset(opts.Offset)
+	q := s.db.Order("id DESC").Limit(opts.Limit).Offset(opts.Offset)
 	if opts.NodeID != "" {
 		q = q.Where("from_id = ?", opts.NodeID)
 	}

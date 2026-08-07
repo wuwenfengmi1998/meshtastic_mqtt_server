@@ -1291,6 +1291,7 @@ func textMessageFromRecord(record map[string]any, clientInfo MQTTClientInfo) (*T
 		MQTTRemoteHost: clientFields.MQTTRemoteHost,
 		MQTTRemotePort: clientFields.MQTTRemotePort,
 		ContentJSON:    common.ContentJSON,
+		CreatedAt:      time.Now(),
 	}, nil
 }
 
@@ -1401,6 +1402,7 @@ func AppendPacketFieldsFromRecord(record map[string]any, wantType string, client
 			DecryptSuccess: nullableBool(record["decrypt_success"]),
 			DecryptStatus:  NullableString(record["decrypt_status"]),
 			ContentJSON:    string(contentJSON),
+			CreatedAt:      time.Now(),
 		}, MQTTClientRecordFields{
 			MQTTClientID:   NullableString(clientInfo.ClientID),
 			MQTTUsername:   NullableString(clientInfo.Username),

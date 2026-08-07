@@ -416,8 +416,9 @@ func (s *Service) recordOutboundDirectMessage(bot *storepkg.BotNodeRecord, msg *
 		BotMessageID: botMessageID,
 		CreatedBy:    createdByPtr,
 		PublishedAt:  msg.PublishedAt,
-		// 出向消息从产生那一刻起就视为“已读”，未读计数只关心 inbound。
+		// 出向消息从产生那一刻起就视为"已读"，未读计数只关心 inbound。
 		ReadAt: &now,
+		CreatedAt: now,
 	}
 	if err := s.store.InsertBotDirectMessage(dm); err != nil {
 		printJSON(map[string]any{

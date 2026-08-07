@@ -69,7 +69,6 @@ func (s *Store) ListBotDirectMessagesByConversation(opts BotDirectMessageListOpt
 	var rows []BotDirectMessageRecord
 	q := s.db.Model(&BotDirectMessageRecord{}).
 		Where("bot_id = ? AND peer_node_num = ?", opts.BotID, opts.PeerNodeNum).
-		Order("created_at DESC").
 		Order("id DESC").
 		Limit(opts.Limit).
 		Offset(opts.Offset)
@@ -159,7 +158,6 @@ func (s *Store) ListBotDirectConversations(botID uint64, opts ListOptions) ([]Bo
 	q := s.db.Table("(?) AS agg", subLast).
 		Select("agg.bot_id AS bot_id, agg.peer_node_id AS peer_node_id, agg.peer_node_num AS peer_node_num, m.created_at AS last_message_at, m.text AS last_text, m.direction AS last_direction, agg.unread_count AS unread_count, agg.total_count AS total_count").
 		Joins("JOIN bot_direct_messages m ON m.id = agg.last_id").
-		Order("m.created_at DESC").
 		Order("m.id DESC").
 		Limit(opts.Limit).
 		Offset(opts.Offset)
@@ -284,6 +282,7 @@ func insertInboundBotDirectMessage(s *Store, record map[string]any, clientInfo M
 		Status:       BotMessageStatusPublished,
 		ReceivedAt:   &now,
 		ContentJSON:  contentPtr,
+		CreatedAt:    now,
 	}
 	if err := s.InsertBotDirectMessage(dm); err != nil {
 		return fmt.Errorf("insert bot direct message from %s: %w", peerNodeID, err)

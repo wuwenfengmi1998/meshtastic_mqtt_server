@@ -369,6 +369,7 @@ func (s *Store) EnqueueLLMMessage(input LLMMessageQueueInput) (*LLMMessageQueueR
 		Status:      LLMMessageStatusPending,
 		ReceivedAt:  now,
 		ContentJSON: input.ContentJSON,
+		CreatedAt:   now,
 	}
 
 	if err := s.db.Create(record).Error; err != nil {
@@ -396,7 +397,7 @@ func (s *Store) ListLLMMessages(opts ListOptions, botID uint64, includeDeleted b
 	}
 
 	// 排序和分页
-	query = query.Order("created_at DESC")
+	query = query.Order("id DESC")
 	if opts.Limit > 0 {
 		query = query.Limit(opts.Limit)
 	}

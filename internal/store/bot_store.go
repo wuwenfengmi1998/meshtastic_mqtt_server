@@ -211,7 +211,6 @@ func (s *Store) ListBotMessages(opts BotMessageListOptions) ([]BotMessageRecord,
 	opts.ListOptions = NormalizeListOptions(opts.ListOptions)
 	var rows []BotMessageRecord
 	q := applyBotMessageFilters(s.db.Model(&BotMessageRecord{}), opts).
-		Order("created_at DESC").
 		Order("id DESC").
 		Limit(opts.Limit).
 		Offset(opts.Offset)

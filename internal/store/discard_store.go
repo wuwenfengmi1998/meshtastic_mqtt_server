@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 func (s *Store) InsertDiscardDetails(record map[string]any, raw []byte, clientInfo MQTTClientInfo) error {
@@ -34,6 +35,7 @@ func discardDetailsFromRecord(record map[string]any, raw []byte, clientInfo MQTT
 		MQTTRemoteAddr: NullableStringValue(clientInfo.RemoteAddr),
 		MQTTRemoteHost: NullableStringValue(clientInfo.RemoteHost),
 		MQTTRemotePort: NullableStringValue(clientInfo.RemotePort),
+		CreatedAt:      time.Now(),
 	}, nil
 }
 

@@ -257,8 +257,7 @@ function toChronological(items: TextMessage[]): TextMessage[] {
 }
 
 function compareMessages(a: TextMessage, b: TextMessage): number {
-  const timeDiff = Date.parse(a.created_at) - Date.parse(b.created_at)
-  return timeDiff !== 0 ? timeDiff : a.id - b.id
+  return a.id - b.id
 }
 
 function mergeMessages(existing: TextMessage[], incoming: TextMessage[]): TextMessage[] {
