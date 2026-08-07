@@ -339,6 +339,19 @@ func applyDiscardDetailsFilters(q *gorm.DB, opts ListOptions) *gorm.DB {
 	return q
 }
 
+func (s *Store) DeleteDiscardDetailsByIDs(ids []uint64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := s.db.Where("id IN ?", ids).Delete(&DiscardDetailsRecord{})
+	return result.RowsAffected, result.Error
+}
+
+func (s *Store) DeleteAllDiscardDetails() (int64, error) {
+	result := s.db.Where("1 = 1").Delete(&DiscardDetailsRecord{})
+	return result.RowsAffected, result.Error
+}
+
 func (s *Store) DeleteTextMessage(id uint64) error {
 	result := s.db.Where("id = ?", id).Delete(&TextMessageRecord{})
 	if result.Error != nil {

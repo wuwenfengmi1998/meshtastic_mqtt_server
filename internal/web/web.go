@@ -84,7 +84,7 @@ func NewRouter(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, 
 	return r
 }
 
-const BackendVersion = "1.1.0"
+const BackendVersion = "1.2.0"
 
 var CommitVersion = "dev"
 
@@ -398,6 +398,33 @@ func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Ma
 		}
 		rows, err := store.ListLoginLogs(opts)
 		writeListResponse(c, rows, opts, err, loginLogDTO)
+	})
+	protected.POST("/discard-details/batch-delete", func(c *gin.Context) {
+		var req struct {
+			IDs []uint64 `json:"ids"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if len(req.IDs) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ids is empty"})
+			return
+		}
+		count, err := store.DeleteDiscardDetailsByIDs(req.IDs)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "deleted_count": count})
+	})
+	protected.DELETE("/discard-details", func(c *gin.Context) {
+		count, err := store.DeleteAllDiscardDetails()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok", "deleted_count": count})
 	})
 	protected.DELETE("/text-messages/:id", func(c *gin.Context) {
 		id, err := strconv.ParseUint(c.Param("id"), 10, 64)

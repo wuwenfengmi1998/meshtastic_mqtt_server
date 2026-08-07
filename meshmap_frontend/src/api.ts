@@ -235,6 +235,14 @@ export function getDiscardDetails(limit = 100, offset = 0): Promise<ListResponse
   return getJSON<ListResponse<DiscardDetails>>(listPath('/api/discard-details', limit, offset))
 }
 
+export function deleteDiscardDetailsByIDs(ids: number[]): Promise<{ status: string; deleted_count: number }> {
+  return postJSON<{ status: string; deleted_count: number }>('/api/admin/discard-details/batch-delete', { ids })
+}
+
+export function clearDiscardDetails(): Promise<{ status: string; deleted_count: number }> {
+  return deleteJSON<{ status: string; deleted_count: number }>('/api/admin/discard-details')
+}
+
 export function getTelemetry(limit = 500, offset = 0, nodeId = ''): Promise<ListResponse<TelemetryRecord>> {
   return getJSON<ListResponse<TelemetryRecord>>(listPath('/api/telemetry', limit, offset, nodeId))
 }

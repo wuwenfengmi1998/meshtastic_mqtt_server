@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { getDiscardDetails } from '../api'
+import { computed, onMounted, ref } from 'vue'
+import { clearDiscardDetails, deleteDiscardDetailsByIDs, getDiscardDetails } from '../api'
 import type { DiscardDetails } from '../types'
+import ConfirmDeleteModal from './ConfirmDeleteModal.vue'
 
 const items = ref<DiscardDetails[]>([])
 const loading = ref(false)
@@ -9,8 +10,47 @@ const error = ref('')
 const page = ref(1)
 const pageSize = 25
 
+const selectedIds = ref<Set<number>>(new Set())
+const pendingAction = ref<'batch' | 'clear' | null>(null)
+
 const canPrev = () => page.value > 1
 const canNext = () => items.value.length === pageSize
+
+const allSelected = computed(
+  () => items.value.length > 0 && items.value.every((item) => selectedIds.value.has(item.id)),
+)
+const someSelected = computed(() => selectedIds.value.size > 0 && !allSelected.value)
+const selectedCount = computed(() => selectedIds.value.size)
+
+const modalTitle = computed(() =>
+  pendingAction.value === 'clear' ? '清空丢弃数据' : '批量删除丢弃数据',
+)
+const modalMessage = computed(() =>
+  pendingAction.value === 'clear'
+    ? '确定要清空全部丢弃数据吗？此操作不可撤销。'
+    : `确定要删除选中的 ${selectedCount.value} 条丢弃数据吗？此操作不可撤销。`,
+)
+const modalConfirmText = computed(() =>
+  pendingAction.value === 'clear' ? '清空全部' : '删除',
+)
+
+function toggleAll(checked: boolean) {
+  if (checked) {
+    items.value.forEach((item) => selectedIds.value.add(item.id))
+  } else {
+    selectedIds.value.clear()
+  }
+  selectedIds.value = new Set(selectedIds.value)
+}
+
+function toggleRow(id: number, checked: boolean) {
+  if (checked) {
+    selectedIds.value.add(id)
+  } else {
+    selectedIds.value.delete(id)
+  }
+  selectedIds.value = new Set(selectedIds.value)
+}
 
 function formatTime(value: string): string {
   return new Date(value).toLocaleString()
@@ -31,7 +71,41 @@ async function refreshItems() {
 
 function changePage(nextPage: number) {
   page.value = Math.max(1, nextPage)
+  selectedIds.value.clear()
+  selectedIds.value = new Set(selectedIds.value)
   refreshItems()
+}
+
+function requestBatchDelete() {
+  if (selectedCount.value === 0) return
+  pendingAction.value = 'batch'
+}
+
+function requestClearAll() {
+  pendingAction.value = 'clear'
+}
+
+function cancelDeleteModal() {
+  pendingAction.value = null
+}
+
+async function confirmDeleteModal() {
+  const action = pendingAction.value
+  pendingAction.value = null
+  if (!action) return
+  try {
+    if (action === 'clear') {
+      await clearDiscardDetails()
+    } else {
+      await deleteDiscardDetailsByIDs([...selectedIds.value])
+    }
+    selectedIds.value.clear()
+    selectedIds.value = new Set(selectedIds.value)
+    page.value = 1
+    await refreshItems()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
 }
 
 onMounted(refreshItems)
@@ -45,7 +119,19 @@ onMounted(refreshItems)
           <p class="eyebrow">Discard details</p>
           <h2>丢弃数据</h2>
         </div>
-        <button class="admin-button" @click="refreshItems" :disabled="loading">{{ loading ? '刷新中...' : '刷新数据' }}</button>
+        <div style="display: flex; gap: 8px;">
+          <button
+            class="admin-button admin-button-danger"
+            :disabled="loading || selectedCount === 0"
+            @click="requestBatchDelete"
+          >批量删除{{ selectedCount > 0 ? `（${selectedCount}）` : '' }}</button>
+          <button
+            class="admin-button admin-button-danger"
+            :disabled="loading"
+            @click="requestClearAll"
+          >清空全部</button>
+          <button class="admin-button" @click="refreshItems" :disabled="loading">{{ loading ? '刷新中...' : '刷新数据' }}</button>
+        </div>
       </div>
 
       <p v-if="error" class="error">{{ error }}</p>
@@ -53,6 +139,15 @@ onMounted(refreshItems)
         <table class="node-table">
           <thead>
             <tr>
+              <th style="width: 40px;">
+                <input
+                  type="checkbox"
+                  :checked="allSelected"
+                  :indeterminate.prop="someSelected"
+                  :disabled="items.length === 0"
+                  @change="toggleAll(($event.target as HTMLInputElement).checked)"
+                />
+              </th>
               <th>时间</th>
               <th>Topic</th>
               <th>Error</th>
@@ -67,6 +162,13 @@ onMounted(refreshItems)
           </thead>
           <tbody>
             <tr v-for="item in items" :key="item.id">
+              <td>
+                <input
+                  type="checkbox"
+                  :checked="selectedIds.has(item.id)"
+                  @change="toggleRow(item.id, ($event.target as HTMLInputElement).checked)"
+                />
+              </td>
               <td>{{ formatTime(item.created_at) }}</td>
               <td>{{ item.topic || '-' }}</td>
               <td>{{ item.error || '-' }}</td>
@@ -90,5 +192,14 @@ onMounted(refreshItems)
         <button :disabled="loading || !canNext()" @click="changePage(page + 1)">下一页</button>
       </div>
     </div>
+
+    <ConfirmDeleteModal
+      :open="pendingAction !== null"
+      :title="modalTitle"
+      :message="modalMessage"
+      :confirm-text="modalConfirmText"
+      @cancel="cancelDeleteModal"
+      @confirm="confirmDeleteModal"
+    />
   </section>
 </template>
