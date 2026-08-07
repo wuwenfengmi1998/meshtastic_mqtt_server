@@ -9,6 +9,7 @@ const props = defineProps<{
   loadingOlder: boolean
   hasMoreMessages: boolean
   isAdmin: boolean
+  channelFilter: string
 }>()
 
 type GroupedTextMessage = TextMessage & { mergedCount: number; mergedMessages: TextMessage[] }
@@ -18,6 +19,7 @@ const emit = defineEmits<{
   'load-older': []
   'delete-message': [message: GroupedTextMessage]
   'delete-and-block-node': [payload: { nodeId: string; nodeNum: number | null; message: GroupedTextMessage }]
+  'update:channelFilter': [value: string]
 }>()
 
 const panelRef = ref<HTMLElement | null>(null)
@@ -190,6 +192,22 @@ onUpdated(() => {
         <h2>聊天信息</h2>
       </div>
       <span class="badge">{{ groupedMessages.length }}</span>
+    </div>
+
+    <div class="chat-filter">
+      <input
+        type="search"
+        class="chat-filter-input"
+        :value="channelFilter"
+        placeholder="筛选频道"
+        @input="emit('update:channelFilter', ($event.target as HTMLInputElement).value)"
+      />
+      <button
+        v-if="channelFilter.trim()"
+        type="button"
+        class="chat-filter-clear"
+        @click="emit('update:channelFilter', '')"
+      >清除</button>
     </div>
 
     <div v-if="loadingOlder" class="chat-loading">正在加载更早消息...</div>

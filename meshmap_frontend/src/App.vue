@@ -757,20 +757,6 @@ onBeforeUnmount(() => {
               @click="nodeFilter = ''"
             >清除</button>
           </div>
-          <div class="topbar-filter">
-            <input
-              type="search"
-              class="topbar-filter-input"
-              v-model="channelFilter"
-              placeholder="筛选频道"
-            />
-            <button
-              v-if="normalizedChannelFilter"
-              type="button"
-              class="topbar-filter-clear"
-              @click="channelFilter = ''"
-            >清除</button>
-          </div>
           <a class="topbar-link" href="/signed">签到列表</a>
           <a class="topbar-link" href="/help">使用帮助</a>
           <a class="topbar-link" href="/admin">管理</a>
@@ -824,6 +810,7 @@ onBeforeUnmount(() => {
 
       <section class="workspace">
         <ChatPanel
+          v-model:channelFilter="channelFilter"
           :messages="filteredMessages"
           :nodes-by-id="nodesById"
           :selected-node-id="selectedNodeId"
