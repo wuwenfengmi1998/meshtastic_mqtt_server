@@ -212,41 +212,41 @@ onMounted(() => refreshSigns())
       <p v-if="error" class="error">{{ error }}</p>
       <p v-if="message" class="success">{{ message }}</p>
 
-      <div class="node-table-wrap">
+      <div class="node-table-wrap table-fit-wrap">
         <table class="node-table">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>节点 ID</th>
+              <th class="cell-nowrap">ID</th>
+              <th class="cell-nowrap">节点 ID</th>
               <th>Long Name</th>
-              <th>Short Name</th>
+              <th class="cell-nowrap">Short Name</th>
               <th>签到文本</th>
-              <th>签到时间</th>
-              <th>操作</th>
+              <th class="cell-nowrap">签到时间</th>
+              <th class="cell-nowrap">操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="record in records" :key="record.id">
               <template v-if="edits[record.id]">
-                <td>{{ record.id }}</td>
+                <td class="cell-nowrap">{{ record.id }}</td>
                 <td><input v-model="edits[record.id].node_id" class="admin-table-input" /></td>
                 <td><input v-model="edits[record.id].long_name" class="admin-table-input" /></td>
                 <td><input v-model="edits[record.id].short_name" class="admin-table-input" /></td>
                 <td><input v-model="edits[record.id].sign_text" class="admin-table-input" /></td>
                 <td><input v-model="edits[record.id].sign_time" class="admin-table-input" type="datetime-local" /></td>
-                <td>
+                <td class="cell-nowrap">
                   <button class="admin-button" :disabled="loading" @click="saveSign(record)">保存</button>
                   <button class="admin-button" :disabled="loading" @click="cancelEdit(record.id)">取消</button>
                 </td>
               </template>
               <template v-else>
-                <td>{{ record.id }}</td>
-                <td>{{ record.node_id }}</td>
+                <td class="cell-nowrap">{{ record.id }}</td>
+                <td class="cell-nowrap">{{ record.node_id }}</td>
                 <td>{{ record.long_name || '-' }}</td>
-                <td>{{ record.short_name || '-' }}</td>
+                <td class="cell-nowrap">{{ record.short_name || '-' }}</td>
                 <td>{{ record.sign_text }}</td>
-                <td>{{ formatTime(record.sign_time) }}</td>
-                <td>
+                <td class="cell-nowrap">{{ formatTime(record.sign_time) }}</td>
+                <td class="cell-nowrap">
                   <button class="admin-button" :disabled="loading" @click="startEdit(record)">编辑</button>
                   <button class="admin-button danger" :disabled="loading" @click="removeSign(record)">删除</button>
                 </td>

@@ -253,7 +253,7 @@ onBeforeUnmount(() => {
         </div>
         <span class="badge">{{ status?.clients?.length ?? 0 }}</span>
       </div>
-      <div class="node-table-wrap">
+      <div class="node-table-wrap table-fit-wrap">
         <table class="node-table">
           <thead>
             <tr>
@@ -261,9 +261,9 @@ onBeforeUnmount(() => {
               <th class="sortable" @click="toggleClientSort('username')">Username <span class="sort-indicator">{{ sortIndicator('username') }}</span></th>
               <th class="sortable" @click="toggleClientSort('listener')">Listener <span class="sort-indicator">{{ sortIndicator('listener') }}</span></th>
               <th class="sortable" @click="toggleClientSort('remote_addr')">Remote Addr <span class="sort-indicator">{{ sortIndicator('remote_addr') }}</span></th>
-              <th class="sortable" @click="toggleClientSort('packets_in')">客户端→服务器 <span class="sort-indicator">{{ sortIndicator('packets_in') }}</span></th>
-              <th class="sortable" @click="toggleClientSort('packets_out')">服务器→客户端 <span class="sort-indicator">{{ sortIndicator('packets_out') }}</span></th>
-              <th>操作</th>
+              <th class="sortable cell-nowrap" @click="toggleClientSort('packets_in')">客户端→服务器 <span class="sort-indicator">{{ sortIndicator('packets_in') }}</span></th>
+              <th class="sortable cell-nowrap" @click="toggleClientSort('packets_out')">服务器→客户端 <span class="sort-indicator">{{ sortIndicator('packets_out') }}</span></th>
+              <th class="cell-nowrap">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -272,9 +272,9 @@ onBeforeUnmount(() => {
               <td>{{ client.username || '-' }}</td>
               <td>{{ client.listener || '-' }}</td>
               <td>{{ client.remote_addr || '-' }}</td>
-              <td>{{ client.packets_in ?? 0 }}</td>
-              <td>{{ client.packets_out ?? 0 }}</td>
-              <td>
+              <td class="cell-nowrap">{{ client.packets_in ?? 0 }}</td>
+              <td class="cell-nowrap">{{ client.packets_out ?? 0 }}</td>
+              <td class="cell-nowrap">
                 <button
                   type="button"
                   class="client-danger-action"

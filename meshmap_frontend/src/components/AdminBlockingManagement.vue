@@ -458,36 +458,36 @@ onMounted(() => {
       <p v-if="wordError" class="error">{{ wordError }}</p>
       <p v-if="wordMessage" class="success">{{ wordMessage }}</p>
 
-      <div class="node-table-wrap">
+      <div class="node-table-wrap table-fit-wrap">
         <table class="node-table">
           <thead>
             <tr>
-              <th>ID</th>
+              <th class="cell-nowrap">ID</th>
               <th>违禁词</th>
-              <th>匹配类型</th>
-              <th>区分大小写</th>
+              <th class="cell-nowrap">匹配类型</th>
+              <th class="cell-nowrap">区分大小写</th>
               <th>原因</th>
-              <th>启用</th>
-              <th>创建时间</th>
-              <th>更新时间</th>
-              <th>操作</th>
+              <th class="cell-nowrap">启用</th>
+              <th class="cell-nowrap">创建时间</th>
+              <th class="cell-nowrap">更新时间</th>
+              <th class="cell-nowrap">操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="rule in wordRules" :key="rule.id">
-              <td>{{ rule.id }}</td>
+              <td class="cell-nowrap">{{ rule.id }}</td>
               <td><input v-model="wordEdits[rule.id].word" class="admin-table-input" /></td>
               <td>
                 <select v-model="wordEdits[rule.id].match_type" class="admin-table-input">
                   <option value="contains">包含</option>
                 </select>
               </td>
-              <td><input v-model="wordEdits[rule.id].case_sensitive" type="checkbox" /></td>
+              <td class="cell-nowrap"><input v-model="wordEdits[rule.id].case_sensitive" type="checkbox" /></td>
               <td><input v-model="wordEdits[rule.id].reason" class="admin-table-input" /></td>
-              <td><input v-model="wordEdits[rule.id].enabled" type="checkbox" /></td>
-              <td>{{ formatTime(rule.created_at) }}</td>
-              <td>{{ formatTime(rule.updated_at) }}</td>
-              <td>
+              <td class="cell-nowrap"><input v-model="wordEdits[rule.id].enabled" type="checkbox" /></td>
+              <td class="cell-nowrap">{{ formatTime(rule.created_at) }}</td>
+              <td class="cell-nowrap">{{ formatTime(rule.updated_at) }}</td>
+              <td class="cell-nowrap">
                 <button class="admin-button" :disabled="wordLoading" @click="saveWordRule(rule)">保存</button>
                 <button class="admin-button" :disabled="wordLoading" @click="removeWordRule(rule)">删除</button>
               </td>
@@ -533,30 +533,30 @@ onMounted(() => {
       <p v-if="nodeError" class="error">{{ nodeError }}</p>
       <p v-if="nodeMessage" class="success">{{ nodeMessage }}</p>
 
-      <div class="node-table-wrap">
+      <div class="node-table-wrap table-fit-wrap">
         <table class="node-table">
           <thead>
             <tr>
-              <th>ID</th>
+              <th class="cell-nowrap">ID</th>
               <th>节点 ID</th>
-              <th>数字 ID</th>
+              <th class="cell-nowrap">数字 ID</th>
               <th>原因</th>
-              <th>启用</th>
-              <th>创建时间</th>
-              <th>更新时间</th>
-              <th>操作</th>
+              <th class="cell-nowrap">启用</th>
+              <th class="cell-nowrap">创建时间</th>
+              <th class="cell-nowrap">更新时间</th>
+              <th class="cell-nowrap">操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="rule in nodeRules" :key="rule.id">
-              <td>{{ rule.id }}</td>
+              <td class="cell-nowrap">{{ rule.id }}</td>
               <td><input v-model="nodeEdits[rule.id].node_id" class="admin-table-input" /></td>
               <td><input v-model="nodeEdits[rule.id].node_num" class="admin-table-input" placeholder="可选" /></td>
               <td><input v-model="nodeEdits[rule.id].reason" class="admin-table-input" /></td>
-              <td><input v-model="nodeEdits[rule.id].enabled" type="checkbox" /></td>
-              <td>{{ formatTime(rule.created_at) }}</td>
-              <td>{{ formatTime(rule.updated_at) }}</td>
-              <td>
+              <td class="cell-nowrap"><input v-model="nodeEdits[rule.id].enabled" type="checkbox" /></td>
+              <td class="cell-nowrap">{{ formatTime(rule.created_at) }}</td>
+              <td class="cell-nowrap">{{ formatTime(rule.updated_at) }}</td>
+              <td class="cell-nowrap">
                 <button class="admin-button" :disabled="nodeLoading" @click="saveNodeRule(rule)">保存</button>
                 <button class="admin-button" :disabled="nodeLoading" @click="removeNodeRule(rule)">删除</button>
               </td>
@@ -599,28 +599,28 @@ onMounted(() => {
       <p v-if="ipError" class="error">{{ ipError }}</p>
       <p v-if="ipMessage" class="success">{{ ipMessage }}</p>
 
-      <div class="node-table-wrap">
+      <div class="node-table-wrap table-fit-wrap">
         <table class="node-table">
           <thead>
             <tr>
-              <th>ID</th>
+              <th class="cell-nowrap">ID</th>
               <th>IP/CIDR</th>
               <th>原因</th>
-              <th>启用</th>
-              <th>创建时间</th>
-              <th>更新时间</th>
-              <th>操作</th>
+              <th class="cell-nowrap">启用</th>
+              <th class="cell-nowrap">创建时间</th>
+              <th class="cell-nowrap">更新时间</th>
+              <th class="cell-nowrap">操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="rule in ipRules" :key="rule.id">
-              <td>{{ rule.id }}</td>
+              <td class="cell-nowrap">{{ rule.id }}</td>
               <td><input v-model="ipEdits[rule.id].ip_value" class="admin-table-input" /></td>
               <td><input v-model="ipEdits[rule.id].reason" class="admin-table-input" /></td>
-              <td><input v-model="ipEdits[rule.id].enabled" type="checkbox" /></td>
-              <td>{{ formatTime(rule.created_at) }}</td>
-              <td>{{ formatTime(rule.updated_at) }}</td>
-              <td>
+              <td class="cell-nowrap"><input v-model="ipEdits[rule.id].enabled" type="checkbox" /></td>
+              <td class="cell-nowrap">{{ formatTime(rule.created_at) }}</td>
+              <td class="cell-nowrap">{{ formatTime(rule.updated_at) }}</td>
+              <td class="cell-nowrap">
                 <button class="admin-button" :disabled="ipLoading" @click="saveIPRule(rule)">保存</button>
                 <button class="admin-button" :disabled="ipLoading" @click="removeIPRule(rule)">删除</button>
               </td>

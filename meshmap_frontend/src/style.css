@@ -1225,6 +1225,25 @@ h3 {
   vertical-align: middle;
 }
 
+/* === 管理页表格：长文本列换行完整显示，短列保持单行 === */
+.table-fit-wrap {
+  overflow-x: hidden;
+}
+
+.table-fit-wrap .node-table th,
+.table-fit-wrap .node-table td {
+  white-space: normal;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+}
+
+.table-fit-wrap .node-table th.cell-nowrap,
+.table-fit-wrap .node-table td.cell-nowrap {
+  white-space: nowrap;
+  word-break: normal;
+}
+
 .pubkey-cell {
   display: inline-flex;
   align-items: center;
@@ -1259,10 +1278,13 @@ h3 {
   color: var(--color-muted);
 }
 
-.admin-login,
 .admin-dashboard,
 .admin-session-card {
-  max-width: 1100px;
+  width: 100%;
+}
+
+.admin-login {
+  max-width: 480px;
   margin: 0 auto;
   width: 100%;
 }
@@ -1372,6 +1394,12 @@ h3 {
 .admin-table-input {
   min-width: 160px;
   padding: 8px 10px;
+}
+
+.table-fit-wrap .admin-table-input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .success {

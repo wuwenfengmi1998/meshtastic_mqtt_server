@@ -119,26 +119,26 @@ onMounted(refreshUsers)
       <p v-if="userError" class="error">{{ userError }}</p>
       <p v-if="userMessage" class="success">{{ userMessage }}</p>
 
-      <div class="node-table-wrap">
+      <div class="node-table-wrap table-fit-wrap">
         <table class="node-table">
           <thead>
             <tr>
-              <th>ID</th>
+              <th class="cell-nowrap">ID</th>
               <th>用户名</th>
-              <th>角色</th>
-              <th>创建时间</th>
-              <th>更新时间</th>
+              <th class="cell-nowrap">角色</th>
+              <th class="cell-nowrap">创建时间</th>
+              <th class="cell-nowrap">更新时间</th>
               <th>新密码</th>
-              <th>操作</th>
+              <th class="cell-nowrap">操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="managedUser in users" :key="managedUser.id">
-              <td>{{ managedUser.id }}</td>
+              <td class="cell-nowrap">{{ managedUser.id }}</td>
               <td>{{ managedUser.username }} <span v-if="managedUser.username === props.user.username" class="badge">当前</span></td>
-              <td>{{ managedUser.role }}</td>
-              <td>{{ formatTime(managedUser.created_at) }}</td>
-              <td>{{ formatTime(managedUser.updated_at) }}</td>
+              <td class="cell-nowrap">{{ managedUser.role }}</td>
+              <td class="cell-nowrap">{{ formatTime(managedUser.created_at) }}</td>
+              <td class="cell-nowrap">{{ formatTime(managedUser.updated_at) }}</td>
               <td>
                 <input
                   v-model="passwordEdits[managedUser.id]"
@@ -148,7 +148,7 @@ onMounted(refreshUsers)
                   placeholder="输入新密码"
                 />
               </td>
-              <td>
+              <td class="cell-nowrap">
                 <button class="admin-button" :disabled="passwordSaving[managedUser.id]" @click="updatePassword(managedUser)">
                   {{ passwordSaving[managedUser.id] ? '保存中...' : '修改密码' }}
                 </button>

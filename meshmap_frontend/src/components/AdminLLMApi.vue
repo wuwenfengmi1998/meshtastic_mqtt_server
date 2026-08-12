@@ -338,342 +338,346 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="admin-llm-api">
-    <h2>LLM API 配置管理</h2>
+  <section class="admin-dashboard">
+    <div class="panel">
+      <div class="ai-status-bar">
+        <span class="status-indicator" :class="{ running: aiStatus.running, stopped: !aiStatus.running }"></span>
+        <span class="status-text">
+          <template v-if="aiStatus.running">AI 服务运行中，{{ aiStatus.provider_count }} 个提供商</template>
+          <template v-else>{{ aiStatus.message || 'AI 服务未运行' }}</template>
+        </span>
+        <button
+          class="admin-button"
+          :disabled="restarting"
+          @click="handleRestartAI"
+        >
+          {{ restarting ? '重启中...' : '重启 AI 服务' }}
+        </button>
+      </div>
 
-    <div class="ai-status-bar">
-      <span class="status-indicator" :class="{ running: aiStatus.running, stopped: !aiStatus.running }"></span>
-      <span class="status-text">
-        <template v-if="aiStatus.running">AI 服务运行中，{{ aiStatus.provider_count }} 个提供商</template>
-        <template v-else>{{ aiStatus.message || 'AI 服务未运行' }}</template>
-      </span>
-      <button
-        class="admin-button admin-button-small"
-        :disabled="restarting"
-        @click="handleRestartAI"
-      >
-        {{ restarting ? '重启中...' : '重启 AI 服务' }}
-      </button>
+      <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="success" :class="showWarning ? 'warning' : 'success'">{{ success }}</p>
     </div>
 
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="success" :class="showWarning ? 'warning' : 'success'">{{ success }}</p>
-
     <!-- LLM Provider 列表 -->
-    <div class="admin-section">
-      <div class="section-header">
+    <div class="panel">
+      <div class="panel-header">
         <div>
-          <h3>AI 提供商配置</h3>
-          <p class="section-desc">管理多个 LLM API 提供商配置，支持不同模型和服务。</p>
+          <p class="eyebrow">Providers</p>
+          <h2>AI 提供商配置</h2>
         </div>
         <button class="admin-button" @click="openCreateProvider">+ 添加配置</button>
       </div>
+      <p class="section-desc">管理多个 LLM API 提供商配置，支持不同模型和服务。</p>
 
-      <div v-if="loading" class="admin-loading">加载中...</div>
+      <div class="section-body">
+        <div v-if="loading" class="empty">加载中...</div>
 
-      <div v-else class="provider-grid">
-        <div v-for="provider in providers" :key="provider.name" class="provider-card">
-          <div class="provider-header">
-            <div class="provider-name">
-              <span class="status-badge" :class="{ active: provider.active, inactive: !provider.active }">
-                {{ provider.active ? '启用' : '停用' }}
-              </span>
-              <strong>{{ provider.name }}</strong>
+        <div v-else class="provider-grid">
+          <div v-for="provider in providers" :key="provider.name" class="provider-card">
+            <div class="provider-header">
+              <div class="provider-name">
+                <span class="status-badge" :class="{ active: provider.active, inactive: !provider.active }">
+                  {{ provider.active ? '启用' : '停用' }}
+                </span>
+                <strong>{{ provider.name }}</strong>
+              </div>
+              <div class="provider-actions">
+                <button class="admin-button" @click="openEditProvider(provider)">编辑</button>
+                <button class="admin-button danger" @click="confirmDeleteProvider(provider.name)">删除</button>
+              </div>
             </div>
-            <div class="provider-actions">
-              <button class="admin-button admin-button-small" @click="openEditProvider(provider)">编辑</button>
-              <button class="admin-button admin-button-small admin-button-danger" @click="confirmDeleteProvider(provider.name)">删除</button>
+            <div class="provider-details">
+              <div class="detail-row">
+                <span class="detail-label">API 地址</span>
+                <span class="detail-value">{{ provider.base_url }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">模型</span>
+                <span class="detail-value">{{ provider.model || '-' }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">超时</span>
+                <span class="detail-value">{{ provider.timeout }} 秒</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">上下文窗口</span>
+                <span class="detail-value">{{ provider.context_window_tokens.toLocaleString() }} tokens</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">API Key</span>
+                <span class="detail-value masked">{{ provider.api_key ? '••••••••••' : '-' }}</span>
+              </div>
             </div>
           </div>
-          <div class="provider-details">
-            <div class="detail-row">
-              <span class="detail-label">API 地址</span>
-              <span class="detail-value">{{ provider.base_url }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">模型</span>
-              <span class="detail-value">{{ provider.model || '-' }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">超时</span>
-              <span class="detail-value">{{ provider.timeout }} 秒</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">上下文窗口</span>
-              <span class="detail-value">{{ provider.context_window_tokens.toLocaleString() }} tokens</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">API Key</span>
-              <span class="detail-value masked">{{ provider.api_key ? '••••••••••' : '-' }}</span>
-            </div>
-          </div>
-        </div>
 
-        <div v-if="providers.length === 0" class="empty-state">
-          <p>暂无配置，点击上方按钮添加第一个 AI 提供商配置。</p>
+          <div v-if="providers.length === 0" class="empty">暂无配置，点击上方按钮添加第一个 AI 提供商配置。</div>
         </div>
       </div>
     </div>
 
     <!-- Tool Router 配置 -->
-    <div class="admin-section">
-      <div class="section-header">
+    <div class="panel">
+      <div class="panel-header">
         <div>
-          <h3>工具路由配置</h3>
-          <p class="section-desc">配置 LLM 工具调用的路由设置，用于实现函数调用功能。</p>
+          <p class="eyebrow">Tool Router</p>
+          <h2>工具路由配置</h2>
         </div>
         <button v-if="!editingToolRouter" class="admin-button" @click="openEditToolRouter">编辑配置</button>
       </div>
+      <p class="section-desc">配置 LLM 工具调用的路由设置，用于实现函数调用功能。</p>
 
-      <div v-if="editingToolRouter" class="tool-router-form">
-        <div class="form-group">
-          <label>
-            <input type="checkbox" v-model="toolRouterForm.enabled" />
-            启用工具路由
-          </label>
-        </div>
-
-        <div class="form-row">
+      <div class="section-body">
+        <div v-if="editingToolRouter" class="tool-router-form">
           <div class="form-group">
-            <label>使用的 AI 配置</label>
-            <select v-model="toolRouterForm.openai_name" class="form-input">
-              <option value="">请选择</option>
-              <option v-for="p in activeProviders" :key="p.name" :value="p.name">{{ p.name }}</option>
-            </select>
-            <p class="form-hint">选择用于工具调用的 AI 提供商配置</p>
+            <label>
+              <input type="checkbox" v-model="toolRouterForm.enabled" />
+              启用工具路由
+            </label>
           </div>
-        </div>
 
-        <div class="form-row">
+          <div class="form-row">
+            <div class="form-group">
+              <label>使用的 AI 配置</label>
+              <select v-model="toolRouterForm.openai_name" class="form-input">
+                <option value="">请选择</option>
+                <option v-for="p in activeProviders" :key="p.name" :value="p.name">{{ p.name }}</option>
+              </select>
+              <p class="form-hint">选择用于工具调用的 AI 提供商配置</p>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>超时时间（秒）</label>
+              <input type="number" v-model.number="toolRouterForm.timeout" class="form-input" min="1" />
+            </div>
+            <div class="form-group">
+              <label>最大 Token 数</label>
+              <input type="number" v-model.number="toolRouterForm.max_tokens" class="form-input" min="1" />
+            </div>
+          </div>
+
           <div class="form-group">
-            <label>超时时间（秒）</label>
-            <input type="number" v-model.number="toolRouterForm.timeout" class="form-input" min="1" />
+            <label>系统提示词</label>
+            <textarea v-model="toolRouterForm.system_prompt" class="form-textarea" rows="6"></textarea>
+            <p class="form-hint">用于指导模型如何使用工具的系统提示词</p>
           </div>
-          <div class="form-group">
-            <label>最大 Token 数</label>
-            <input type="number" v-model.number="toolRouterForm.max_tokens" class="form-input" min="1" />
+
+          <div class="form-actions">
+            <button class="admin-button ghost" @click="closeToolRouterForm">取消</button>
+            <button class="admin-button" @click="saveToolRouter">保存</button>
           </div>
         </div>
 
-        <div class="form-group">
-          <label>系统提示词</label>
-          <textarea v-model="toolRouterForm.system_prompt" class="form-textarea" rows="6"></textarea>
-          <p class="form-hint">用于指导模型如何使用工具的系统提示词</p>
+        <div v-else-if="toolRouter" class="tool-router-display">
+          <div class="router-status">
+            <span class="status-badge" :class="{ active: toolRouter.enabled, inactive: !toolRouter.enabled }">
+              {{ toolRouter.enabled ? '已启用' : '已停用' }}
+            </span>
+          </div>
+          <div class="router-details">
+            <div class="detail-row">
+              <span class="detail-label">使用的 AI 配置</span>
+              <span class="detail-value">{{ toolRouter.openai_name || '未设置' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">超时时间</span>
+              <span class="detail-value">{{ toolRouter.timeout }} 秒</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">最大 Token 数</span>
+              <span class="detail-value">{{ toolRouter.max_tokens }}</span>
+            </div>
+            <div class="detail-row full-width">
+              <span class="detail-label">系统提示词</span>
+              <pre class="detail-value system-prompt">{{ toolRouter.system_prompt }}</pre>
+            </div>
+          </div>
         </div>
 
-        <div class="form-actions">
-          <button class="admin-button admin-button-secondary" @click="closeToolRouterForm">取消</button>
-          <button class="admin-button" @click="saveToolRouter">保存</button>
-        </div>
-      </div>
-
-      <div v-else-if="toolRouter" class="tool-router-display">
-        <div class="router-status">
-          <span class="status-badge" :class="{ active: toolRouter.enabled, inactive: !toolRouter.enabled }">
-            {{ toolRouter.enabled ? '已启用' : '已停用' }}
-          </span>
-        </div>
-        <div class="router-details">
-          <div class="detail-row">
-            <span class="detail-label">使用的 AI 配置</span>
-            <span class="detail-value">{{ toolRouter.openai_name || '未设置' }}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">超时时间</span>
-            <span class="detail-value">{{ toolRouter.timeout }} 秒</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">最大 Token 数</span>
-            <span class="detail-value">{{ toolRouter.max_tokens }}</span>
-          </div>
-          <div class="detail-row full-width">
-            <span class="detail-label">系统提示词</span>
-            <pre class="detail-value system-prompt">{{ toolRouter.system_prompt }}</pre>
-          </div>
-        </div>
-      </div>
-
-      <div v-else class="empty-state">
-        <p>暂无工具路由配置，点击上方按钮进行配置。</p>
+        <div v-else class="empty">暂无工具路由配置，点击上方按钮进行配置。</div>
       </div>
     </div>
 
     <!-- Topic Config 配置 - 话题选择配置 -->
-    <div class="admin-section">
-      <div class="section-header">
+    <div class="panel">
+      <div class="panel-header">
         <div>
-          <h3>话题选择配置</h3>
-          <p class="section-desc">当工具路由未命中任何工具时，由话题选择判断是否回复。命中（输出 REPLY）才进入主回复，否则丢弃不回复。</p>
+          <p class="eyebrow">Topic Filter</p>
+          <h2>话题选择配置</h2>
         </div>
         <button v-if="!editingTopicConfig" class="admin-button" @click="openEditTopicConfig">编辑配置</button>
       </div>
+      <p class="section-desc">当工具路由未命中任何工具时，由话题选择判断是否回复。命中（输出 REPLY）才进入主回复，否则丢弃不回复。</p>
 
-      <div v-if="editingTopicConfig" class="tool-router-form">
-        <div class="form-group">
-          <label>
-            <input type="checkbox" v-model="topicConfigForm.enabled" />
-            启用话题选择
-          </label>
-          <p class="form-hint">未启用时，未命中工具的消息一律进入主回复（不做过滤）</p>
-        </div>
-
-        <div class="form-row">
+      <div class="section-body">
+        <div v-if="editingTopicConfig" class="tool-router-form">
           <div class="form-group">
-            <label>使用的 AI 配置</label>
-            <select v-model="topicConfigForm.openai_name" class="form-input">
-              <option value="">请选择</option>
-              <option v-for="p in activeProviders" :key="p.name" :value="p.name">{{ p.name }}</option>
-            </select>
-            <p class="form-hint">选择用于话题判定的 AI 提供商配置，留空则使用主回复配置</p>
+            <label>
+              <input type="checkbox" v-model="topicConfigForm.enabled" />
+              启用话题选择
+            </label>
+            <p class="form-hint">未启用时，未命中工具的消息一律进入主回复（不做过滤）</p>
           </div>
-        </div>
 
-        <div class="form-row">
+          <div class="form-row">
+            <div class="form-group">
+              <label>使用的 AI 配置</label>
+              <select v-model="topicConfigForm.openai_name" class="form-input">
+                <option value="">请选择</option>
+                <option v-for="p in activeProviders" :key="p.name" :value="p.name">{{ p.name }}</option>
+              </select>
+              <p class="form-hint">选择用于话题判定的 AI 提供商配置，留空则使用主回复配置</p>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>超时时间（秒）</label>
+              <input type="number" v-model.number="topicConfigForm.timeout" class="form-input" min="1" />
+            </div>
+            <div class="form-group">
+              <label>最大 Token 数</label>
+              <input type="number" v-model.number="topicConfigForm.max_tokens" class="form-input" min="1" />
+            </div>
+          </div>
+
           <div class="form-group">
-            <label>超时时间（秒）</label>
-            <input type="number" v-model.number="topicConfigForm.timeout" class="form-input" min="1" />
+            <label>系统提示词</label>
+            <textarea v-model="topicConfigForm.system_prompt" class="form-textarea" rows="6"></textarea>
+            <p class="form-hint">要求模型对应当回复的消息输出 REPLY，否则输出 IGNORE</p>
           </div>
-          <div class="form-group">
-            <label>最大 Token 数</label>
-            <input type="number" v-model.number="topicConfigForm.max_tokens" class="form-input" min="1" />
+
+          <div class="form-actions">
+            <button class="admin-button ghost" @click="closeTopicConfigForm">取消</button>
+            <button class="admin-button" @click="saveTopicConfig">保存</button>
           </div>
         </div>
 
-        <div class="form-group">
-          <label>系统提示词</label>
-          <textarea v-model="topicConfigForm.system_prompt" class="form-textarea" rows="6"></textarea>
-          <p class="form-hint">要求模型对应当回复的消息输出 REPLY，否则输出 IGNORE</p>
+        <div v-else-if="topicConfig" class="tool-router-display">
+          <div class="router-status">
+            <span class="status-badge" :class="{ active: topicConfig.enabled, inactive: !topicConfig.enabled }">
+              {{ topicConfig.enabled ? '已启用' : '已停用' }}
+            </span>
+          </div>
+          <div class="router-details">
+            <div class="detail-row">
+              <span class="detail-label">使用的 AI 配置</span>
+              <span class="detail-value">{{ topicConfig.openai_name || '未设置（使用主回复配置）' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">超时时间</span>
+              <span class="detail-value">{{ topicConfig.timeout }} 秒</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">最大 Token 数</span>
+              <span class="detail-value">{{ topicConfig.max_tokens }}</span>
+            </div>
+            <div class="detail-row full-width">
+              <span class="detail-label">系统提示词</span>
+              <pre class="detail-value system-prompt">{{ topicConfig.system_prompt }}</pre>
+            </div>
+          </div>
         </div>
 
-        <div class="form-actions">
-          <button class="admin-button admin-button-secondary" @click="closeTopicConfigForm">取消</button>
-          <button class="admin-button" @click="saveTopicConfig">保存</button>
-        </div>
-      </div>
-
-      <div v-else-if="topicConfig" class="tool-router-display">
-        <div class="router-status">
-          <span class="status-badge" :class="{ active: topicConfig.enabled, inactive: !topicConfig.enabled }">
-            {{ topicConfig.enabled ? '已启用' : '已停用' }}
-          </span>
-        </div>
-        <div class="router-details">
-          <div class="detail-row">
-            <span class="detail-label">使用的 AI 配置</span>
-            <span class="detail-value">{{ topicConfig.openai_name || '未设置（使用主回复配置）' }}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">超时时间</span>
-            <span class="detail-value">{{ topicConfig.timeout }} 秒</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">最大 Token 数</span>
-            <span class="detail-value">{{ topicConfig.max_tokens }}</span>
-          </div>
-          <div class="detail-row full-width">
-            <span class="detail-label">系统提示词</span>
-            <pre class="detail-value system-prompt">{{ topicConfig.system_prompt }}</pre>
-          </div>
-        </div>
-      </div>
-
-      <div v-else class="empty-state">
-        <p>暂无话题选择配置，点击上方按钮进行配置。</p>
+        <div v-else class="empty">暂无话题选择配置，点击上方按钮进行配置。</div>
       </div>
     </div>
 
     <!-- Primary AI Config 配置 - 主 AI 回复配置 -->
-    <div class="admin-section">
-      <div class="section-header">
+    <div class="panel">
+      <div class="panel-header">
         <div>
-          <h3>主 AI 回复配置</h3>
-          <p class="section-desc">配置机器人自动回复消息的核心 AI 设置。</p>
+          <p class="eyebrow">Primary AI</p>
+          <h2>主 AI 回复配置</h2>
         </div>
         <button v-if="!editingPrimaryConfig" class="admin-button" @click="openEditPrimaryConfig">编辑配置</button>
       </div>
+      <p class="section-desc">配置机器人自动回复消息的核心 AI 设置。</p>
 
-      <div v-if="editingPrimaryConfig" class="tool-router-form">
-        <div class="form-group">
-          <label>
-            <input type="checkbox" v-model="primaryConfigForm.enabled" />
-            启用 AI 自动回复
-          </label>
-        </div>
-
-        <div class="form-row">
+      <div class="section-body">
+        <div v-if="editingPrimaryConfig" class="tool-router-form">
           <div class="form-group">
-            <label>使用的 AI 配置</label>
-            <select v-model="primaryConfigForm.provider_name" class="form-input">
-              <option value="">请选择</option>
-              <option v-for="p in activeProviders" :key="p.name" :value="p.name">{{ p.name }}</option>
-            </select>
-            <p class="form-hint">选择用于自动回复消息的 AI 提供商配置</p>
+            <label>
+              <input type="checkbox" v-model="primaryConfigForm.enabled" />
+              启用 AI 自动回复
+            </label>
           </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>使用的 AI 配置</label>
+              <select v-model="primaryConfigForm.provider_name" class="form-input">
+                <option value="">请选择</option>
+                <option v-for="p in activeProviders" :key="p.name" :value="p.name">{{ p.name }}</option>
+              </select>
+              <p class="form-hint">选择用于自动回复消息的 AI 提供商配置</p>
+            </div>
+            <div class="form-group">
+              <label>是否启用工具调用</label>
+              <select v-model="primaryConfigForm.enable_tool" class="form-input">
+                <option :value="false">不启用</option>
+                <option :value="true">启用</option>
+              </select>
+              <p class="form-hint">选择是否让 AI 在回复中调用工具（如计算器等）</p>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>超时时间（秒）</label>
+              <input type="number" v-model.number="primaryConfigForm.timeout" class="form-input" min="1" />
+            </div>
+            <div class="form-group">
+              <label>最大 Token 数</label>
+              <input type="number" v-model.number="primaryConfigForm.max_tokens" class="form-input" min="1" />
+            </div>
+          </div>
+
           <div class="form-group">
-            <label>是否启用工具调用</label>
-            <select v-model="primaryConfigForm.enable_tool" class="form-input">
-              <option :value="false">不启用</option>
-              <option :value="true">启用</option>
-            </select>
-            <p class="form-hint">选择是否让 AI 在回复中调用工具（如计算器等）</p>
+            <label>系统提示词</label>
+            <textarea v-model="primaryConfigForm.system_prompt" class="form-textarea" rows="6"></textarea>
+            <p class="form-hint">用于指导 AI 如何回复用户消息的系统提示词</p>
+          </div>
+
+          <div class="form-actions">
+            <button class="admin-button ghost" @click="closePrimaryConfigForm">取消</button>
+            <button class="admin-button" @click="savePrimaryConfig">保存</button>
           </div>
         </div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label>超时时间（秒）</label>
-            <input type="number" v-model.number="primaryConfigForm.timeout" class="form-input" min="1" />
+        <div v-else-if="primaryConfig" class="tool-router-display">
+          <div class="router-status">
+            <span class="status-badge" :class="{ active: primaryConfig.enabled, inactive: !primaryConfig.enabled }">
+              {{ primaryConfig.enabled ? '已启用' : '已停用' }}
+            </span>
           </div>
-          <div class="form-group">
-            <label>最大 Token 数</label>
-            <input type="number" v-model.number="primaryConfigForm.max_tokens" class="form-input" min="1" />
+          <div class="router-details">
+            <div class="detail-row">
+              <span class="detail-label">使用的 AI 配置</span>
+              <span class="detail-value">{{ primaryConfig.provider_name || '未设置' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">超时时间</span>
+              <span class="detail-value">{{ primaryConfig.timeout }} 秒</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">最大 Token 数</span>
+              <span class="detail-value">{{ primaryConfig.max_tokens }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">工具调用</span>
+              <span class="detail-value">{{ primaryConfig.enable_tool ? '已启用' : '未启用' }}</span>
+            </div>
+            <div class="detail-row full-width">
+              <span class="detail-label">系统提示词</span>
+              <pre class="detail-value system-prompt">{{ primaryConfig.system_prompt }}</pre>
+            </div>
           </div>
         </div>
 
-        <div class="form-group">
-          <label>系统提示词</label>
-          <textarea v-model="primaryConfigForm.system_prompt" class="form-textarea" rows="6"></textarea>
-          <p class="form-hint">用于指导 AI 如何回复用户消息的系统提示词</p>
-        </div>
-
-        <div class="form-actions">
-          <button class="admin-button admin-button-secondary" @click="closePrimaryConfigForm">取消</button>
-          <button class="admin-button" @click="savePrimaryConfig">保存</button>
-        </div>
-      </div>
-
-      <div v-else-if="primaryConfig" class="tool-router-display">
-        <div class="router-status">
-          <span class="status-badge" :class="{ active: primaryConfig.enabled, inactive: !primaryConfig.enabled }">
-            {{ primaryConfig.enabled ? '已启用' : '已停用' }}
-          </span>
-        </div>
-        <div class="router-details">
-          <div class="detail-row">
-            <span class="detail-label">使用的 AI 配置</span>
-            <span class="detail-value">{{ primaryConfig.provider_name || '未设置' }}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">超时时间</span>
-            <span class="detail-value">{{ primaryConfig.timeout }} 秒</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">最大 Token 数</span>
-            <span class="detail-value">{{ primaryConfig.max_tokens }}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">工具调用</span>
-            <span class="detail-value">{{ primaryConfig.enable_tool ? '已启用' : '未启用' }}</span>
-          </div>
-          <div class="detail-row full-width">
-            <span class="detail-label">系统提示词</span>
-            <pre class="detail-value system-prompt">{{ primaryConfig.system_prompt }}</pre>
-          </div>
-        </div>
-      </div>
-
-      <div v-else class="empty-state">
-        <p>暂无主 AI 回复配置，点击上方按钮进行配置。</p>
+        <div v-else class="empty">暂无主 AI 回复配置，点击上方按钮进行配置。</div>
       </div>
     </div>
 
@@ -731,40 +735,20 @@ onMounted(() => {
           </div>
         </div>
         <div class="modal-footer">
-          <button class="admin-button admin-button-secondary" @click="closeProviderForm">取消</button>
+          <button class="admin-button ghost" @click="closeProviderForm">取消</button>
           <button class="admin-button" @click="saveProvider">保存</button>
         </div>
       </div>
     </div>
-  </div>
+  </section>
 </template>
 
 <style scoped>
-.admin-llm-api {
-  padding: 1.5rem;
-  max-width: 100%;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  min-height: 100vh;
-}
-
-.admin-llm-api h2 {
-  margin: 0 0 1rem;
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: #1e293b;
-  letter-spacing: -0.02em;
-}
-
 .ai-status-bar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1.25rem;
-  background: white;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  margin-bottom: 1.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  gap: 12px;
+  padding: 14px 16px;
 }
 
 .status-indicator {
@@ -775,110 +759,94 @@ onMounted(() => {
 }
 
 .status-indicator.running {
-  background: #22c55e;
-  box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+  background: var(--color-success);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-success) 60%, transparent);
 }
 
 .status-indicator.stopped {
-  background: #ef4444;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+  background: var(--color-danger);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-danger) 50%, transparent);
 }
 
 .status-text {
   flex: 1;
-  font-size: 0.9rem;
-  color: #475569;
-  font-weight: 500;
-}
-
-.admin-section {
-  background: white;
-  padding: 1.75rem;
-  border-radius: 16px;
-  margin-bottom: 2rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 6px rgba(0, 0, 0, 0.03);
-  border: 1px solid #e2e8f0;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.section-header h3 {
-  margin: 0 0 0.5rem;
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #334155;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .section-desc {
   margin: 0;
-  color: #64748b;
-  font-size: 0.9rem;
+  padding: 12px 16px 0;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.section-body {
+  padding: 16px;
 }
 
 .provider-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
 }
 
 .provider-card {
-  background: linear-gradient(135deg, #fafbfc 0%, #f8fafc 100%);
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 1.25rem;
-  transition: all 0.2s ease;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: var(--color-surface-soft);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
 
 .provider-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
-  border-color: #cbd5e1;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 
 .provider-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .provider-name {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 8px;
+  min-width: 0;
 }
 
 .provider-name strong {
-  font-size: 1.05rem;
-  color: #1e293b;
-  font-weight: 600;
+  color: var(--color-heading);
+  font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
 .provider-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .provider-details {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 6px;
 }
 
 .detail-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
+  align-items: baseline;
+  gap: 12px;
 }
 
 .detail-row.full-width {
@@ -887,70 +855,68 @@ onMounted(() => {
 }
 
 .detail-label {
-  font-size: 0.85rem;
-  color: #64748b;
-  font-weight: 500;
-  white-space: nowrap;
+  flex-shrink: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .detail-value {
-  font-size: 0.9rem;
-  color: #334155;
+  color: var(--color-heading);
+  font-size: 13px;
   word-break: break-all;
   text-align: right;
 }
 
 .detail-value.masked {
-  font-family: monospace;
+  font-family: var(--font-mono);
   letter-spacing: 0.1em;
 }
 
 .status-badge {
-  display: inline-block;
-  padding: 0.25rem 0.6rem;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .status-badge.active {
-  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
-  color: #166534;
-  border: 1px solid #86efac;
+  color: color-mix(in srgb, var(--color-success) 70%, var(--color-heading));
+  background: var(--color-success-soft);
 }
 
 .status-badge.inactive {
-  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-  color: #991b1b;
-  border: 1px solid #fca5a5;
+  color: color-mix(in srgb, var(--color-danger) 76%, var(--color-heading));
+  background: var(--color-danger-soft);
 }
 
 .tool-router-form,
 .tool-router-display {
-  padding: 1.25rem;
-  background: #f8fafc;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  background: var(--color-surface-soft);
 }
 
 .router-status {
-  margin-bottom: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .router-details {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
+  gap: 12px;
 }
 
 .router-details .detail-row {
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.25rem;
+  gap: 4px;
 }
 
 .router-details .detail-row .detail-value {
@@ -959,64 +925,64 @@ onMounted(() => {
 
 .system-prompt {
   width: 100%;
+  margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  background: white;
-  padding: 0.75rem;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  font-size: 0.85rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font-size: 13px;
   line-height: 1.6;
-  margin: 0;
 }
 
 .form-group {
-  margin-bottom: 1.25rem;
+  margin-bottom: 14px;
 }
 
 .form-group label {
   display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: #334155;
-  font-size: 0.9rem;
+  margin-bottom: 6px;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .form-group label input[type='checkbox'] {
-  margin-right: 0.5rem;
+  margin-right: 8px;
   width: auto;
+  accent-color: var(--color-primary);
 }
 
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: 12px;
 }
 
 .form-input,
-.form-textarea,
-.form-select {
+.form-textarea {
   width: 100%;
-  padding: 0.75rem 1rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  color: #334155;
-  background: white;
-  transition: all 0.15s ease;
   box-sizing: border-box;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  color: var(--color-heading);
+  background: var(--color-surface);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .form-input:focus,
-.form-textarea:focus,
-.form-select:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+.form-textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
 .form-input:disabled {
-  background: #f1f5f9;
+  background: var(--color-surface-muted);
   cursor: not-allowed;
 }
 
@@ -1027,197 +993,102 @@ onMounted(() => {
 }
 
 .form-hint {
-  margin: 0.5rem 0 0;
-  font-size: 0.8rem;
-  color: #64748b;
+  margin: 6px 0 0;
+  color: var(--color-muted);
+  font-size: 12px;
 }
 
 .form-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid #e2e8f0;
-}
-
-.error {
-  color: #991b1b;
-  padding: 1rem 1.25rem;
-  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-  border-radius: 10px;
-  margin-bottom: 1.25rem;
-  border: 1px solid #fca5a5;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.success {
-  color: #166534;
-  padding: 1rem 1.25rem;
-  background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
-  border-radius: 10px;
-  margin-bottom: 1.25rem;
-  border: 1px solid #86efac;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
 }
 
 .warning {
-  color: #92400e;
-  padding: 1rem 1.25rem;
-  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-  border-radius: 10px;
-  margin-bottom: 1.25rem;
-  border: 1px solid #fcd34d;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.admin-loading {
-  padding: 3rem;
-  text-align: center;
-  color: #64748b;
-  background: #f8fafc;
-  border-radius: 12px;
-  font-size: 1rem;
-}
-
-.empty-state {
-  padding: 3rem 2rem;
-  text-align: center;
-  color: #64748b;
-  background: #f8fafc;
-  border-radius: 12px;
-  border: 2px dashed #e2e8f0;
-}
-
-.empty-state p {
-  margin: 0;
+  margin: 0 16px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 36%, white);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  color: color-mix(in srgb, var(--color-warning) 72%, var(--color-heading));
+  background: var(--color-warning-soft);
 }
 
 /* 弹窗样式 */
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
+  padding: 16px;
+  background: rgba(36, 41, 39, 0.45);
 }
 
 .modal-content {
-  background: white;
-  border-radius: 16px;
   width: 100%;
   max-width: 550px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-floating);
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem 1.5rem 1rem;
-  border-bottom: 1px solid #e2e8f0;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-bg));
 }
 
 .modal-header h3 {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #1e293b;
+  color: var(--color-heading);
+  font-size: 16px;
 }
 
 .modal-close {
-  background: none;
   border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: #64748b;
-  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  color: var(--color-muted);
+  background: none;
+  font-size: 20px;
   line-height: 1;
-  border-radius: 6px;
-  transition: all 0.15s ease;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease;
 }
 
 .modal-close:hover {
-  background: #f1f5f9;
-  color: #1e293b;
+  color: var(--color-heading);
+  background: var(--color-surface-muted);
 }
 
 .modal-body {
-  padding: 1.5rem;
+  padding: 16px;
 }
 
 .modal-footer {
-  padding: 1rem 1.5rem 1.5rem;
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
+  gap: 10px;
+  padding: 12px 16px 16px;
 }
 
-.admin-button {
-  padding: 0.6rem 1.25rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  color: white;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-}
+@media (max-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
 
-.admin-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-}
-
-.admin-button:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.admin-button-small {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.8rem;
-}
-
-.admin-button-secondary {
-  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
-  box-shadow: 0 2px 4px rgba(100, 116, 139, 0.2);
-}
-
-.admin-button-secondary:hover:not(:disabled) {
-  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.3);
-}
-
-.admin-button-danger {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
-}
-
-.admin-button-danger:hover:not(:disabled) {
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none !important;
+  .provider-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -572,8 +572,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .mqtt-forward-page {
-  width: min(1440px, 100%);
-  margin: 0 auto;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 1rem;

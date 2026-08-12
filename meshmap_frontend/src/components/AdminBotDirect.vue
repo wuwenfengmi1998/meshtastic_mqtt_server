@@ -360,40 +360,43 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="panel direct-page">
-    <div class="direct-header">
-      <div>
-        <p class="eyebrow">Direct Bot Chat</p>
-        <h2>
-          机器人私聊
-          <span class="pki-badge" title="使用 X25519 + AES-CCM 与目标节点端到端加密">PKI 加密</span>
-          <span v-if="unreadTotal > 0" class="header-unread-badge">{{ unreadTotal > 99 ? '99+' : unreadTotal }} 未读</span>
-        </h2>
+  <section class="admin-dashboard">
+    <div class="panel">
+      <div class="panel-header direct-header">
+        <div>
+          <p class="eyebrow">Direct Bot Chat</p>
+          <h2>
+            机器人私聊
+            <span class="pki-badge" title="使用 X25519 + AES-CCM 与目标节点端到端加密">PKI 加密</span>
+            <span v-if="unreadTotal > 0" class="header-unread-badge">{{ unreadTotal > 99 ? '99+' : unreadTotal }} 未读</span>
+          </h2>
+        </div>
+        <div class="direct-actions">
+          <a class="admin-button secondary" href="/admin/bot">返回频道聊天</a>
+          <button class="admin-button" @click="refreshLists" :disabled="loading">{{ loading ? '刷新中...' : '刷新列表' }}</button>
+        </div>
       </div>
-      <div class="direct-actions">
-        <a class="admin-button secondary" href="/admin/bot">返回频道聊天</a>
-        <button class="admin-button" @click="refreshLists" :disabled="loading">{{ loading ? '刷新中...' : '刷新列表' }}</button>
+
+      <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="notice" class="success">{{ notice }}</p>
+
+      <div class="direct-bot-picker">
+        <label>机器人
+          <select v-model="selectedBotId">
+            <option :value="null">选择机器人</option>
+            <option v-for="bot in bots" :key="bot.id" :value="bot.id">{{ bot.long_name }} · {{ bot.node_id }}</option>
+          </select>
+        </label>
+        <label>新建私聊
+          <select :value="''" @change="(event) => { startConversationFromPicker(Number((event.target as HTMLSelectElement).value)); (event.target as HTMLSelectElement).value = '' }">
+            <option value="">选择目标节点开启会话</option>
+            <option v-for="node in peerNodeOptions" :key="node.node_id" :value="node.node_num">{{ node.long_name || node.short_name || node.node_id }} · {{ node.node_id }}</option>
+          </select>
+        </label>
       </div>
     </div>
 
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="notice" class="success">{{ notice }}</p>
-
-    <div class="direct-bot-picker">
-      <label>机器人
-        <select v-model="selectedBotId">
-          <option :value="null">选择机器人</option>
-          <option v-for="bot in bots" :key="bot.id" :value="bot.id">{{ bot.long_name }} · {{ bot.node_id }}</option>
-        </select>
-      </label>
-      <label>新建私聊
-        <select :value="''" @change="(event) => { startConversationFromPicker(Number((event.target as HTMLSelectElement).value)); (event.target as HTMLSelectElement).value = '' }">
-          <option value="">选择目标节点开启会话</option>
-          <option v-for="node in peerNodeOptions" :key="node.node_id" :value="node.node_num">{{ node.long_name || node.short_name || node.node_id }} · {{ node.node_id }}</option>
-        </select>
-      </label>
-    </div>
-
+    <div class="panel direct-chat-panel">
     <div class="direct-layout">
       <aside class="conversation-list">
         <p v-if="conversations.length === 0" class="empty-state">还没有私聊会话。等设备发来消息或在上方“新建私聊”开启。</p>
@@ -442,11 +445,13 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.direct-page { display: grid; gap: 12px; padding: 16px; }
+.direct-chat-panel { padding: 16px; }
+.direct-bot-picker { padding: 16px; }
 .direct-header, .direct-actions, .send-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .direct-bot-picker { display: grid; grid-template-columns: repeat(2, minmax(200px, 1fr)); gap: 12px; }
 .direct-hint { color: #475569; font-size: 12px; margin: 0 0 8px; }

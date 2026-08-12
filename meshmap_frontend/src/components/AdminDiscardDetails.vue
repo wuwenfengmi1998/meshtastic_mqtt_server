@@ -135,11 +135,11 @@ onMounted(refreshItems)
       </div>
 
       <p v-if="error" class="error">{{ error }}</p>
-      <div class="node-table-wrap">
+      <div class="node-table-wrap table-fit-wrap">
         <table class="node-table">
           <thead>
             <tr>
-              <th style="width: 40px;">
+              <th style="width: 40px;" class="cell-nowrap">
                 <input
                   type="checkbox"
                   :checked="allSelected"
@@ -148,10 +148,10 @@ onMounted(refreshItems)
                   @change="toggleAll(($event.target as HTMLInputElement).checked)"
                 />
               </th>
-              <th>时间</th>
+              <th class="cell-nowrap">时间</th>
               <th>Topic</th>
               <th>Error</th>
-              <th>Payload Len</th>
+              <th class="cell-nowrap">Payload Len</th>
               <th>Client ID</th>
               <th>Username</th>
               <th>Listener</th>
@@ -162,17 +162,17 @@ onMounted(refreshItems)
           </thead>
           <tbody>
             <tr v-for="item in items" :key="item.id">
-              <td>
+              <td class="cell-nowrap">
                 <input
                   type="checkbox"
                   :checked="selectedIds.has(item.id)"
                   @change="toggleRow(item.id, ($event.target as HTMLInputElement).checked)"
                 />
               </td>
-              <td>{{ formatTime(item.created_at) }}</td>
+              <td class="cell-nowrap">{{ formatTime(item.created_at) }}</td>
               <td>{{ item.topic || '-' }}</td>
               <td>{{ item.error || '-' }}</td>
-              <td>{{ item.payload_len }}</td>
+              <td class="cell-nowrap">{{ item.payload_len }}</td>
               <td>{{ item.mqtt_client_id || '-' }}</td>
               <td>{{ item.mqtt_username || '-' }}</td>
               <td>{{ item.mqtt_listener || '-' }}</td>

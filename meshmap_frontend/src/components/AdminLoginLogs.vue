@@ -49,13 +49,13 @@ onMounted(refreshLogs)
       </div>
 
       <p v-if="error" class="error">{{ error }}</p>
-      <div class="node-table-wrap">
+      <div class="node-table-wrap table-fit-wrap">
         <table class="node-table">
           <thead>
             <tr>
-              <th>时间</th>
+              <th class="cell-nowrap">时间</th>
               <th>用户名</th>
-              <th>结果</th>
+              <th class="cell-nowrap">结果</th>
               <th>原因</th>
               <th>Remote Addr</th>
               <th>Remote Host</th>
@@ -64,9 +64,9 @@ onMounted(refreshLogs)
           </thead>
           <tbody>
             <tr v-for="log in logs" :key="log.id">
-              <td>{{ formatTime(log.created_at) }}</td>
+              <td class="cell-nowrap">{{ formatTime(log.created_at) }}</td>
               <td>{{ log.username || '-' }}</td>
-              <td>
+              <td class="cell-nowrap">
                 <span class="log-badge" :class="log.success ? 'log-success' : 'log-failure'">
                   {{ log.success ? '成功' : '失败' }}
                 </span>
