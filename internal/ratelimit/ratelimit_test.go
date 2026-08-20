@@ -79,3 +79,27 @@ func TestEmptyKeyIgnored(t *testing.T) {
 		t.Fatal("empty key must not be tracked")
 	}
 }
+
+func TestExceeded(t *testing.T) {
+	l := newTestLimiter(t, Options{MaxFailures: 3})
+	now := time.Unix(1700000000, 0)
+	l.now = func() time.Time { return now }
+
+	for i := 0; i < 3; i++ {
+		if l.Exceeded("ip") {
+			t.Fatalf("request %d should be allowed", i+1)
+		}
+	}
+	if !l.Exceeded("ip") {
+		t.Fatal("4th request should be limited")
+	}
+	// 窗口过后恢复。
+	now = now.Add(2 * time.Minute)
+	if l.Exceeded("ip") {
+		t.Fatal("request after window should be allowed")
+	}
+	// 不同 key 互不影响。
+	if l.Exceeded("other") {
+		t.Fatal("other key must not be limited")
+	}
+}

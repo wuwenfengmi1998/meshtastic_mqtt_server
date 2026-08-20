@@ -10,8 +10,10 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -24,19 +26,27 @@ const (
 	mapTileCacheControl = "public, max-age=86400"
 	maxMapTileBytes     = 10 << 20
 	maxMapTileRedirects = 2
+	// 单个地图源瓦片缓存配额:文件数与总字节双上限,超出后按 mtime 淘汰最旧文件。
+	mapTileCacheMaxFilesPerSource = 3000
+	mapTileCacheMaxBytesPerSource = 300 << 20
+	// 每写这么多文件触发一次清理采样。
+	mapTileCachePruneEvery = 20
 )
 
 type mapTileProxy struct {
-	store    *storepkg.Store
-	cacheDir string
-	client   *http.Client
+	store       *storepkg.Store
+	cacheDir    string
+	client      *http.Client
+	mu          sync.Mutex
+	writeCounts map[string]int64
 }
 
 func registerMapTileProxyRoutes(r gin.IRouter, store *storepkg.Store, cacheDir string) {
 	proxy := &mapTileProxy{
-		store:    store,
-		cacheDir: cacheDir,
-		client:   newMapTileHTTPClient(),
+		store:       store,
+		cacheDir:    cacheDir,
+		client:      newMapTileHTTPClient(),
+		writeCounts: make(map[string]int64),
 	}
 	r.GET("/map/:sourceHash", proxy.handle)
 }
@@ -154,7 +164,65 @@ func (p *mapTileProxy) handle(c *gin.Context) {
 		return
 	}
 	_ = writeMapTileCacheFile(cachePath, data)
+	p.maybePruneTileCache(sourceHash)
 	writeMapTile(c, data)
+}
+
+// maybePruneTileCache 按采样频率对单个瓦片源做配额清理:
+// 文件数或总字节超限时删除 mtime 最旧的瓦片,防止匿名请求打满磁盘。
+func (p *mapTileProxy) maybePruneTileCache(sourceHash string) {
+	p.mu.Lock()
+	p.writeCounts[sourceHash]++
+	n := p.writeCounts[sourceHash]
+	p.mu.Unlock()
+	if n%mapTileCachePruneEvery != 0 {
+		return
+	}
+	pruneMapTileCache(filepath.Join(p.cacheDir, sourceHash), mapTileCacheMaxFilesPerSource, mapTileCacheMaxBytesPerSource)
+}
+
+// pruneMapTileCache 扫描目录下所有 .tile 文件,超限时按 mtime 升序删除最旧文件。
+func pruneMapTileCache(dir string, maxFiles int, maxBytes int64) {
+	var files []tileCacheEntry
+	var totalBytes int64
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".tile") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		files = append(files, tileCacheEntry{path: path, size: info.Size(), mtime: info.ModTime()})
+		totalBytes += info.Size()
+		return nil
+	})
+	if err != nil || len(files) == 0 {
+		return
+	}
+	if len(files) <= maxFiles && totalBytes <= maxBytes {
+		return
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].mtime.Before(files[j].mtime) })
+	deleted := 0
+	for _, f := range files {
+		if len(files)-deleted <= maxFiles && totalBytes <= maxBytes {
+			break
+		}
+		if os.Remove(f.path) == nil {
+			deleted++
+			totalBytes -= f.size
+		}
+	}
+}
+
+type tileCacheEntry struct {
+	path  string
+	size  int64
+	mtime time.Time
 }
 
 func (p *mapTileProxy) fetchRemoteTile(req *http.Request, template string, tile mapTileCoordinates) ([]byte, int, error) {

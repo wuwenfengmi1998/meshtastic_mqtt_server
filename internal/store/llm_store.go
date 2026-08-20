@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"meshtastic_mqtt_server/internal/secrets"
 )
 
 // ============================================
@@ -23,6 +25,9 @@ func (s *Store) ListLLMProviders(includeInactive bool) ([]LLMProviderRecord, err
 	if err := query.Order("created_at DESC").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list llm providers: %w", err)
 	}
+	for i := range rows {
+		rows[i].APIKey = secrets.Decrypt(rows[i].APIKey)
+	}
 	return rows, nil
 }
 
@@ -35,11 +40,13 @@ func (s *Store) GetLLMProvider(name string) (*LLMProviderRecord, error) {
 		}
 		return nil, fmt.Errorf("get llm provider %s: %w", name, err)
 	}
+	record.APIKey = secrets.Decrypt(record.APIKey)
 	return &record, nil
 }
 
 // CreateLLMProvider 创建 LLM Provider
 func (s *Store) CreateLLMProvider(record *LLMProviderRecord) error {
+	record.APIKey = secrets.Encrypt(record.APIKey)
 	if err := s.db.Create(record).Error; err != nil {
 		return fmt.Errorf("create llm provider %s: %w", record.Name, err)
 	}
@@ -48,6 +55,11 @@ func (s *Store) CreateLLMProvider(record *LLMProviderRecord) error {
 
 // UpdateLLMProvider 更新 LLM Provider
 func (s *Store) UpdateLLMProvider(name string, updates map[string]any) error {
+	if v, ok := updates["api_key"]; ok {
+		if s, ok := v.(string); ok {
+			updates["api_key"] = secrets.Encrypt(s)
+		}
+	}
 	if err := s.db.Model(&LLMProviderRecord{}).Where("name = ?", name).Updates(updates).Error; err != nil {
 		return fmt.Errorf("update llm provider %s: %w", name, err)
 	}
@@ -289,6 +301,29 @@ type LLMMessageQueueInput struct {
 	ContentJSON *string
 }
 
+// ErrLLMQueueRateLimited 表示 (bot, from_node) 在窗口期内入队超限被拒绝。
+var ErrLLMQueueRateLimited = errors.New("llm queue rate limited")
+
+const (
+	// llmQueuePerNodeWindow 是单 (bot, from_node) 的入队限流窗口。
+	llmQueuePerNodeWindow = time.Minute
+	// llmQueuePerNodeMax 是窗口期内允许的 pending/processing 消息上限。
+	llmQueuePerNodeMax = 5
+)
+
+// isLLMQueueRateLimited 统计窗口内 (bot, from_node) 的未消费消息数是否达上限。
+func (s *Store) isLLMQueueRateLimited(botID uint64, fromNodeID string) (bool, error) {
+	var count int64
+	err := s.db.Model(&LLMMessageQueueRecord{}).
+		Where("bot_id = ? AND from_node_id = ? AND status IN (?, ?) AND received_at > ? AND deleted_at IS NULL",
+			botID, fromNodeID, LLMMessageStatusPending, LLMMessageStatusProcessing, time.Now().Add(-llmQueuePerNodeWindow)).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count >= llmQueuePerNodeMax, nil
+}
+
 // EnqueueLLMMessage 将消息添加到 LLM 队列
 func (s *Store) EnqueueLLMMessage(input LLMMessageQueueInput) (*LLMMessageQueueRecord, error) {
 	var err error
@@ -346,6 +381,16 @@ func (s *Store) EnqueueLLMMessage(input LLMMessageQueueInput) (*LLMMessageQueueR
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("check duplicate llm message: %w", err)
+	}
+
+	// (bot, from_node) 维度入队限流：窗口内 pending/processing 超过上限即拒绝，
+	// 防止未认证 mesh 用户高频消息烧光 LLM 配额。
+	limited, err := s.isLLMQueueRateLimited(input.BotID, input.FromNodeID)
+	if err != nil {
+		return nil, fmt.Errorf("check llm queue rate limit: %w", err)
+	}
+	if limited {
+		return nil, ErrLLMQueueRateLimited
 	}
 
 	now := time.Now()
@@ -567,6 +612,10 @@ func enqueueChannelMessageToLLM(s *Store, record map[string]any) error {
 			ContentJSON: contentPtr,
 		})
 		if err != nil {
+			if errors.Is(err, ErrLLMQueueRateLimited) {
+				// 限流拒绝是预期行为,静默跳过。
+				continue
+			}
 			printJSON(map[string]any{
 				"event":  "llm_queue_enqueue_failed",
 				"bot_id": bot.ID,

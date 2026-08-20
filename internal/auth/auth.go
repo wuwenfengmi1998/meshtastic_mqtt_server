@@ -43,6 +43,7 @@ type SessionClaims struct {
 	UserID   uint64 `json:"user_id"`
 	Username string `json:"username"`
 	Role     string `json:"role"`
+	PwdVer   int64  `json:"pwd_ver"`
 	Expires  int64  `json:"expires"`
 }
 
@@ -87,7 +88,7 @@ func AdminUserResponse(user store.UserRecord) AdminUserDTO {
 
 // NewCookie 为已登录用户构造一份带签名的 session cookie。
 func (sm *Manager) NewCookie(user store.UserRecord) (*http.Cookie, error) {
-	claims := SessionClaims{UserID: user.ID, Username: user.Username, Role: user.Role, Expires: time.Now().Add(sm.ttl).Unix()}
+	claims := SessionClaims{UserID: user.ID, Username: user.Username, Role: user.Role, PwdVer: user.PwdVersion, Expires: time.Now().Add(sm.ttl).Unix()}
 	data, err := json.Marshal(claims)
 	if err != nil {
 		return nil, err
@@ -155,10 +156,18 @@ func (sm *Manager) sign(payload string) string {
 }
 
 // RequireAdmin 是把校验结果挂在 c.Set(AdminClaimsKey, claims) 上的中间件。
-func RequireAdmin(sm *Manager) gin.HandlerFunc {
+// 除签名/过期校验外,还会对照 DB 中用户当前的 pwd_version:
+// 改密后旧会话(claims.PwdVer 低于当前版本)立即失效。
+func RequireAdmin(sm *Manager, store *store.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		claims, err := sm.ClaimsFromRequest(c)
 		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "admin login required"})
+			c.Abort()
+			return
+		}
+		user, err := store.GetUserByUsername(claims.Username)
+		if err != nil || user.Role != AdminRole || user.PwdVersion != claims.PwdVer {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "admin login required"})
 			c.Abort()
 			return

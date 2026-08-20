@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"meshtastic_mqtt_server/internal/mqtpp"
+	"meshtastic_mqtt_server/internal/secrets"
 
 	"gorm.io/gorm"
 )
@@ -300,7 +301,8 @@ func populateBotNodeKeys(row *BotNodeRecord) error {
 	if err != nil {
 		return err
 	}
-	row.PrivateKey = base64.StdEncoding.EncodeToString(privateKey.Bytes())
+	// 私钥落盘前加密(MESH_SECRET_KEY 未配置时原样存储,兼容旧部署)。
+	row.PrivateKey = secrets.Encrypt(base64.StdEncoding.EncodeToString(privateKey.Bytes()))
 	row.PublicKey = base64.StdEncoding.EncodeToString(privateKey.PublicKey().Bytes())
 	return nil
 }

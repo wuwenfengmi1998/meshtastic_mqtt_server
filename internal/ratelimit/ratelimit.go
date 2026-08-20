@@ -149,6 +149,28 @@ func (l *FailureLimiter) Fail(key string) bool {
 	return false
 }
 
+// Exceeded 记录一次请求,窗口内请求数超过 max 时返回 true(限速,不产生封禁)。
+// 用于读接口的轻量频率限制。
+func (l *FailureLimiter) Exceeded(key string) bool {
+	if key == "" {
+		return false
+	}
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	st, ok := l.fails[key]
+	if !ok || now.Sub(st.windowStart) > l.window {
+		st = &failState{windowStart: now, count: 1}
+		l.fails[key] = st
+		if len(l.fails) > l.maxEntries {
+			l.purgeLocked(now)
+		}
+		return false
+	}
+	st.count++
+	return st.count > l.max
+}
+
 // Reset 清除 key 的失败计数。
 func (l *FailureLimiter) Reset(key string) {
 	if key == "" {

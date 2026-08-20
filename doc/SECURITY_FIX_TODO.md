@@ -53,35 +53,31 @@
 
 ## P2 - 中优先(迭代内)
 
-- [ ] **T8 LLM 会话按 (bot, peer) 隔离**
-  - 位置:`internal/conversation/store.go:87-98`(`peerNodeID` 参数被忽略,所有 DM 对端共享上下文)
-  - 方案:`GetOrCreateForBot` 以 `(botID, peerNodeID)` 为键;历史消息数量设上限(如最近 50 条)
-  - 验收:不同 peer DM 得到独立会话;A 的注入不会影响 B 的回复
+- [x] **T8 LLM 会话按 (bot, peer) 隔离(2026-08-20 完成)**
+  - `message.Conversation` 增加 `peer_node_id`;`GetOrCreateForBot` 按 (bot, peer) 匹配会话,不同对端互不可见上下文;`AddMessage` 历史上限 50 条;无 peer 调用维持旧行为
+  - 验收:不同 peer DM 得到独立会话;A 的注入不影响 B ✓(单测)
 
-- [ ] **T9 LLM 入队限流/白名单**
-  - 位置:`internal/store/llm_store.go:545-578`;`internal/autoreply/service.go:29,178`
-  - 方案:按 from 节点维度限流(现仅有 bot 级 10 msg/5s);可选 allowlist 只响应已登记节点
-  - 验收:单一来源高频消息只消耗有限 LLM 调用
+- [x] **T9 LLM 入队限流(2026-08-20 完成)**
+  - `EnqueueLLMMessage` 增加 (bot, from_node) 窗口限流:60 秒内 pending/processing 超过 5 条拒绝(ErrLLMQueueRateLimited);频道/私聊两条入队路径对限流静默跳过
+  - 验收:单一来源高频消息只消耗有限 LLM 调用 ✓
 
-- [ ] **T10 瓦片磁盘缓存设上限**
-  - 位置:`internal/web/map_tile_proxy_routes.go:174-196`
-  - 方案:按 sourceHash 限制总字节数/文件数,超限 LRU 淘汰;每 IP 瓦片请求限速
-  - 验收:遍历坐标脚本无法使缓存目录超过配额
+- [x] **T10 瓦片磁盘缓存配额(2026-08-20 完成)**
+  - 单源 3000 文件 / 300MB 双上限,每写 20 个文件触发一次按 mtime 淘汰最旧;防止匿名遍历坐标打满磁盘
+  - 验收:缓存目录超配额被收敛 ✓
 
-- [ ] **T11 sign 强制触发的污染治理**
-  - 位置:`internal/toolrouter/loop.go:116-161,221-283`
-  - 方案:同一 from 节点每日限 1 条(后端已有?核实);`/api/signs` 增加频率限制与管理员删除
-  - 验收:伪造大量 node_num 刷签到无法批量入库公开墙
+- [x] **T11 sign 污染治理(2026-08-20 完成)**
+  - 核实:每节点每日去重与 admin 删除已存在;补充:签到墙 `/api/signs`、`/api/signs/daily` 加 IP 限速(60 次/分钟);签到工具增加全站每日 1000 条总量封顶
+  - 验收:伪造节点刷签到受每日总量限制;公开墙读接口有限速 ✓
 
-- [ ] **T12 敏感数据落盘加密**
-  - 位置:`internal/store/db.go:216-224`(forwarder 密码)、`:263`(bot 私钥)、`:488-498`(LLM api_key)
-  - 方案:AES-GCM 加密存储,主密钥来自环境变量 `MESH_SECRET_KEY`;API 层维持现有脱敏
-  - 验收:直接读 SQLite 文件无法得到可用明文密钥
+- [x] **T12 敏感数据落盘加密(2026-08-20 完成)**
+  - 新增 `internal/secrets`(AES-256-GCM,密钥由 `MESH_SECRET_KEY` SHA-256 派生,enc:v1: 前缀,无密钥时明文兼容)
+  - 覆盖:LLM provider api_key、MQTT forwarder source/target 密码、bot X25519 私钥(在 store 写入点加密,读取点透明解密)
+  - 验收:DB 中为 enc:v1: 密文,明文不可见;旧明文数据可读;未配置密钥时行为不变 ✓(冒烟验证)
 
-- [ ] **T13 admin 密码修改需验证自身当前密码 + session 可撤销**
-  - 位置:`internal/web/web.go:372-393`;`internal/auth/auth.go:89-149`
-  - 方案:改他人密码前要求请求方验证自己的密码;claims 增加 `pwd_ver`(密码 hash 版本号),改密后旧 cookie 全部失效
-  - 验收:改密后所有已登录会话返回 401
+- [x] **T13 改密需验证当前密码 + session 可撤销(2026-08-20 完成)**
+  - `PUT /api/admin/users/:id/password` 必须携带请求方自己的 `current_password`,错误返回 403;users 表新增 `pwd_version`,改密自增,session claims 携带 pwd_ver,中间件对照 DB,改密后所有旧会话立即 401
+  - 前端 AdminUsers 增加"当前登录密码"输入
+  - 验收:改密后旧会话 401、新密码可登录、旧密码不可 ✓(冒烟验证)
 
 ## P3 - 低优先(择机)
 

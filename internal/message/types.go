@@ -16,6 +16,7 @@ type Conversation struct {
 	ID           string        `json:"id"`
 	BotID        uint64        `json:"bot_id"`
 	BotNodeID    string        `json:"bot_node_id"`
+	PeerNodeID   string        `json:"peer_node_id,omitempty"`
 	Title        string        `json:"title"`
 	CreatedAt    time.Time     `json:"created_at"`
 	UpdatedAt    time.Time     `json:"updated_at"`

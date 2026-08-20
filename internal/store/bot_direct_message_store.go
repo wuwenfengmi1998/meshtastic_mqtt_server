@@ -308,6 +308,10 @@ func insertInboundBotDirectMessage(s *Store, record map[string]any, clientInfo M
 		ContentJSON: contentPtr,
 	})
 	if err != nil {
+		if errors.Is(err, ErrLLMQueueRateLimited) {
+			// 限流拒绝是预期行为,静默跳过。
+			return nil
+		}
 		printJSON(map[string]any{
 			"event":   "llm_queue_enqueue_failed",
 			"bot_id":  bot.ID,

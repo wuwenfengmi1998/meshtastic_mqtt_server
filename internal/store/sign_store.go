@@ -67,6 +67,23 @@ func (s *Store) HasSignedOnDay(nodeID string, day time.Time) (bool, error) {
 	return count > 0, nil
 }
 
+// CountSignsOnDay 统计某自然日(本地时区)的签到记录总数,用于全站每日总量封顶。
+func (s *Store) CountSignsOnDay(day time.Time) (int64, error) {
+	loc := day.Location()
+	if loc == nil {
+		loc = time.Local
+	}
+	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, loc)
+	end := start.AddDate(0, 0, 1)
+	var count int64
+	if err := s.db.Model(&SignRecord{}).
+		Where("sign_time >= ? AND sign_time < ?", start, end).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("count sign on day: %w", err)
+	}
+	return count, nil
+}
+
 func (s *Store) GetSignByID(id uint64) (*SignRecord, error) {
 	var row SignRecord
 	if err := s.db.Where("id = ?", id).Take(&row).Error; err != nil {

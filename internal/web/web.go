@@ -85,7 +85,7 @@ func NewRouter(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, 
 	return r
 }
 
-const BackendVersion = "1.4.0"
+const BackendVersion = "1.5.0"
 
 var CommitVersion = "dev"
 
@@ -111,7 +111,13 @@ func registerAPIRoutes(r gin.IRouter, store *storepkg.Store, mapTileCacheDir str
 	mappkg.RegisterPublicRoutes(r, store)
 	registerMapTileProxyRoutes(r, store, mapTileCacheDir)
 	helppkg.RegisterPublicRoutes(r, store)
+	// 公开签到墙限速:60 次/分钟/IP,防遍历拉取。
+	signsLimiter := ratelimit.New(ratelimit.Options{MaxFailures: 60, Window: time.Minute})
 	r.GET("/signs", func(c *gin.Context) {
+		if signsLimiter.Exceeded(c.ClientIP()) {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many requests"})
+			return
+		}
 		opts, ok := parseListOptions(c)
 		if !ok {
 			return
@@ -125,6 +131,10 @@ func registerAPIRoutes(r gin.IRouter, store *storepkg.Store, mapTileCacheDir str
 		writeListResponseWithTotal(c, rows, opts, total, err, signpkg.SignDTO)
 	})
 	r.GET("/signs/daily", func(c *gin.Context) {
+		if signsLimiter.Exceeded(c.ClientIP()) {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many requests"})
+			return
+		}
 		opts, ok := parseListOptions(c)
 		if !ok {
 			return
@@ -207,7 +217,8 @@ func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Ma
 		Password string `json:"password"`
 	}
 	type updatePasswordRequest struct {
-		Password string `json:"password"`
+		Password        string `json:"password"`
+		CurrentPassword string `json:"current_password"`
 	}
 	userDTO := func(user storepkg.UserRecord) gin.H {
 		return gin.H{"id": user.ID, "username": user.Username, "role": user.Role, "created_at": user.CreatedAt, "updated_at": user.UpdatedAt}
@@ -280,7 +291,7 @@ func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Ma
 	})
 
 	protected := r.Group("")
-	protected.Use(auth.RequireAdmin(sessions))
+	protected.Use(auth.RequireAdmin(sessions, store))
 	blockingpkg.RegisterRoutes(protected, store, blocking)
 	signpkg.RegisterAdminRoutes(protected, store)
 	mqttforwardpkg.RegisterRoutes(protected, store, forwarder)
@@ -406,6 +417,17 @@ func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Ma
 		var req updatePasswordRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid password request"})
+			return
+		}
+		// 修改任何用户的密码都必须验证请求方自己的当前密码,防止已登录会话被冒用改密。
+		claims := c.MustGet(auth.AdminClaimsKey).(*auth.SessionClaims)
+		requester, err := store.GetUserByUsername(claims.Username)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "admin login required"})
+			return
+		}
+		if !auth.VerifyPassword(requester.PasswordHash, req.CurrentPassword) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "current password is incorrect"})
 			return
 		}
 		user, err := store.UpdateUserPassword(id, req.Password)

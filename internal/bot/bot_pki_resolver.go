@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"strings"
 
+	"meshtastic_mqtt_server/internal/secrets"
 	storepkg "meshtastic_mqtt_server/internal/store"
 )
 
@@ -23,7 +24,7 @@ func NewPKIKeyResolver(s *storepkg.Store) func(toNodeNum, fromNodeNum uint32) ([
 		if privateKeyB64 == "" {
 			return nil, nil, false
 		}
-		privateKey, err := base64.StdEncoding.DecodeString(privateKeyB64)
+		privateKey, err := base64.StdEncoding.DecodeString(secrets.Decrypt(privateKeyB64))
 		if err != nil || len(privateKey) != 32 {
 			return nil, nil, false
 		}

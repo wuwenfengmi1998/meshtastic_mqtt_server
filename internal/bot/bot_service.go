@@ -17,6 +17,7 @@ import (
 
 	storepkg "meshtastic_mqtt_server/internal/store"
 	"meshtastic_mqtt_server/internal/mqtpp"
+	"meshtastic_mqtt_server/internal/secrets"
 )
 
 const botMaxTextBytes = 200
@@ -116,6 +117,7 @@ func (s *Service) buildPKIAck(bot *storepkg.BotNodeRecord, toNum, ackPacketID, r
 	if privateKeyB64 == "" {
 		return nil, fmt.Errorf("bot has no private key")
 	}
+	privateKeyB64 = secrets.Decrypt(privateKeyB64)
 	privateKey, err := base64.StdEncoding.DecodeString(privateKeyB64)
 	if err != nil {
 		return nil, err
@@ -312,6 +314,7 @@ func (s *Service) sendPKIDirect(bot *storepkg.BotNodeRecord, fromNodeNum, toNode
 	if privateKeyB64 == "" {
 		return nil, fmt.Errorf("bot has no private key, regenerate keys first")
 	}
+	privateKeyB64 = secrets.Decrypt(privateKeyB64)
 	privateKey, err := base64.StdEncoding.DecodeString(privateKeyB64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid bot private key: %w", err)

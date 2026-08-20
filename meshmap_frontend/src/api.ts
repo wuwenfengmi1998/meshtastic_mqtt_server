@@ -307,8 +307,8 @@ export function createAdminUser(username: string, password: string): Promise<Adm
   return postJSON<AdminManagedUserResponse>('/api/admin/users', { username, password })
 }
 
-export function updateAdminUserPassword(id: number, password: string): Promise<AdminManagedUserResponse> {
-  return putJSON<AdminManagedUserResponse>(`/api/admin/users/${id}/password`, { password })
+export function updateAdminUserPassword(id: number, password: string, currentPassword: string): Promise<AdminManagedUserResponse> {
+  return putJSON<AdminManagedUserResponse>(`/api/admin/users/${id}/password`, { password, current_password: currentPassword })
 }
 
 export function getAdminLoginLogs(limit = 100, offset = 0): Promise<AdminLoginLogsResponse> {

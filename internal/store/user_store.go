@@ -71,7 +71,12 @@ func (s *Store) UpdateUserPassword(id uint64, password string) (*UserRecord, err
 	if err != nil {
 		return nil, fmt.Errorf("hash user password: %w", err)
 	}
-	if err := s.db.Model(&UserRecord{}).Where("id = ?", id).Updates(map[string]any{"password_hash": hash, "updated_at": time.Now()}).Error; err != nil {
+	// 改密同时递增 pwd_version,使该用户所有已签发 session 立即失效。
+	if err := s.db.Model(&UserRecord{}).Where("id = ?", id).Updates(map[string]any{
+		"password_hash": hash,
+		"pwd_version":   gorm.Expr("pwd_version + 1"),
+		"updated_at":    time.Now(),
+	}).Error; err != nil {
 		return nil, err
 	}
 	user.PasswordHash = hash

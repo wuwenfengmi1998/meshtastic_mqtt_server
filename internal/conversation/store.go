@@ -84,17 +84,35 @@ func (s *Store) Get(id string) (*message.Conversation, error) {
 	return &conv, nil
 }
 
-// GetOrCreateForBot gets or creates a conversation for a bot
+// GetOrCreateForBot gets or creates a conversation for a bot.
+// peerNodeID 非空时按 (bot, peer) 隔离会话:不同对端互不可见上下文,
+// 防止 A 的私聊内容/提示注入影响 B;peerNodeID 为空时维持旧行为(取最近会话)。
 func (s *Store) GetOrCreateForBot(botID uint64, botNodeID string, peerNodeID string) (*message.Conversation, error) {
-	// Try to find an existing conversation with this peer
+	peerNodeID = strings.TrimSpace(peerNodeID)
 	convs, err := s.ListForBot(botID)
 	if err == nil && len(convs) > 0 {
-		// Use the most recent conversation (List already sorts by UpdatedAt desc)
-		// Note: List returns convs with Messages = nil, so we need to reload
-		return s.Get(convs[0].ID)
+		if peerNodeID != "" {
+			// List 按 UpdatedAt 倒序,取该对端最近一次会话。
+			for _, conv := range convs {
+				if conv.PeerNodeID == peerNodeID {
+					return s.Get(conv.ID)
+				}
+			}
+		} else {
+			return s.Get(convs[0].ID)
+		}
 	}
-	// Create a new conversation
-	return s.Create(botID, botNodeID)
+	conv, err := s.Create(botID, botNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if peerNodeID != "" {
+		conv.PeerNodeID = peerNodeID
+		if err := s.Save(conv); err != nil {
+			return nil, err
+		}
+	}
+	return conv, nil
 }
 
 // List returns all conversations
@@ -167,6 +185,9 @@ func (s *Store) DeleteForBot(botID uint64) error {
 	return nil
 }
 
+// maxConversationMessages 限制单会话保留的历史消息数,防止上下文无限增长。
+const maxConversationMessages = 50
+
 // AddMessage adds a message to a conversation
 func (s *Store) AddMessage(convID string, msg message.ChatMessage) error {
 	conv, err := s.Get(convID)
@@ -174,6 +195,9 @@ func (s *Store) AddMessage(convID string, msg message.ChatMessage) error {
 		return err
 	}
 	conv.Messages = append(conv.Messages, msg)
+	if len(conv.Messages) > maxConversationMessages {
+		conv.Messages = conv.Messages[len(conv.Messages)-maxConversationMessages:]
+	}
 	if conv.Title == "" || conv.Title == "新对话" {
 		conv.Title = GenerateTitle(conv.Messages)
 	}

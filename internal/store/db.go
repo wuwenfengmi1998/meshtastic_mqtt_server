@@ -65,6 +65,7 @@ type UserRecord struct {
 	ID           uint64    `gorm:"column:id;primaryKey;autoIncrement"`
 	Username     string    `gorm:"column:username;not null;uniqueIndex"`
 	PasswordHash string    `gorm:"column:password_hash;not null"`
+	PwdVersion   int64     `gorm:"column:pwd_version;not null;default:0"`
 	Role         string    `gorm:"column:role;not null;index"`
 	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
 	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime"`
@@ -909,6 +910,19 @@ type DBMigration struct {
 var dbMigrations = []DBMigration{
 	{Version: 1, Up: migrateDB1},
 	{Version: 2, Up: migrateDB2},
+	{Version: 3, Up: migrateDB3},
+}
+
+func migrateDB3(tx *gorm.DB, driver string) error {
+	// users.pwd_version:改密后旧 session 立即失效的版本号,默认 0。
+	// 新库 CreateTable 时已带该列,此处幂等处理老库。
+	if tx.Migrator().HasColumn(&UserRecord{}, "pwd_version") {
+		return nil
+	}
+	if err := tx.Exec("ALTER TABLE users ADD COLUMN pwd_version INTEGER NOT NULL DEFAULT 0").Error; err != nil {
+		return fmt.Errorf("add users.pwd_version: %w", err)
+	}
+	return nil
 }
 
 func migrateDB1(tx *gorm.DB, driver string) error {

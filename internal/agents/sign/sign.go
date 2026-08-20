@@ -25,11 +25,15 @@ import (
 type SignStore interface {
 	CreateSign(nodeID string, longName, shortName *string, signText string, signTime time.Time) (*storepkg.SignRecord, error)
 	HasSignedOnDay(nodeID string, day time.Time) (bool, error)
+	CountSignsOnDay(day time.Time) (int64, error)
 	GetNodeInfo(nodeID string) (*storepkg.NodeInfoRecord, error)
 	CountSigns(opts storepkg.ListOptions) (int64, error)
 	CountSignsByDay(opts storepkg.ListOptions) ([]storepkg.SignDayCount, error)
 	ListSigns(opts storepkg.ListOptions) ([]storepkg.SignRecord, error)
 }
+
+// maxSignsPerDay 全站每日签到记录总量封顶,防止伪造节点刷公开签到墙。
+const maxSignsPerDay = 1000
 
 // Tool 是签到工具。
 type Tool struct {
@@ -162,6 +166,15 @@ func (t *Tool) executeSign(ctx context.Context, params signParams, runtime agent
 	}
 	if signed {
 		return fmt.Sprintf("%s 今天已经签到过了，每个节点每天只能签到一次。", displayName(node)), nil
+	}
+
+	// 全站每日签到总量封顶,防止伪造海量节点号刷爆公开签到墙。
+	todayCount, err := t.store.CountSignsOnDay(now)
+	if err != nil {
+		return fmt.Sprintf("签到失败：统计今日签到数时出错：%v", err), nil
+	}
+	if todayCount >= maxSignsPerDay {
+		return "今日签到人数已达上限，请明天再来。", nil
 	}
 
 	signText := buildSignText(params)

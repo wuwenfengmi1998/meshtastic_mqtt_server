@@ -32,6 +32,7 @@ import (
 	"meshtastic_mqtt_server/internal/mqtpp"
 	mqttforwardpkg "meshtastic_mqtt_server/internal/mqttforward"
 	rspkg "meshtastic_mqtt_server/internal/runtimesettings"
+	"meshtastic_mqtt_server/internal/secrets"
 	storepkg "meshtastic_mqtt_server/internal/store"
 	webpkg "meshtastic_mqtt_server/internal/web"
 )
@@ -345,6 +346,8 @@ func parseArgs() (*configpkg.Config, error) {
 	if value := os.Getenv("MESH_ADMIN_SESSION_SECRET"); value != "" {
 		cfg.Web.Admin.SessionSecret = value
 	}
+	// 敏感数据落盘加密密钥(MESH_SECRET_KEY);未设置时保持明文兼容。
+	secrets.SetSecretKey(os.Getenv("MESH_SECRET_KEY"))
 	configpkg.ClearWebSocketPathOnUnsupportedGOOS(cfg, runtime.GOOS)
 
 	if err := configpkg.Validate(cfg); err != nil {

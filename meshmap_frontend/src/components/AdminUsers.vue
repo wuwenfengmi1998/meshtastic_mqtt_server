@@ -16,6 +16,7 @@ const newPassword = ref('')
 const confirmPassword = ref('')
 const passwordEdits = ref<Record<number, string>>({})
 const passwordSaving = ref<Record<number, boolean>>({})
+const currentPassword = ref('')
 
 function formatTime(value: string): string {
   return new Date(value).toLocaleString()
@@ -73,11 +74,16 @@ async function updatePassword(user: AdminManagedUser) {
     userError.value = '新密码不能为空'
     return
   }
+  if (!currentPassword.value) {
+    userError.value = '请输入当前登录密码'
+    return
+  }
 
   passwordSaving.value = { ...passwordSaving.value, [user.id]: true }
   try {
-    await updateAdminUserPassword(user.id, password)
+    await updateAdminUserPassword(user.id, password, currentPassword.value)
     passwordEdits.value = { ...passwordEdits.value, [user.id]: '' }
+    currentPassword.value = ''
     userMessage.value = `${user.username} 的密码已修改`
     await refreshUsers()
   } catch (err) {
@@ -129,6 +135,7 @@ onMounted(refreshUsers)
               <th class="cell-nowrap">创建时间</th>
               <th class="cell-nowrap">更新时间</th>
               <th>新密码</th>
+              <th class="cell-nowrap">当前登录密码</th>
               <th class="cell-nowrap">操作</th>
             </tr>
           </thead>
@@ -146,6 +153,15 @@ onMounted(refreshUsers)
                   type="password"
                   autocomplete="new-password"
                   placeholder="输入新密码"
+                />
+              </td>
+              <td class="cell-nowrap">
+                <input
+                  v-model="currentPassword"
+                  class="admin-table-input"
+                  type="password"
+                  autocomplete="current-password"
+                  placeholder="当前登录密码(验证用)"
                 />
               </td>
               <td class="cell-nowrap">

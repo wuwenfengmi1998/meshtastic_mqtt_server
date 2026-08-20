@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	"meshtastic_mqtt_server/internal/secrets"
 )
 
 const (
@@ -59,7 +61,14 @@ func (s *Store) ListMQTTForwarders(opts ListOptions) ([]MQTTForwarderRecord, err
 		Order("id DESC").
 		Limit(opts.Limit).
 		Offset(opts.Offset)
-	return rows, q.Find(&rows).Error
+	if err := q.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		rows[i].SourcePassword = secrets.Decrypt(rows[i].SourcePassword)
+		rows[i].TargetPassword = secrets.Decrypt(rows[i].TargetPassword)
+	}
+	return rows, nil
 }
 
 func (s *Store) CountMQTTForwarders(opts ListOptions) (int64, error) {
@@ -72,6 +81,8 @@ func (s *Store) GetMQTTForwarder(id uint64) (*MQTTForwarderRecord, error) {
 	if err := s.db.Where("id = ?", id).Take(&row).Error; err != nil {
 		return nil, err
 	}
+	row.SourcePassword = secrets.Decrypt(row.SourcePassword)
+	row.TargetPassword = secrets.Decrypt(row.TargetPassword)
 	return &row, nil
 }
 
@@ -304,12 +315,12 @@ func mqttForwarderFromInput(input MQTTForwarderInput, existing *MQTTForwarderRec
 		TargetHost: targetHost, TargetPort: input.TargetPort, TargetUsername: strings.TrimSpace(input.TargetUsername), TargetClientID: strings.TrimSpace(input.TargetClientID), TargetTLS: input.TargetTLS,
 	}
 	if input.SourcePassword != nil {
-		row.SourcePassword = *input.SourcePassword
+		row.SourcePassword = secrets.Encrypt(*input.SourcePassword)
 	} else if existing != nil {
 		row.SourcePassword = existing.SourcePassword
 	}
 	if input.TargetPassword != nil {
-		row.TargetPassword = *input.TargetPassword
+		row.TargetPassword = secrets.Encrypt(*input.TargetPassword)
 	} else if existing != nil {
 		row.TargetPassword = existing.TargetPassword
 	}
