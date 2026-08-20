@@ -435,7 +435,7 @@ func (MapReportRecord) TableName() string {
 
 type TextMessageRecord struct {
 	ID             uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	FromID         string    `gorm:"column:from_id;not null"`
+	FromID         string    `gorm:"column:from_id;not null;type:varchar(191);index:idx_text_message_from_id,priority:1"`
 	FromNum        int64     `gorm:"column:from_num;not null;index:idx_text_message_from_num_created_at,priority:1"`
 	Text           *string   `gorm:"column:text"`
 	PayloadHex     *string   `gorm:"column:payload_hex"`
@@ -742,6 +742,9 @@ func (s *Store) migrate() error {
 		if err := migrateBotNodePSK(tx, migrator, s.driver); err != nil {
 			return err
 		}
+		if err := migrateTextMessageFromIDIndex(tx, migrator, s.driver); err != nil {
+			return err
+		}
 		if err := migrateBotDirectMessages(tx, migrator); err != nil {
 			return err
 		}
@@ -766,6 +769,33 @@ func (s *Store) migrate() error {
 		}
 		return nil
 	})
+}
+
+// migrateTextMessageFromIDIndex 为 text_message.from_id 建立索引。
+// 该列历史版本为 longtext（无法直接建索引），节点详情页/聊天按 from_id 过滤时
+// 会全表扫描(百万级行,耗时数秒)。与 channel_id 的 DBv1 处理一致:
+// MySQL 先把列改为 VARCHAR(191) 再建完整索引;SQLite 直接建索引即可。
+// 幂等:索引已存在时跳过(老库可能已有手工建的前缀索引)。
+func migrateTextMessageFromIDIndex(tx *gorm.DB, migrator gorm.Migrator, driver string) error {
+	if !migrator.HasTable(&TextMessageRecord{}) {
+		return nil
+	}
+	if migrator.HasIndex(&TextMessageRecord{}, "idx_text_message_from_id") {
+		return nil
+	}
+	if driver == config.DriverSQLite {
+		if err := tx.Exec("CREATE INDEX idx_text_message_from_id ON text_message(from_id)").Error; err != nil {
+			return fmt.Errorf("create text_message.from_id index: %w", err)
+		}
+		return nil
+	}
+	if err := tx.Exec("ALTER TABLE text_message MODIFY COLUMN from_id VARCHAR(191) NOT NULL").Error; err != nil {
+		return fmt.Errorf("alter text_message.from_id to varchar: %w", err)
+	}
+	if err := tx.Exec("ALTER TABLE text_message ADD KEY idx_text_message_from_id (from_id)").Error; err != nil {
+		return fmt.Errorf("add text_message.from_id index: %w", err)
+	}
+	return nil
 }
 
 func migrateBotNodePSK(tx *gorm.DB, migrator gorm.Migrator, driver string) error {
