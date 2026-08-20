@@ -6,7 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,9 +31,27 @@ type Config struct {
 }
 
 type MQTTConfig struct {
-	Host string    `yaml:"host"`
-	Port int       `yaml:"port"`
-	TLS  TLSConfig `yaml:"tls"`
+	Host string         `yaml:"host"`
+	Port int            `yaml:"port"`
+	TLS  TLSConfig      `yaml:"tls"`
+	Auth MQTTAuthConfig `yaml:"auth"`
+}
+
+// MQTTAuthConfig 控制 MQTT broker 的 CONNECT 认证。
+// Enabled=false 时行为与历史版本一致(全部放行)。
+type MQTTAuthConfig struct {
+	Enabled        bool           `yaml:"enabled"`
+	AllowAnonymous bool           `yaml:"allow_anonymous"`
+	Users          []MQTTAuthUser `yaml:"users"`
+}
+
+// MQTTAuthUser 是一个可连接 broker 的账号。
+// Password 仅支持写在配置里由首次载入时自动转为 PasswordHash,
+// 序列化写回时剔除明文;也可直接提供 password_hash(bcrypt)。
+type MQTTAuthUser struct {
+	Username     string `yaml:"username"`
+	Password     string `yaml:"-"`
+	PasswordHash string `yaml:"password_hash,omitempty"`
 }
 
 type TLSConfig struct {
@@ -113,9 +134,22 @@ type rawAIConfig struct {
 }
 
 type rawMQTTConfig struct {
-	Host *string       `yaml:"host"`
-	Port *int          `yaml:"port"`
-	TLS  *rawTLSConfig `yaml:"tls"`
+	Host *string            `yaml:"host"`
+	Port *int               `yaml:"port"`
+	TLS  *rawTLSConfig      `yaml:"tls"`
+	Auth *rawMQTTAuthConfig `yaml:"auth"`
+}
+
+type rawMQTTAuthConfig struct {
+	Enabled        *bool              `yaml:"enabled"`
+	AllowAnonymous *bool              `yaml:"allow_anonymous"`
+	Users          *[]rawMQTTAuthUser `yaml:"users"`
+}
+
+type rawMQTTAuthUser struct {
+	Username     *string `yaml:"username"`
+	Password     *string `yaml:"password"`
+	PasswordHash *string `yaml:"password_hash"`
 }
 
 type rawTLSConfig struct {
@@ -171,6 +205,11 @@ func Default() *Config {
 				Enabled:  false,
 				CertFile: "",
 				KeyFile:  "",
+			},
+			Auth: MQTTAuthConfig{
+				Enabled:        false,
+				AllowAnonymous: false,
+				Users:          []MQTTAuthUser{},
 			},
 		},
 		Meshtastic: MeshtasticConfig{
@@ -377,6 +416,45 @@ func normalize(raw rawConfig) (*Config, bool) {
 				cfg.MQTT.TLS.KeyFile = *raw.MQTT.TLS.KeyFile
 			}
 		}
+		if raw.MQTT.Auth == nil {
+			changed = true
+		} else {
+			if raw.MQTT.Auth.Enabled == nil {
+				changed = true
+			} else {
+				cfg.MQTT.Auth.Enabled = *raw.MQTT.Auth.Enabled
+			}
+			if raw.MQTT.Auth.AllowAnonymous == nil {
+				changed = true
+			} else {
+				cfg.MQTT.Auth.AllowAnonymous = *raw.MQTT.Auth.AllowAnonymous
+			}
+			if raw.MQTT.Auth.Users == nil {
+				changed = true
+			} else {
+				users := make([]MQTTAuthUser, 0, len(*raw.MQTT.Auth.Users))
+				for _, ru := range *raw.MQTT.Auth.Users {
+					u := MQTTAuthUser{}
+					if ru.Username == nil {
+						changed = true
+					} else {
+						u.Username = *ru.Username
+					}
+					if ru.Password == nil {
+						changed = true
+					} else {
+						u.Password = *ru.Password
+					}
+					if ru.PasswordHash == nil {
+						changed = true
+					} else {
+						u.PasswordHash = *ru.PasswordHash
+					}
+					users = append(users, u)
+				}
+				cfg.MQTT.Auth.Users = users
+			}
+		}
 	}
 
 	if raw.Meshtastic == nil {
@@ -525,12 +603,27 @@ func normalize(raw rawConfig) (*Config, bool) {
 		}
 	}
 
+	// 明文 password 自动转为 bcrypt 哈希,并标记 changed 以便写回时剔除明文。
+	for i := range cfg.MQTT.Auth.Users {
+		if cfg.MQTT.Auth.Users[i].Password != "" {
+			if hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.MQTT.Auth.Users[i].Password), bcrypt.DefaultCost); err == nil {
+				cfg.MQTT.Auth.Users[i].PasswordHash = string(hashed)
+				cfg.MQTT.Auth.Users[i].Password = ""
+				changed = true
+			}
+			// 散列失败(如密码超过 72 字节)时保留明文,交给 Validate 报错。
+		}
+	}
+
 	return cfg, changed
 }
 
 func Validate(cfg *Config) error {
 	if cfg.MQTT.Port <= 0 || cfg.MQTT.Port > 65535 {
 		return fmt.Errorf("invalid mqtt port %d: must be 1-65535", cfg.MQTT.Port)
+	}
+	if err := validateMQTTAuth(cfg.MQTT.Auth); err != nil {
+		return err
 	}
 	switch cfg.Database.Driver {
 	case DriverSQLite:
@@ -568,6 +661,51 @@ func Validate(cfg *Config) error {
 		}
 	}
 	return nil
+}
+
+func validateMQTTAuth(auth MQTTAuthConfig) error {
+	seen := make(map[string]bool, len(auth.Users))
+	for _, u := range auth.Users {
+		if u.Username == "" {
+			return fmt.Errorf("mqtt.auth.users[].username is required")
+		}
+		if seen[u.Username] {
+			return fmt.Errorf("mqtt.auth.users: duplicate username %q", u.Username)
+		}
+		seen[u.Username] = true
+		if u.Password != "" {
+			return fmt.Errorf("mqtt.auth.users[%s]: password 无法转为哈希(长度须 <= 72 字节),或直接改用 password_hash", u.Username)
+		}
+		if u.PasswordHash != "" && !isBcryptHash(u.PasswordHash) {
+			return fmt.Errorf("mqtt.auth.users[%s]: password_hash 不是合法的 bcrypt 散列($2a$/$2b$/$2y$ 开头),可用 htpasswd -bnBC 10 \"\" '密码' 生成", u.Username)
+		}
+	}
+	if auth.Enabled {
+		if !auth.AllowAnonymous && len(auth.Users) == 0 {
+			return fmt.Errorf("mqtt.auth.enabled 为 true 时必须配置至少一个用户,或设置 allow_anonymous: true")
+		}
+		for _, u := range auth.Users {
+			if u.PasswordHash == "" {
+				return fmt.Errorf("mqtt.auth.users[%s]: 启用认证时必须提供 password 或 password_hash", u.Username)
+			}
+		}
+	}
+	return nil
+}
+
+// isBcryptHash 校验 $2a$/$2b$/$2y$<cost>$<53位散列> 的 bcrypt 格式。
+func isBcryptHash(s string) bool {
+	parts := strings.Split(s, "$")
+	if len(parts) != 4 || parts[0] != "" {
+		return false
+	}
+	if parts[1] != "2a" && parts[1] != "2b" && parts[1] != "2y" {
+		return false
+	}
+	if _, err := strconv.Atoi(parts[2]); err != nil {
+		return false
+	}
+	return len(parts[3]) == 53
 }
 
 func Write(path string, cfg *Config) error {

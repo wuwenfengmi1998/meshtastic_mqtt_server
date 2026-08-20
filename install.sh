@@ -69,6 +69,16 @@ if [[ ! -f "${CONFIG_DIR}/config.yaml" ]]; then
 mqtt:
   host: 0.0.0.0
   port: 1883
+  # MQTT 连接认证:enabled 改为 true 后,客户端必须携带 users 中的账号连接
+  # (或 allow_anonymous: true 放行匿名)。生成哈希:
+  #   htpasswd -bnBC 10 "" '你的密码' | tr -d ':\n'
+  auth:
+    enabled: false
+    allow_anonymous: false
+    users: []
+    # users:
+    #   - username: mesh
+    #     password_hash: "\$2y\$10\$..."
   tls:
     enabled: false
     cert_file: ""

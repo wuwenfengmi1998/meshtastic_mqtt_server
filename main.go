@@ -17,7 +17,6 @@ import (
 	"time"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
-	mqttauth "github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"github.com/mochi-mqtt/server/v2/packets"
 
@@ -28,6 +27,7 @@ import (
 	botpkg "meshtastic_mqtt_server/internal/bot"
 	configpkg "meshtastic_mqtt_server/internal/config"
 	"meshtastic_mqtt_server/internal/llm"
+	"meshtastic_mqtt_server/internal/mqttauth"
 	"meshtastic_mqtt_server/internal/mqtpp"
 	mqttforwardpkg "meshtastic_mqtt_server/internal/mqttforward"
 	rspkg "meshtastic_mqtt_server/internal/runtimesettings"
@@ -381,10 +381,11 @@ func run(cfg *configpkg.Config) error {
 
 	messageStats := &mqttforwardpkg.Stats{}
 	clientStats := mqttforwardpkg.NewClientStats()
-	server, mqttHook, mqttAddr, err := startMQTTServer(cfg, store, dbQueue, messageStats, clientStats, blocking, settings)
+	server, mqttHook, authHook, mqttAddr, err := startMQTTServer(cfg, store, dbQueue, messageStats, clientStats, blocking, settings)
 	if err != nil {
 		return err
 	}
+	defer authHook.Stop()
 	botSender := botpkg.NewService(store, server, cfg.Key)
 	mqttHook.autoAcker = botSender.MaybeAutoAck
 	botCtx, stopBotBroadcaster := context.WithCancel(context.Background())
@@ -527,10 +528,21 @@ func run(cfg *configpkg.Config) error {
 	return runErr
 }
 
-func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *storepkg.WriteQueue, stats *mqttforwardpkg.Stats, clientStats *mqttforwardpkg.ClientStats, blocking *blockingpkg.Cache, settings *rspkg.Cache) (*mqtt.Server, *meshtasticFilterHook, string, error) {
+func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *storepkg.WriteQueue, stats *mqttforwardpkg.Stats, clientStats *mqttforwardpkg.ClientStats, blocking *blockingpkg.Cache, settings *rspkg.Cache) (*mqtt.Server, *meshtasticFilterHook, *mqttauth.Hook, string, error) {
 	server := mqtt.New(&mqtt.Options{InlineClient: true})
-	if err := server.AddHook(new(mqttauth.AllowHook), nil); err != nil {
-		return nil, nil, "", err
+	authUsers := make([]mqttauth.User, 0, len(cfg.MQTT.Auth.Users))
+	for _, u := range cfg.MQTT.Auth.Users {
+		authUsers = append(authUsers, mqttauth.User{Username: u.Username, PasswordHash: u.PasswordHash})
+	}
+	authHook := mqttauth.NewHook(mqttauth.Config{
+		Enabled:        cfg.MQTT.Auth.Enabled,
+		AllowAnonymous: cfg.MQTT.Auth.AllowAnonymous,
+		Users:          authUsers,
+		LogEvent:       printJSON,
+	})
+	if err := server.AddHook(authHook, nil); err != nil {
+		authHook.Stop()
+		return nil, nil, nil, "", err
 	}
 	dedupQueue := mqttforwardpkg.NewDedupQueue()
 	dedupQueue.Start()
@@ -548,23 +560,30 @@ func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *stor
 		dedupQueue:       dedupQueue,
 	}
 	if err := server.AddHook(hook, nil); err != nil {
-		return nil, nil, "", err
+		authHook.Stop()
+		return nil, nil, nil, "", err
 	}
 
 	addr := net.JoinHostPort(cfg.MQTT.Host, strconv.Itoa(cfg.MQTT.Port))
 	tlsConfig, err := configpkg.BuildTLS(cfg.MQTT.TLS)
 	if err != nil {
-		return nil, nil, "", err
+		authHook.Stop()
+		return nil, nil, nil, "", err
 	}
 	listener := listeners.NewTCP(listeners.Config{ID: "tcp", Address: addr, TLSConfig: tlsConfig})
 	if err := server.AddListener(listener); err != nil {
-		return nil, nil, "", err
+		authHook.Stop()
+		return nil, nil, nil, "", err
 	}
 	if err := server.Serve(); err != nil {
-		return nil, nil, "", err
+		authHook.Stop()
+		return nil, nil, nil, "", err
 	}
-	printJSON(map[string]any{"event": "broker_started", "address": addr, "tls": cfg.MQTT.TLS.Enabled})
-	return server, hook, addr, nil
+	printJSON(map[string]any{
+		"event": "broker_started", "address": addr, "tls": cfg.MQTT.TLS.Enabled,
+		"auth_enabled": cfg.MQTT.Auth.Enabled, "auth_users": len(authUsers), "auth_allow_anonymous": cfg.MQTT.Auth.AllowAnonymous,
+	})
+	return server, hook, authHook, addr, nil
 }
 
 // printJSON 将记录编码为 JSON 后按数据包类型着色输出。

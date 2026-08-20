@@ -144,6 +144,10 @@ export MESH_ADMIN_SESSION_SECRET='replace-with-a-long-random-string'
 mqtt:
   host: 0.0.0.0
   port: 1883
+  auth:
+    enabled: false
+    allow_anonymous: false
+    users: []
   tls:
     enabled: false
     cert_file: ""
@@ -207,6 +211,30 @@ mkdir -p /srv/mesh_mqtt_go
   -tls-cert /path/to/server.crt \
   -tls-key /path/to/server.key
 ```
+
+## 启用 MQTT 连接认证
+
+默认 `mqtt.auth.enabled: false`,所有客户端均可连接(与历史版本一致)。broker 暴露公网时建议开启认证：
+
+```yaml
+mqtt:
+  auth:
+    enabled: true
+    allow_anonymous: false   # true 时允许空用户名/密码连接
+    users:
+      - username: mesh
+        password_hash: "$2y$10$..."   # bcrypt,见下方生成方法
+```
+
+- `password` 支持直接写明文：首次载入时会自动转为 `password_hash` 并从配置文件中剔除明文；
+- 也可以直接写 `password_hash`(bcrypt)。生成方法：
+
+```bash
+htpasswd -bnBC 10 "" '你的密码' | tr -d ':\n'
+```
+
+- 同一来源 IP 连续认证失败达到阈值(默认 5 次/分钟)会被临时封禁 5 分钟，防止在线爆破；
+- 开启认证后，Meshtastic 节点/客户端需在 MQTT 上行配置中填写相同的用户名密码。
 
 ## 访问服务
 
