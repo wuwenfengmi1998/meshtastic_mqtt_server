@@ -13,10 +13,28 @@ const total = ref(0)
 const calendarMonth = ref(new Date())
 const dailyCounts = ref<Record<string, number>>({})
 const selectedDate = ref('')
+// 服务器时区偏移(如 "-04:00"/"+08:00"/"Z")：从接口返回的 sign_time 中推导。
+// 日历按服务器本地日期分组，点选某天时也必须用同一时区构造筛选区间，
+// 否则浏览器时区与服务器时区不同会导致日历数字与列表条数不一致。
+const serverOffset = ref<string | null>(null)
 const weekdays = ['日', '一', '二', '三', '四', '五', '六']
 const todayDate = formatDateKey(new Date())
 
 const calendarDays = computed(() => monthDays(calendarMonth.value))
+
+function extractServerOffset(value: string): string | null {
+  const match = /(Z|[+-]\d{2}:\d{2})$/.exec(value)
+  return match ? match[1] : null
+}
+
+function serverLocalISO(dateKey: string, hour: number, minute: number, second: number, millisecond: number): string {
+  const hh = String(hour).padStart(2, '0')
+  const mm = String(minute).padStart(2, '0')
+  const ss = String(second).padStart(2, '0')
+  const ms = String(millisecond).padStart(3, '0')
+  const offset = serverOffset.value ?? ''
+  return new Date(`${dateKey}T${hh}:${mm}:${ss}.${ms}${offset}`).toISOString()
+}
 
 function formatTime(value: string): string {
   return new Date(value).toLocaleString()
@@ -51,10 +69,12 @@ function monthDays(value: Date): Array<string | null> {
 }
 
 function dateRangeForDay(value: string): { since: string; until: string } {
-  const [year, month, day] = value.split('-').map(Number)
-  const start = new Date(year, month - 1, day)
-  const end = new Date(year, month - 1, day, 23, 59, 59, 999)
-  return { since: start.toISOString(), until: end.toISOString() }
+  // 用服务器时区构造当天 00:00 ~ 23:59:59.999 的区间，
+  // 与后端按服务器本地日期分组的日历保持一致（任意浏览器时区下均一致）。
+  return {
+    since: serverLocalISO(value, 0, 0, 0, 0),
+    until: serverLocalISO(value, 23, 59, 59, 999),
+  }
 }
 
 function canPrev(): boolean {
@@ -71,8 +91,12 @@ async function loadCalendar() {
   try {
     const year = calendarMonth.value.getFullYear()
     const month = calendarMonth.value.getMonth()
-    const since = new Date(year, month, 1).toISOString()
-    const until = new Date(year, month + 1, 1).toISOString()
+    // 按服务器时区取该月首日 00:00 与末日 23:59:59.999 的区间。
+    const firstDay = `${year}-${String(month + 1).padStart(2, '0')}-01`
+    const lastDayOfMonth = new Date(year, month + 1, 0).getDate()
+    const lastDay = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`
+    const since = serverLocalISO(firstDay, 0, 0, 0, 0)
+    const until = serverLocalISO(lastDay, 23, 59, 59, 999)
     const response = await getSignDailyCounts({ since, until })
     dailyCounts.value = Object.fromEntries(response.items.map((item) => [item.date, item.count]))
   } catch (err) {
@@ -93,6 +117,11 @@ async function loadRecords(nextPage = page.value) {
     records.value = response.items
     total.value = response.total ?? response.offset + response.items.length
     page.value = safePage
+    // 从返回记录推导服务器时区偏移；首次获知后刷新日历（保证日历区间与列表筛选同钟）。
+    if (serverOffset.value === null && records.value.length > 0 && records.value[0].sign_time) {
+      serverOffset.value = extractServerOffset(records.value[0].sign_time)
+      loadCalendar()
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
