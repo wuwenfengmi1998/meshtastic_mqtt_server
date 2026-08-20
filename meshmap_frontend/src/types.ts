@@ -525,7 +525,7 @@ export interface BotNode {
   enabled: boolean
   default_channel_id: string
   topic_prefix: string
-  psk: string
+  psk_set: boolean
   public_key: string
   private_key_set: boolean
   nodeinfo_broadcast_enabled: boolean

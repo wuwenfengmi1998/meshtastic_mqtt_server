@@ -305,7 +305,7 @@ func writeBotNodeMutationResponse(c *gin.Context, status int, row *storepkg.BotN
 }
 
 func botNodeDTO(row storepkg.BotNodeRecord) gin.H {
-	return gin.H{"id": row.ID, "node_id": row.NodeID, "node_num": row.NodeNum, "long_name": row.LongName, "short_name": row.ShortName, "enabled": row.Enabled, "default_channel_id": row.DefaultChannelID, "topic_prefix": row.TopicPrefix, "psk": row.PSK, "public_key": row.PublicKey, "private_key_set": row.PrivateKey != "", "nodeinfo_broadcast_enabled": row.NodeInfoBroadcastEnabled, "nodeinfo_broadcast_interval_seconds": row.NodeInfoBroadcastIntervalSeconds, "last_nodeinfo_broadcast_at": row.LastNodeInfoBroadcastAt, "llm_queue_enabled": row.LLMQueueEnabled, "llm_include_channel_messages": row.LLMIncludeChannelMessages, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
+	return gin.H{"id": row.ID, "node_id": row.NodeID, "node_num": row.NodeNum, "long_name": row.LongName, "short_name": row.ShortName, "enabled": row.Enabled, "default_channel_id": row.DefaultChannelID, "topic_prefix": row.TopicPrefix, "psk_set": row.PSK != "", "public_key": row.PublicKey, "private_key_set": row.PrivateKey != "", "nodeinfo_broadcast_enabled": row.NodeInfoBroadcastEnabled, "nodeinfo_broadcast_interval_seconds": row.NodeInfoBroadcastIntervalSeconds, "last_nodeinfo_broadcast_at": row.LastNodeInfoBroadcastAt, "llm_queue_enabled": row.LLMQueueEnabled, "llm_include_channel_messages": row.LLMIncludeChannelMessages, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
 }
 
 func botMessageDTO(row storepkg.BotMessageRecord) gin.H {

@@ -7,13 +7,15 @@
 package webutil
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
-	"meshtastic_mqtt_server/internal/store"
+	store "meshtastic_mqtt_server/internal/store"
 )
 
 // ParseListOptions 从请求中读取 limit / offset / since / until / node_id /
@@ -175,7 +177,8 @@ func ParseOptionalFloatQuery(c *gin.Context, name string) (float64, bool, bool) 
 // WriteListResponse 把 rows 通过 convert 转成 gin.H 后包装成 {items, limit, offset}。
 func WriteListResponse[T any](c *gin.Context, rows []T, opts store.ListOptions, err error, convert func(T) gin.H) {
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		logQueryError(c, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
 	items := make([]gin.H, 0, len(rows))
@@ -188,7 +191,8 @@ func WriteListResponse[T any](c *gin.Context, rows []T, opts store.ListOptions, 
 // WriteListResponseWithTotal 在 WriteListResponse 基础上额外携带 total 字段。
 func WriteListResponseWithTotal[T any](c *gin.Context, rows []T, opts store.ListOptions, total int64, err error, convert func(T) gin.H) {
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		logQueryError(c, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
 	items := make([]gin.H, 0, len(rows))
@@ -196,6 +200,11 @@ func WriteListResponseWithTotal[T any](c *gin.Context, rows []T, opts store.List
 		items = append(items, convert(row))
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "limit": opts.Limit, "offset": opts.Offset, "total": total})
+}
+
+// logQueryError 把查询错误详情打到 stderr,响应体只回固定文案,避免泄露库表结构。
+func logQueryError(c *gin.Context, err error) {
+	fmt.Fprintf(os.Stderr, "[web] %s %s query error: %v\n", c.Request.Method, c.Request.URL.Path, err)
 }
 
 // PtrString / PtrInt64 / PtrUint64 / PtrFloat64 / PtrBool 把指针解引用成 any，

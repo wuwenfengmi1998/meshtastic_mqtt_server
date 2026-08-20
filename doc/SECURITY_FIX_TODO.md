@@ -81,12 +81,12 @@
 
 ## P3 - 低优先(择机)
 
-- [ ] **T14 解密私聊默认不打控制台日志** - `internal/config/config.go:204-210` 将 `console_log.meshtastic` 默认改 false,或至少对 `text_message` 且 DM 来源脱敏(`main.go:239-241`)
-- [ ] **T15 session cookie `Secure: true`** - 生产部署 HTTPS 下设置 `session_secure: true`(`install.sh:94` / config 默认值);确认 nginx 强制 HTTP->HTTPS 跳转
-- [ ] **T16 config.yaml 回写权限** - `internal/config/config.go:573-582` `Write` 改 0600,避免明文密码 0644 可读
-- [ ] **T17 公开接口错误信息脱敏** - `/api/health` 等公开路由将 `err.Error()` 映射为固定文案(`webutil.go:178,191`)
-- [ ] **T18 bot PSK 不回显** - `internal/bot/admin_bot_routes.go:308` 改为 `psk_set` 布尔,与 forwarder 路由风格一致
-- [ ] **T19 前端 help 页防御性消毒** - `meshmap_frontend/src/components/HelpPage.vue:38` 的 `v-html` 前增加 DOMPurify(纵深防御,当前依赖服务端 bluemonday)
+- [x] **T14 解密内容默认不打控制台日志(2026-08-20 完成)** - `console_log.meshtastic` 默认改 false(新部署);install.sh 模板同步;README 注明调试可显式开启。既有配置显式写 true 的不受影响
+- [x] **T15 session cookie `Secure: true` 默认(2026-08-20 完成)** - config 默认与 install.sh 模板改 `session_secure: true`(HTTPS 部署适用);纯 HTTP 部署需显式改回 false;README 注明
+- [x] **T16 config.yaml 回写权限(2026-08-20 完成)** - `config.Write` 改 0600,配置文件含明文口令仅属主可读 ✓(冒烟验证)
+- [x] **T17 公开接口错误信息脱敏(2026-08-20 完成)** - `webutil.WriteListResponse*` 统一返回 "internal error" 并 stderr 记详情;`/api/health`、`/api/channels` 同处理;`/api/text-messages` 移除 `mqtt_remote_host`(与 T6 同源泄露)
+- [x] **T18 bot PSK 不回显(2026-08-20 完成)** - bot DTO 改 `psk_set` 布尔;`UpdateBotNode` 空 PSK 保持原值(避免改配置时密钥被重置为 AQ==);前端编辑表单留空保持不变 ✓(冒烟验证)
+- [x] **T19 前端 help 页 DOMPurify 消毒(2026-08-20 完成)** - `HelpPage` 与 `AdminHelpEdit` 的 v-html 前增加 `DOMPurify.sanitize`(纵深防御,服务端 bluemonday 之上);新增依赖 `dompurify`
 
 ---
 

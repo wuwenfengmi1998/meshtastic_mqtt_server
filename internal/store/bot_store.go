@@ -116,6 +116,11 @@ func (s *Store) UpdateBotNode(id uint64, input BotNodeInput) (*BotNodeRecord, er
 		preserved := existing.NodeNum
 		input.NodeNum = &preserved
 	}
+	// PSK 不回显给前端后,更新表单不会携带原值;为空时保持现有 PSK,
+	// 避免用户只是改个名字就把频道密钥重置为默认 AQ==。
+	if strings.TrimSpace(input.PSK) == "" {
+		input.PSK = existing.PSK
+	}
 	row, err := s.normalizedBotNodeRecord(input)
 	if err != nil {
 		return nil, err

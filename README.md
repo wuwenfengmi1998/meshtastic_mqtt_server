@@ -174,10 +174,12 @@ web:
     username: admin
     password: admin
     session_secret: ""
-    session_secure: false
+    session_secure: true
 ```
 
-> 生产环境请修改默认管理员密码（非回环监听时仍为默认值 `admin` 将拒绝启动），并设置足够长、随机的 `session_secret`。如果通过 HTTPS 访问 Web 管理后台，建议将 `session_secure` 设置为 `true`。
+> 生产环境请修改默认管理员密码（非回环监听时仍为默认值 `admin` 将拒绝启动），并设置足够长、随机的 `session_secret`。`session_secure` 默认为 `true`（HTTPS 部署适用），纯 HTTP 部署需改为 `false` 否则登录 cookie 不会回传。
+
+> `console_log.meshtastic` 默认 `false`：解码后的 Meshtastic 数据包可能包含私聊明文，默认不打印；调试时可显式开启。
 
 ## 使用 SQLite 部署
 

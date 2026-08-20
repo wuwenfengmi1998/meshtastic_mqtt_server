@@ -48,7 +48,7 @@ async function toggleBotLLMQueue(bot: BotNode) {
       enabled: bot.enabled,
       default_channel_id: bot.default_channel_id,
       topic_prefix: bot.topic_prefix,
-      psk: bot.psk,
+
       nodeinfo_broadcast_enabled: bot.nodeinfo_broadcast_enabled,
       nodeinfo_broadcast_interval_seconds: bot.nodeinfo_broadcast_interval_seconds,
       llm_queue_enabled: !bot.llm_queue_enabled,
@@ -71,7 +71,7 @@ async function toggleBotIncludeChannel(bot: BotNode) {
       enabled: bot.enabled,
       default_channel_id: bot.default_channel_id,
       topic_prefix: bot.topic_prefix,
-      psk: bot.psk,
+
       nodeinfo_broadcast_enabled: bot.nodeinfo_broadcast_enabled,
       nodeinfo_broadcast_interval_seconds: bot.nodeinfo_broadcast_interval_seconds,
       llm_queue_enabled: bot.llm_queue_enabled,

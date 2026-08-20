@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -85,7 +86,7 @@ func NewRouter(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, 
 	return r
 }
 
-const BackendVersion = "1.5.0"
+const BackendVersion = "1.6.0"
 
 var CommitVersion = "dev"
 
@@ -93,8 +94,9 @@ func registerAPIRoutes(r gin.IRouter, store *storepkg.Store, mapTileCacheDir str
 	r.GET("/health", func(c *gin.Context) {
 		status := gin.H{"status": "ok", "database": "ok"}
 		if err := store.Ping(); err != nil {
+			fmt.Fprintf(os.Stderr, "[web] health check database error: %v\n", err)
 			status["status"] = "error"
-			status["database"] = err.Error()
+			status["database"] = "unavailable"
 			c.JSON(http.StatusServiceUnavailable, status)
 			return
 		}
@@ -153,7 +155,8 @@ func registerAPIRoutes(r gin.IRouter, store *storepkg.Store, mapTileCacheDir str
 	r.GET("/channels", func(c *gin.Context) {
 		rows, err := store.ListChannels()
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			fmt.Fprintf(os.Stderr, "[web] list channels error: %v\n", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 			return
 		}
 		items := make([]gin.H, 0, len(rows))
@@ -684,7 +687,8 @@ func mapReportClusterDTO(row storepkg.MapReportClusterRecord) gin.H {
 }
 
 func textMessageDTO(row storepkg.TextMessageRecord) gin.H {
-	return gin.H{"id": row.ID, "from_id": row.FromID, "from_num": row.FromNum, "packet_id": ptrInt64(row.PacketID), "text": ptrString(row.Text), "topic": row.Topic, "channel_id": ptrString(row.ChannelID), "created_at": row.CreatedAt, "mqtt_remote_host": ptrString(row.MQTTRemoteHost), "content_json": row.ContentJSON}
+	// 不含 mqtt_remote_host:公开接口不暴露发布者 IP(见安全修复 T6 同类处理)。
+	return gin.H{"id": row.ID, "from_id": row.FromID, "from_num": row.FromNum, "packet_id": ptrInt64(row.PacketID), "text": ptrString(row.Text), "topic": row.Topic, "channel_id": ptrString(row.ChannelID), "created_at": row.CreatedAt, "content_json": row.ContentJSON}
 }
 
 func discardDetailsDTO(row storepkg.DiscardDetailsRecord) gin.H {

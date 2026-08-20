@@ -98,18 +98,20 @@ watch(currentChannelID, () => {
   }
 })
 
-function botPayload(form: { node_num: string | number | null; long_name: string; short_name: string; default_channel_id: string; topic_prefix?: string; psk?: string; nodeinfo_broadcast_enabled?: boolean; nodeinfo_broadcast_interval_seconds?: string | number; enabled: boolean }): BotNodePayload {
+function botPayload(form: { node_num: string | number | null; long_name: string; short_name: string; default_channel_id: string; topic_prefix?: string; psk?: string; nodeinfo_broadcast_enabled?: boolean; nodeinfo_broadcast_interval_seconds?: string | number; enabled: boolean }, isCreate = false): BotNodePayload {
   // <input type="number"> 的 v-model 会把绑定值转成 number，而 number 上没有 trim，
   // 直接调用会抛 "node_num.trim is not a function" 让保存失败。统一转成 string 再 trim。
   const nodeNumText = form.node_num == null ? '' : String(form.node_num).trim()
   const interval = Number(form.nodeinfo_broadcast_interval_seconds || 3600)
+  const psk = form.psk?.trim() || ''
   return {
     node_num: nodeNumText ? Number(nodeNumText) : null,
     long_name: form.long_name.trim(),
     short_name: form.short_name.trim(),
     default_channel_id: form.default_channel_id.trim(),
     topic_prefix: form.topic_prefix?.trim() || 'msh/CN',
-    psk: form.psk?.trim() || 'AQ==',
+    // 创建时缺省 AQ==;更新时不携带 psk(后端保持原值,避免密钥被重置)。
+    ...(psk || isCreate ? { psk: psk || 'AQ==' } : {}),
     nodeinfo_broadcast_enabled: form.nodeinfo_broadcast_enabled ?? true,
     nodeinfo_broadcast_interval_seconds: Number.isFinite(interval) && interval > 0 ? interval : 3600,
     enabled: form.enabled,
@@ -123,7 +125,8 @@ function resetEdits() {
     short_name: bot.short_name,
     default_channel_id: bot.default_channel_id,
     topic_prefix: bot.topic_prefix,
-    psk: bot.psk || 'AQ==',
+    // PSK 不回显,编辑时留空表示保持不变。
+    psk: '',
     nodeinfo_broadcast_enabled: bot.nodeinfo_broadcast_enabled,
     nodeinfo_broadcast_interval_seconds: String(bot.nodeinfo_broadcast_interval_seconds || 3600),
     enabled: bot.enabled,
@@ -253,7 +256,7 @@ async function createBot() {
   error.value = ''
   message.value = ''
   try {
-    await createBotNode(botPayload(newBot.value))
+    await createBotNode(botPayload(newBot.value, true))
     newBot.value = { node_num: '', long_name: '', short_name: '', default_channel_id: 'LongFast', topic_prefix: 'msh/CN', psk: 'AQ==', nodeinfo_broadcast_enabled: true, nodeinfo_broadcast_interval_seconds: '3600', enabled: true }
     message.value = '机器人已创建'
     await refreshBots()
@@ -503,7 +506,7 @@ onBeforeUnmount(() => {
                 <label>短名称<input v-model="edits[bot.id].short_name" /></label>
                 <label>默认频道<input v-model="edits[bot.id].default_channel_id" /></label>
                 <label>MQTT 根地址<input v-model="edits[bot.id].topic_prefix" placeholder="msh/CN" /></label>
-                <label>频道密钥 PSK<input v-model="edits[bot.id].psk" placeholder="AQ==" /></label>
+                <label>频道密钥 PSK<input v-model="edits[bot.id].psk" placeholder="留空保持不变" /></label>
                 <label>NodeInfo 间隔秒数<input v-model="edits[bot.id].nodeinfo_broadcast_interval_seconds" type="number" min="60" /></label>
                 <label class="inline"><input v-model="edits[bot.id].nodeinfo_broadcast_enabled" type="checkbox" /> 定期广播 NodeInfo</label>
                 <label class="inline"><input v-model="edits[bot.id].enabled" type="checkbox" /> 启用</label>
@@ -537,7 +540,7 @@ onBeforeUnmount(() => {
               <span><strong>{{ selectedBot.node_num }}</strong><small>Node Num</small></span>
               <span><strong>{{ selectedBot.default_channel_id }}</strong><small>默认频道</small></span>
               <span><strong>{{ selectedBot.topic_prefix || 'msh/CN' }}</strong><small>MQTT 根地址</small></span>
-              <span><strong>{{ selectedBot.psk || 'AQ==' }}</strong><small>频道 PSK</small></span>
+              <span><strong>{{ selectedBot.psk_set ? '已配置' : '默认' }}</strong><small>频道 PSK</small></span>
               <span><strong>{{ selectedBot.private_key_set ? '已生成' : '未生成' }}</strong><small>机器人密钥</small></span>
               <span class="public-key"><strong>{{ selectedBot.public_key || '-' }}</strong><small>Public Key</small></span>
               <span><strong>{{ selectedBot.nodeinfo_broadcast_enabled ? `${selectedBot.nodeinfo_broadcast_interval_seconds}s` : '关闭' }}</strong><small>NodeInfo 广播</small></span>

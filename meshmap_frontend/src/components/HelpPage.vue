@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import DOMPurify from 'dompurify'
 import { getHelpContent } from '../api'
 
 const loading = ref(false)
@@ -11,7 +12,8 @@ async function loadHelpContent() {
   error.value = ''
   try {
     const response = await getHelpContent()
-    html.value = response.item.html
+    // 服务端已用 bluemonday 消毒,这里再用 DOMPurify 做客户端纵深防御。
+    html.value = DOMPurify.sanitize(response.item.html)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {

@@ -233,7 +233,7 @@ func Default() *Config {
 				Username:      "admin",
 				Password:      "admin",
 				SessionSecret: "",
-				SessionSecure: false,
+				SessionSecure: true,
 			},
 		},
 		AI: AIConfig{
@@ -245,7 +245,9 @@ func Default() *Config {
 			MQTT:       true,
 			LLM:        true,
 			SQL:        true,
-			Meshtastic: true,
+			// 默认不打印解码后的 Meshtastic 数据包:其中包含私聊明文。
+			// 需要调试时可显式开启 console_log.meshtastic。
+			Meshtastic: false,
 		},
 	}
 }
@@ -713,7 +715,8 @@ func Write(path string, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("encode config file %s: %w", path, err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	// 0600:配置文件含明文口令/密钥,只允许属主读写。
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("write config file %s: %w", path, err)
 	}
 	return nil

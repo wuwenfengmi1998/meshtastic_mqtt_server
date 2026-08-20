@@ -104,14 +104,16 @@ database:
     admin:
       username: admin
       password: ${ADMIN_PASSWORD}
-    session_secret: ""
-    session_secure: false
+      session_secret: ""
+      # 前端经 HTTPS(nginx 反代)访问时保持 true;纯 HTTP 部署需改回 false
+      session_secure: true
 console_log:
   web: true
   mqtt: true
   llm: true
   sql: true
-  meshtastic: true
+  # 默认不打印解码后的 Meshtastic 数据包(含私聊明文),调试时改回 true
+  meshtastic: false
 EOF
   chown "${SERVICE_USER}:${SERVICE_GROUP}" "${CONFIG_DIR}/config.yaml"
   chmod 0640 "${CONFIG_DIR}/config.yaml"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import DOMPurify from 'dompurify'
 import { getAdminHelpContent, previewAdminHelpContent, saveAdminHelpContent } from '../api'
 import type { HelpContent } from '../types'
 
@@ -25,7 +26,7 @@ async function loadHelpContent() {
     const response = await getAdminHelpContent()
     latest.value = response.item
     markdown.value = response.item.markdown
-    previewHtml.value = response.item.html
+    previewHtml.value = DOMPurify.sanitize(response.item.html)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -38,7 +39,7 @@ async function previewHelpContent() {
   error.value = ''
   try {
     const response = await previewAdminHelpContent(markdown.value)
-    previewHtml.value = response.html
+    previewHtml.value = DOMPurify.sanitize(response.html)
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -67,7 +68,7 @@ async function saveHelpContent() {
     const response = await saveAdminHelpContent(markdown.value)
     latest.value = response.item
     markdown.value = response.item.markdown
-    previewHtml.value = response.item.html
+    previewHtml.value = DOMPurify.sanitize(response.item.html)
     message.value = `帮助内容已保存为版本 #${response.item.id}`
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
