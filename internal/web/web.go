@@ -22,6 +22,7 @@ import (
 	llmadminpkg "meshtastic_mqtt_server/internal/llmadmin"
 	mappkg "meshtastic_mqtt_server/internal/mapsource"
 	mqttforwardpkg "meshtastic_mqtt_server/internal/mqttforward"
+	"meshtastic_mqtt_server/internal/ratelimit"
 	rspkg "meshtastic_mqtt_server/internal/runtimesettings"
 	signpkg "meshtastic_mqtt_server/internal/sign"
 	storepkg "meshtastic_mqtt_server/internal/store"
@@ -84,7 +85,7 @@ func NewRouter(cfg configpkg.WebConfig, consoleLog bool, store *storepkg.Store, 
 	return r
 }
 
-const BackendVersion = "1.3.0"
+const BackendVersion = "1.4.0"
 
 var CommitVersion = "dev"
 
@@ -157,7 +158,8 @@ func registerAPIRoutes(r gin.IRouter, store *storepkg.Store, mapTileCacheDir str
 			return
 		}
 		rows, err := store.ListDiscardDetails(opts)
-		writeListResponse(c, rows, opts, err, discardDetailsDTO)
+		// 公开接口去敏:不含 MQTT 客户端 IP/端口与原始报文,完整数据见 /api/admin/discard-details。
+		writeListResponse(c, rows, opts, err, discardDetailsPublicDTO)
 	})
 	r.GET("/positions", func(c *gin.Context) {
 		opts, ok := parseListOptions(c)
@@ -194,6 +196,8 @@ func registerAPIRoutes(r gin.IRouter, store *storepkg.Store, mapTileCacheDir str
 }
 
 func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Manager, mqttStatus MQTTStatusProvider, blocking *blockingpkg.Cache, forwarder mqttforwardpkg.Reloader, settings *rspkg.Cache, botSender botpkg.TextSender, aiService LLMProviderReloader) {
+	// 登录防爆破:按来源 IP 与用户名双维度限速。
+	loginLimiter := ratelimit.New(ratelimit.Options{})
 	type loginRequest struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -223,6 +227,8 @@ func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Ma
 		remoteAddr, remoteHost := remoteInfo(c)
 		_ = store.InsertLoginLog(storepkg.LoginLogRecord{Username: username, UserID: userID, Success: success, Reason: reason, RemoteAddr: remoteAddr, RemoteHost: remoteHost, UserAgent: c.GetHeader("User-Agent")})
 	}
+	// dummyAdminPasswordHash 是固定 bcrypt 散列,用于未知用户名登录时的耗时对齐。
+	const dummyAdminPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
 
 	r.POST("/login", func(c *gin.Context) {
 		var req loginRequest
@@ -231,12 +237,34 @@ func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Ma
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid login request"})
 			return
 		}
+		_, ipKey := remoteInfo(c)
+		userKey := "user:" + req.Username
+		if loginLimiter.Blocked(ipKey) || loginLimiter.Blocked(userKey) {
+			recordLogin(c, req.Username, nil, false, "rate limited")
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many login attempts, retry later"})
+			return
+		}
+
 		user, err := store.GetUserByUsername(req.Username)
-		if err != nil || user.Role != auth.AdminRole || !auth.VerifyPassword(user.PasswordHash, req.Password) {
+		if err != nil || user.Role != auth.AdminRole {
+			// 未知用户名也执行一次 bcrypt 比较,消除用户名枚举的时间侧信道。
+			_ = auth.VerifyPassword(dummyAdminPasswordHash, req.Password)
+			loginLimiter.Fail(ipKey)
+			loginLimiter.Fail(userKey)
 			recordLogin(c, req.Username, nil, false, "invalid username or password")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
 			return
 		}
+		if !auth.VerifyPassword(user.PasswordHash, req.Password) {
+			loginLimiter.Fail(ipKey)
+			loginLimiter.Fail(userKey)
+			recordLogin(c, req.Username, nil, false, "invalid username or password")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid username or password"})
+			return
+		}
+		loginLimiter.Reset(ipKey)
+		loginLimiter.Reset(userKey)
+
 		cookie, err := sessions.NewCookie(*user)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -398,6 +426,14 @@ func registerAdminRoutes(r gin.IRouter, store *storepkg.Store, sessions *auth.Ma
 		}
 		rows, err := store.ListLoginLogs(opts)
 		writeListResponse(c, rows, opts, err, loginLogDTO)
+	})
+	protected.GET("/discard-details", func(c *gin.Context) {
+		opts, ok := parseListOptions(c)
+		if !ok {
+			return
+		}
+		rows, err := store.ListDiscardDetails(opts)
+		writeListResponse(c, rows, opts, err, discardDetailsDTO)
 	})
 	protected.POST("/discard-details/batch-delete", func(c *gin.Context) {
 		var req struct {
@@ -631,6 +667,12 @@ func textMessageDTO(row storepkg.TextMessageRecord) gin.H {
 
 func discardDetailsDTO(row storepkg.DiscardDetailsRecord) gin.H {
 	return gin.H{"id": row.ID, "topic": row.Topic, "error": row.Error, "payload_len": row.PayloadLen, "raw_base64": row.RawBase64, "mqtt_client_id": ptrString(row.MQTTClientID), "mqtt_username": ptrString(row.MQTTUsername), "mqtt_listener": ptrString(row.MQTTListener), "mqtt_remote_addr": ptrString(row.MQTTRemoteAddr), "mqtt_remote_host": ptrString(row.MQTTRemoteHost), "mqtt_remote_port": ptrString(row.MQTTRemotePort), "created_at": row.CreatedAt, "content_json": row.ContentJSON}
+}
+
+// discardDetailsPublicDTO 是公开接口的无敏感字段视图:
+// 剔除 MQTT 客户端 IP/端口与原始报文,避免泄露发布者身份。
+func discardDetailsPublicDTO(row storepkg.DiscardDetailsRecord) gin.H {
+	return gin.H{"id": row.ID, "topic": row.Topic, "error": row.Error, "payload_len": row.PayloadLen, "mqtt_client_id": ptrString(row.MQTTClientID), "mqtt_username": ptrString(row.MQTTUsername), "mqtt_listener": ptrString(row.MQTTListener), "created_at": row.CreatedAt, "content_json": row.ContentJSON}
 }
 
 func positionDTO(row storepkg.PositionRecord) gin.H {

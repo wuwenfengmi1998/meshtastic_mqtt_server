@@ -28,35 +28,28 @@
 
 ## P1 - 高优先(1-2 周内)
 
-- [ ] **T3 install.sh 不再生成 admin/admin 默认口令**
-  - 位置:`install.sh:90-92`;`internal/config/config.go:184-199`
-  - 方案:首启随机生成 16 字节密码打印到终端(仅一次);或 web 绑定非 loopback 且口令为默认值时拒绝启动;`README.md:219-224` 删除默认口令描述
-  - 验收:新部署无法用 admin/admin 登录
+- [x] **T3 install.sh 不再生成 admin/admin 默认口令(2026-08-20 完成)**
+  - `install.sh` 首启随机生成 16 位管理员密码并仅打印一次;`main.go` 新增守卫:Web 监听非回环地址且口令仍为默认 `admin` 时拒绝启动(`guardDefaultAdminPassword`);README 同步
+  - 验收:新部署拿到随机口令;公网 0.0.0.0+admin/admin 无法启动 ✓(冒烟验证)
+  - 注意:已部署实例不受影响(守卫只拦默认口令);本地开发若用 0.0.0.0+admin/admin 需先改口令
 
-- [ ] **T4 登录防爆破与用户名枚举**
-  - 位置:`internal/web/web.go:227-248`
-  - 方案:
-        1. 按 IP + 用户名维度限速(如 5 次/分钟,锁定 10 分钟,内存或 login_log 实现均可)
-        2. 用户不存在时也执行一次 `bcrypt.CompareHashAndPassword`(dummy hash)消除时间侧信道
-  - 验收:连续错误登录返回 429;存在/不存在用户名的响应耗时一致
+- [x] **T4 登录防爆破与用户名枚举(2026-08-20 完成)**
+  - 新增 `internal/ratelimit`(按 key 失败计数+临时封锁,默认 5 次/分钟锁定 10 分钟);登录按来源 IP + 用户名双维度限速,超限返回 429
+  - 未知用户名也执行 dummy bcrypt,消除时间侧信道
+  - 验收:连续 5 次错误→第 6 次 429;未知/已知用户名耗时一致 ✓(冒烟验证)
 
-- [ ] **T5 瓦片代理 SSRF 加固**
-  - 位置:`internal/web/map_tile_proxy_routes.go:35,79-87`
-  - 方案:
-        1. 自定义 `http.Transport.DialContext`:解析后拒绝 loopback/RFC1918/169.254.0.0/16/CGNAT/组播/IPv6 ULA 地址(防 DNS rebinding,必须在 connect 时按 IP 校验)
-        2. `CheckRedirect`:每跳重新校验目标,最多 2 跳
-        3. `writeMapTile`(198-202 行)Content-Type 白名单:仅 `image/*` 通过,否则强制 `application/octet-stream`(堵同源 HTML XSS)
-  - 验收:模板指向 `http://169.254.169.254/...` 及外网 302->内网均失败;上游返回 HTML 时浏览器下载而非渲染
+- [x] **T5 瓦片代理 SSRF 加固(2026-08-20 完成)**
+  - `map_tile_proxy_routes.go`:自定义 DialContext 按解析 IP 拒绝 loopback/私网/链路本地/CGNAT/组播/ULA(DNS rebinding 安全);CheckRedirect 限 2 跳且每跳同样受 Dial 检查;`mapTileContentType` 仅放行 `image/*`,其余强制 `application/octet-stream` + `X-Content-Type-Options: nosniff`(堵同源 HTML XSS)
+  - 验收:元数据地址 502;外网 302→内网 502;HTML 响应不再以 text/html 下发 ✓(单测+端到端)
 
-- [ ] **T6 `/api/discard-details` 去敏**
-  - 位置:`internal/web/web.go:154-161,632-634`(线上实测匿名可读 MQTT 客户端 ID/IP/端口/raw_base64)
-  - 方案:公开响应剔除 `mqtt_remote_addr/host/port`、`raw_base64`;完整数据仅 `RequireAdmin` 分组提供(或直接整体移入 admin)
-  - 验收:匿名请求响应中无 IP 与原始报文字段
+- [x] **T6 `/api/discard-details` 去敏(2026-08-20 完成)**
+  - 公开接口改用 `discardDetailsPublicDTO`,剔除 `mqtt_remote_addr/host/port` 与 `raw_base64`;新增 `GET /api/admin/discard-details` 全字段端点(RequireAdmin);前端 `AdminDiscardDetails` 改调 admin 端点
+  - 验收:匿名响应无 IP/原始报文;管理页功能保留 ✓(冒烟验证)
+  - 注意:前端变更需重新 build 部署;`/api/text-messages` 仍公开返回 `mqtt_remote_host`(同源泄露,已列入 P3 观察)
 
-- [ ] **T7 高德地图 key 不再下发到前端**
-  - 位置:`internal/mapsource/admin_map_source_routes.go:36-47`(线上 `/api/map-source/enabled` 已泄露 `key=35206f...`)
-  - 方案:外部模板一律走服务端代理(存 hash 形式);`enabled` 接口只返回代理 URL 不返回原始 url_template
-  - 验收:`/api/map-source/enabled` 响应中无任何 `key=`/外部域名
+- [x] **T7 外部瓦片 URL/key 不再下发前端(2026-08-20 完成)**
+  - `PublicDTO` 对外部 http(s) 模板一律改写为 `/api/map/{hash}` 代理路径(不再依赖 proxy_enabled 标志);高德 key 等不再出现在 `/api/map-source/enabled` 响应中
+  - 验收:公开响应无 `key=`/外部域名;瓦片经代理加载 ✓(单测+端到端)
 
 ## P2 - 中优先(迭代内)
 

@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -359,6 +360,9 @@ func parseArgs() (*configpkg.Config, error) {
 
 // run 创建 MQTT broker 和 Web 服务，并阻塞等待退出信号。
 func run(cfg *configpkg.Config) error {
+	if err := guardDefaultAdminPassword(cfg); err != nil {
+		return err
+	}
 	store, err := storepkg.OpenStore(cfg.Database, cfg.ConsoleLog.SQL)
 	if err != nil {
 		return err
@@ -584,6 +588,30 @@ func startMQTTServer(cfg *configpkg.Config, store *storepkg.Store, dbQueue *stor
 		"auth_enabled": cfg.MQTT.Auth.Enabled, "auth_users": len(authUsers), "auth_allow_anonymous": cfg.MQTT.Auth.AllowAnonymous,
 	})
 	return server, hook, authHook, addr, nil
+}
+
+// guardDefaultAdminPassword 防止 Web 管理后台以默认口令监听非回环地址。
+// 新部署请通过 MESH_ADMIN_PASSWORD 或在配置中修改 web.admin.password 后再启动。
+func guardDefaultAdminPassword(cfg *configpkg.Config) error {
+	if !cfg.Web.Enabled || !cfg.Web.PortEnabled {
+		return nil
+	}
+	if cfg.Web.Admin.Password != "" && cfg.Web.Admin.Password != "admin" {
+		return nil
+	}
+	if isLoopbackHost(cfg.Web.Host) {
+		return nil
+	}
+	return errors.New("web.admin.password 仍为默认值 admin 且监听非回环地址,拒绝启动:请设置环境变量 MESH_ADMIN_PASSWORD 或修改配置 web.admin.password 后重试")
+}
+
+func isLoopbackHost(host string) bool {
+	switch strings.ToLower(strings.TrimSpace(host)) {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false // 空值会绑定全部网卡,按非回环处理
+	}
 }
 
 // printJSON 将记录编码为 JSON 后按数据包类型着色输出。

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -163,11 +164,11 @@ func AdminDTO(row storepkg.MapTileSourceRecord) gin.H {
 	return gin.H{"id": row.ID, "name": row.Name, "url_template": row.URLTemplate, "attribution": row.Attribution, "max_zoom": row.MaxZoom, "enabled": row.Enabled, "is_default": row.IsDefault, "proxy_enabled": row.ProxyEnabled, "created_at": row.CreatedAt, "updated_at": row.UpdatedAt}
 }
 
-// PublicDTO 是给前端用户使用的视图：当 ProxyEnabled 为 true 时，url 改写为
-// 通过本服务的 /api/map/{hash} 代理路径，避免暴露上游瓦片地址。
+// PublicDTO 是给前端用户使用的视图:外部 http(s) 模板一律改写为经本服务的
+// /api/map/{hash} 代理路径,避免向下游暴露上游瓦片地址与密钥。
 func PublicDTO(row storepkg.MapTileSourceRecord) gin.H {
 	urlTemplate := row.URLTemplate
-	if row.ProxyEnabled {
+	if isExternalTileURLTemplate(urlTemplate) {
 		hash := row.URLTemplateHash
 		if hash == "" {
 			hash = storepkg.MapTileSourceHash(row.URLTemplate)
@@ -175,4 +176,10 @@ func PublicDTO(row storepkg.MapTileSourceRecord) gin.H {
 		urlTemplate = "/api/map/" + hash + "?x={x}&y={y}&z={z}"
 	}
 	return gin.H{"id": row.ID, "name": row.Name, "url_template": urlTemplate, "attribution": row.Attribution, "max_zoom": row.MaxZoom}
+}
+
+// isExternalTileURLTemplate 判断模板是否指向外部 http/https 资源。
+func isExternalTileURLTemplate(template string) bool {
+	t := strings.ToLower(strings.TrimSpace(template))
+	return strings.HasPrefix(t, "http://") || strings.HasPrefix(t, "https://")
 }

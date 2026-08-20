@@ -1,10 +1,13 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +23,7 @@ import (
 const (
 	mapTileCacheControl = "public, max-age=86400"
 	maxMapTileBytes     = 10 << 20
+	maxMapTileRedirects = 2
 )
 
 type mapTileProxy struct {
@@ -32,9 +36,86 @@ func registerMapTileProxyRoutes(r gin.IRouter, store *storepkg.Store, cacheDir s
 	proxy := &mapTileProxy{
 		store:    store,
 		cacheDir: cacheDir,
-		client:   &http.Client{Timeout: 15 * time.Second},
+		client:   newMapTileHTTPClient(),
 	}
 	r.GET("/map/:sourceHash", proxy.handle)
+}
+
+// newMapTileHTTPClient 构造带 SSRF 防护的 HTTP 客户端:
+//   - DialContext 在连接时按解析后的 IP 拒绝内网/链路本地/元数据等地址,防 DNS rebinding;
+//   - CheckRedirect 限制跳转次数,每次跳转同样经过 DialContext 检查。
+func newMapTileHTTPClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if !isMapTileDialTargetAllowed(ctx, network, addr) {
+				return nil, fmt.Errorf("blocked map tile dial target %q", addr)
+			}
+			return dialer.DialContext(ctx, network, addr)
+		},
+		MaxIdleConns:       8,
+		IdleConnTimeout:    60 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= maxMapTileRedirects {
+				return errors.New("too many map tile redirects")
+			}
+			return nil
+		},
+	}
+}
+
+// isMapTileDialTargetAllowed 检查拨号目标是否允许:
+// 仅允许 tcp 协议,且解析出的每个 IP 均为公网地址。
+func isMapTileDialTargetAllowed(ctx context.Context, network, addr string) bool {
+	if network != "tcp" && network != "tcp4" && network != "tcp6" {
+		return false
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return isPublicAddr(ip)
+	}
+	// 主机名:解析后要求所有结果均为公网地址,避免 DNS rebinding 落到内网。
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil || len(ips) == 0 {
+		return false
+	}
+	for _, r := range ips {
+		addr, ok := netip.AddrFromSlice(r.IP)
+		if !ok || !isPublicAddr(addr) {
+			return false
+		}
+	}
+	return true
+}
+
+// isPublicAddr 判定 IP 是否可安全外访;拒绝回环、私有、链路本地、CGNAT、
+// 组播、未指定与 IPv6 ULA 地址。
+func isPublicAddr(ip netip.Addr) bool {
+	if !ip.IsValid() {
+		return false
+	}
+	ip = ip.Unmap()
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	// CGNAT 100.64.0.0/10 不在 IsPrivate 范围内,单独拦截。
+	if ip.Is4() {
+		ipv4 := ip.As4()
+		ipv4Int := uint32(ipv4[0])<<24 | uint32(ipv4[1])<<16 | uint32(ipv4[2])<<8 | uint32(ipv4[3])
+		if ipv4Int >= 0x64400000 && ipv4Int <= 0x647fffff {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *mapTileProxy) handle(c *gin.Context) {
@@ -196,7 +277,18 @@ func writeMapTileCacheFile(path string, data []byte) error {
 }
 
 func writeMapTile(c *gin.Context, data []byte) {
-	contentType := http.DetectContentType(data)
+	contentType := mapTileContentType(data)
 	c.Header("Cache-Control", mapTileCacheControl)
+	c.Header("X-Content-Type-Options", "nosniff")
 	c.Data(http.StatusOK, contentType, data)
+}
+
+// mapTileContentType 只放行 image/*,其余一律按二进制下发,
+// 防止上游返回 HTML/脚本在本站同源渲染(存储型 XSS 面)。
+func mapTileContentType(data []byte) string {
+	detected := http.DetectContentType(data)
+	if strings.HasPrefix(detected, "image/") {
+		return detected
+	}
+	return "application/octet-stream"
 }

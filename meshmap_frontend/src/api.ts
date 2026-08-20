@@ -232,7 +232,8 @@ export function getPositions(limit = 500, offset = 0, nodeIdOrOptions: string | 
 }
 
 export function getDiscardDetails(limit = 100, offset = 0): Promise<ListResponse<DiscardDetails>> {
-  return getJSON<ListResponse<DiscardDetails>>(listPath('/api/discard-details', limit, offset))
+  // 公开接口 /api/discard-details 已去敏(不含客户端 IP/原始报文),管理页改用 admin 全字段端点。
+  return getJSON<ListResponse<DiscardDetails>>(listPath('/api/admin/discard-details', limit, offset))
 }
 
 export function deleteDiscardDetailsByIDs(ids: number[]): Promise<{ status: string; deleted_count: number }> {

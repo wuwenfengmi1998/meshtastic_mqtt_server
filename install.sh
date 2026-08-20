@@ -65,6 +65,10 @@ find "${INSTALL_DIR}/dist" -type d -exec chmod 0755 {} \;
 find "${INSTALL_DIR}/dist" -type f -exec chmod 0644 {} \;
 
 if [[ ! -f "${CONFIG_DIR}/config.yaml" ]]; then
+  ADMIN_PASSWORD="$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)"
+  if [[ -z "${ADMIN_PASSWORD}" ]]; then
+    ADMIN_PASSWORD="admin" # 极低概率兜底,启动守卫会强制修改
+  fi
   cat > "${CONFIG_DIR}/config.yaml" <<EOF
 mqtt:
   host: 0.0.0.0
@@ -91,15 +95,15 @@ database:
     path: ${DATA_DIR}/${SERVICE_NAME}.db
   mysql:
     dsn: ""
-web:
-  enabled: true
-  host: 0.0.0.0
-  port: 8080
-  socket_path: ${SOCKET_PATH}
-  static_dir: ${INSTALL_DIR}/dist
-  admin:
-    username: admin
-    password: admin
+  web:
+    enabled: true
+    host: 0.0.0.0
+    port: 8080
+    socket_path: ${SOCKET_PATH}
+    static_dir: ${INSTALL_DIR}/dist
+    admin:
+      username: admin
+      password: ${ADMIN_PASSWORD}
     session_secret: ""
     session_secure: false
 console_log:
@@ -143,3 +147,10 @@ systemctl restart "${SERVICE_NAME}"
 
 echo "部署完成，服务状态："
 systemctl --no-pager --full status "${SERVICE_NAME}"
+if [[ -n "${ADMIN_PASSWORD:-}" ]]; then
+  echo
+  echo "======================================================"
+  echo "  Web 管理后台初始账号: admin / ${ADMIN_PASSWORD}"
+  echo "  该密码仅显示这一次,请立即登录并修改!"
+  echo "======================================================"
+fi

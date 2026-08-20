@@ -177,7 +177,7 @@ web:
     session_secure: false
 ```
 
-> 生产环境请修改默认管理员密码，并设置足够长、随机的 `session_secret`。如果通过 HTTPS 访问 Web 管理后台，建议将 `session_secure` 设置为 `true`。
+> 生产环境请修改默认管理员密码（非回环监听时仍为默认值 `admin` 将拒绝启动），并设置足够长、随机的 `session_secret`。如果通过 HTTPS 访问 Web 管理后台，建议将 `session_secure` 设置为 `true`。
 
 ## 使用 SQLite 部署
 
@@ -244,12 +244,13 @@ htpasswd -bnBC 10 "" '你的密码' | tr -d ':\n'
 - 健康检查：`http://服务器地址:8080/api/health`
 - MQTT broker：`服务器地址:1883`
 
-Web 管理后台默认账号：
+Web 管理后台账号：`install.sh` 首次部署会生成随机管理员密码并打印一次；手动部署请通过环境变量设置：
 
-- 用户名：`admin`
-- 密码：`admin`
+```bash
+export MESH_ADMIN_PASSWORD='change-me'
+```
 
-生产环境请务必修改默认密码。
+> 安全守卫：当 Web 监听非回环地址且口令仍为默认值 `admin` 时，程序拒绝启动。请勿在公网使用默认口令。
 
 ## systemd 部署示例
 
