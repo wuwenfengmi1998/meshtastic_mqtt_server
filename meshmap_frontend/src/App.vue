@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { adminLogout, createNodeBlockingRule, deleteNode, deleteTextMessage, getAdminMe, getChannels, getHealth, getMapReportViewport, getNodeInfo, getPositions, getTextMessages, purgeNode } from './api'
+import { adminLogout, createNodeBlockingRule, deleteNode, deleteTextMessage, getAdminMe, getChannels, getHealth, getMapReportViewport, getMapReports, getNodeInfo, getPositions, getTextMessages, purgeNode } from './api'
 import AdminBlockingManagement from './components/AdminBlockingManagement.vue'
 import AdminBot from './components/AdminBot.vue'
 import AdminBotDirect from './components/AdminBotDirect.vue'
@@ -476,20 +476,32 @@ function requestPurgeNode(nodeId: string) {
   pendingDeleteAction.value = { kind: 'purge-node', nodeId }
 }
 
-function requestDeleteDisplayedNodes() {
+async function requestDeleteDisplayedNodes() {
   // 收集当前地图上正在显示的节点 ID（仅 type=node，跳过聚合点），并按筛选后的视图顺序去重。
-  const nodeIds = Array.from(
-    new Set(
-      mapItems.value
-        .filter((item): item is Extract<MapRenderable, { type: 'node' }> => item.type === 'node')
-        .map((item) => item.node_id),
-    ),
+  const nodeIds = new Set(
+    mapItems.value
+      .filter((item): item is Extract<MapRenderable, { type: 'node' }> => item.type === 'node')
+      .map((item) => item.node_id),
   )
-  if (nodeIds.length === 0) {
+  // 聚合状态下视口接口只返回聚合点（无 node_id），改按当前视野 bounds 分页拉取全部节点 ID。
+  if (mapViewportMode.value === 'clusters' && currentMapBounds.value) {
+    const pageSize = 500
+    for (let offset = 0; ; offset += pageSize) {
+      const response = await getMapReports(pageSize, offset, currentMapBounds.value)
+      for (const report of response.items) {
+        nodeIds.add(report.node_id)
+      }
+      const loaded = offset + response.items.length
+      if (response.items.length === 0 || loaded >= (response.total ?? loaded)) {
+        break
+      }
+    }
+  }
+  if (nodeIds.size === 0) {
     error.value = '当前地图上没有可删除的节点。'
     return
   }
-  pendingDeleteAction.value = { kind: 'delete-displayed-nodes', nodeIds }
+  pendingDeleteAction.value = { kind: 'delete-displayed-nodes', nodeIds: Array.from(nodeIds) }
 }
 
 function requestDeleteAndBlockNode(payload: NodeActionRequest) {
