@@ -95,18 +95,20 @@ database:
     path: ${DATA_DIR}/${SERVICE_NAME}.db
   mysql:
     dsn: ""
-  web:
-    enabled: true
-    host: 0.0.0.0
-    port: 8080
-    socket_path: ${SOCKET_PATH}
-    static_dir: ${INSTALL_DIR}/dist
-    admin:
-      username: admin
-      password: ${ADMIN_PASSWORD}
-      session_secret: ""
-      # 前端经 HTTPS(nginx 反代)访问时保持 true;纯 HTTP 部署需改回 false
-      session_secure: true
+web:
+  enabled: true
+  port_enabled: true
+  socket_enabled: true
+  host: 0.0.0.0
+  port: 8080
+  socket_path: ${SOCKET_PATH}
+  static_dir: ${INSTALL_DIR}/dist
+  admin:
+    username: admin
+    password: ${ADMIN_PASSWORD}
+    session_secret: ""
+    # 前端经 HTTPS(nginx 反代)访问时保持 true;纯 HTTP 部署需改回 false
+    session_secure: true
 console_log:
   web: true
   mqtt: true
